@@ -50,10 +50,7 @@ def _pw_strength(pw: str) -> int:
     return min(score, 3)
 
 
-# ── Reusable: Notification Bar ────────────────────────────────────────────────
 class NotifBar(ctk.CTkFrame):
-    """Colored notification strip always present in layout — no shifting."""
-
     def __init__(self, parent, **kwargs):
         super().__init__(
             parent, height=40, corner_radius=8,
@@ -79,23 +76,21 @@ class NotifBar(ctk.CTkFrame):
         self.lbl.configure(text="")
 
 
-# ── Helper: card frame ────────────────────────────────────────────────────────
 def make_card(parent, padx=20, pady=(0, 12)):
     f = ctk.CTkFrame(parent, fg_color=CLR_CARD, corner_radius=10)
     f.pack(fill="x", padx=padx, pady=pady)
     return f
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 class AppBrankas(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Digital Locker — Professional")
         self.configure(fg_color="#12141F")
 
-        w, h = 500, 660
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        self.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
+        w, h = 500, 680 # Diperbesar sedikit untuk checkbox hapus asli
+        sw, self.winfo_screenwidth(), sh, self.winfo_screenheight()
+        self.geometry(f"{w}x{h}+{(self.winfo_screenwidth() - w) // 2}+{(self.winfo_screenheight() - h) // 2}")
         self.resizable(False, False)
 
         # ── App Header ──
@@ -115,7 +110,7 @@ class AppBrankas(ctk.CTk):
 
         # ── TabView ──
         self.tabview = ctk.CTkTabview(
-            self, width=470, height=568, corner_radius=12,
+            self, width=470, height=588, corner_radius=12,
             fg_color="#12141F",
             segmented_button_fg_color="#1E2235",
             segmented_button_selected_color=CLR_ACCENT,
@@ -139,6 +134,7 @@ class AppBrankas(ctk.CTk):
     def setup_tab_kunci(self):
         self.path_folder_kunci = None
         self.show_pw_v1 = False
+        self.var_hapus_asli = ctk.BooleanVar(value=False) # Variable Checkbox
 
         # Card 1: Folder picker
         c1 = make_card(self.tab_kunci)
@@ -166,14 +162,23 @@ class AppBrankas(ctk.CTk):
             c1, text="Belum ada folder dipilih",
             font=FONT_SMALL, text_color=CLR_MUTED, wraplength=390, anchor="w"
         )
-        self.lbl_path_folder.pack(anchor="w", padx=14, pady=(0, 10))
+        self.lbl_path_folder.pack(anchor="w", padx=14, pady=(0, 6))
+
+        # Checkbox Hapus Folder Asli
+        self.chk_hapus_asli = ctk.CTkCheckBox(
+            c1, text="Hapus folder asli setelah dikunci (Secure Wipe)",
+            font=FONT_SMALL, text_color=CLR_MUTED, 
+            variable=self.var_hapus_asli,
+            fg_color=CLR_DANGER, hover_color=CLR_DANGER_HV, corner_radius=4,
+            checkbox_width=18, checkbox_height=18
+        )
+        self.chk_hapus_asli.pack(anchor="w", padx=14, pady=(0, 12))
 
         # Card 2: Password
         c2 = make_card(self.tab_kunci)
         ctk.CTkLabel(c2, text="🔑  BUAT PASSWORD", font=FONT_LABEL,
                      text_color=CLR_MUTED).pack(anchor="w", padx=14, pady=(10, 6))
 
-        # Menggunakan self.row_pw agar bisa diakses di _on_pw_kunci_change
         self.row_pw = ctk.CTkFrame(c2, fg_color="transparent")
         self.row_pw.pack(fill="x", padx=14)
 
@@ -191,9 +196,7 @@ class AppBrankas(ctk.CTk):
             command=self.toggle_pw_kunci
         ).pack(side="right", padx=(6, 0))
 
-        # Strength bar — Sekarang menggunakan self.row_str dan TIDAK di-pack di awal
         self.row_str = ctk.CTkFrame(c2, fg_color="transparent")
-        
         self.strength_bar = ctk.CTkProgressBar(self.row_str, height=5, corner_radius=3)
         self.strength_bar.set(0)
         self.strength_bar.pack(side="left", expand=True, fill="x", padx=(0, 8))
@@ -203,7 +206,6 @@ class AppBrankas(ctk.CTk):
         )
         self.lbl_strength.pack(side="right")
 
-        # Confirm section
         ctk.CTkLabel(c2, text="Konfirmasi Password",
                      font=FONT_SMALL, text_color=CLR_MUTED).pack(
             anchor="w", padx=14, pady=(4, 2)
@@ -222,13 +224,11 @@ class AppBrankas(ctk.CTk):
         self.lbl_match = ctk.CTkLabel(c2, text="", font=FONT_SMALL, anchor="e")
         self.lbl_match.pack(anchor="e", padx=14, pady=(4, 10))
 
-        # Progress bar (hidden)
         self.progress_kunci = ctk.CTkProgressBar(
             self.tab_kunci, mode="indeterminate", height=5,
             progress_color=CLR_ACCENT
         )
 
-        # Action button
         self.btn_eksekusi_kunci = ctk.CTkButton(
             self.tab_kunci, text="KUNCI SEKARANG",
             font=FONT_BTN, height=42, corner_radius=10,
@@ -237,29 +237,23 @@ class AppBrankas(ctk.CTk):
         )
         self.btn_eksekusi_kunci.pack(fill="x", padx=20, pady=(6, 8))
 
-        # Notification (always in layout)
         self.notif_kunci = NotifBar(self.tab_kunci)
         self.notif_kunci.pack(fill="x", padx=20, ipady=6)
 
     def _on_pw_kunci_change(self, _=None):
         pw = self.entry_pw_kunci.get()
         s  = _pw_strength(pw)
-        
         if s < 0:
-            # Jika kolom password kosong, sembunyikan baris indikator kekuatan
             self.row_str.pack_forget()
             self.strength_bar.set(0)
             self.lbl_strength.configure(text="")
         else:
-            # Jika ada isinya, munculkan tepat di bawah row_pw
             self.row_str.pack(after=self.row_pw, fill="x", padx=14, pady=(6, 4))
-            
             self.strength_bar.set((s + 1) / 4)
             self.strength_bar.configure(progress_color=STRENGTH_COLORS[s])
             self.lbl_strength.configure(
                 text=STRENGTH_LABELS[s], text_color=STRENGTH_COLORS[s]
             )
-            
         self._on_konfirm_change()
         self.notif_kunci.clear()
 
@@ -305,10 +299,12 @@ class AppBrankas(ctk.CTk):
             return
 
         path_snap, pw_snap = self.path_folder_kunci, pw
+        hapus_snap = self.var_hapus_asli.get() # Ambil status checkbox
+        
         self._busy_kunci(True)
         threading.Thread(
             target=lambda: self.after(
-                0, lambda: self._selesai_kunci(*kunci_brankas_logic(path_snap, pw_snap))
+                0, lambda: self._selesai_kunci(*kunci_brankas_logic(path_snap, pw_snap, hapus_snap))
             ),
             daemon=True
         ).start()
@@ -317,6 +313,7 @@ class AppBrankas(ctk.CTk):
         if on:
             self.btn_eksekusi_kunci.configure(state="disabled", text="⏳  Memproses…")
             self.btn_browse_kunci.configure(state="disabled")
+            self.chk_hapus_asli.configure(state="disabled")
             self.progress_kunci.pack(fill="x", padx=20, pady=(0, 4))
             self.progress_kunci.start()
         else:
@@ -324,6 +321,7 @@ class AppBrankas(ctk.CTk):
             self.progress_kunci.pack_forget()
             self.btn_eksekusi_kunci.configure(state="normal", text="KUNCI SEKARANG")
             self.btn_browse_kunci.configure(state="normal")
+            self.chk_hapus_asli.configure(state="normal")
 
     def _selesai_kunci(self, sukses: bool, pesan: str):
         self._busy_kunci(False)
@@ -334,7 +332,8 @@ class AppBrankas(ctk.CTk):
             self.lbl_match.configure(text="")
             self.strength_bar.set(0)
             self.lbl_strength.configure(text="")
-            self.row_str.pack_forget() # Sembunyikan kembali setelah sukses
+            self.row_str.pack_forget()
+            self.var_hapus_asli.set(False) # Reset checkbox
             self.clear_pilihan_kunci()
         else:
             self.notif_kunci.show("err", "✖  " + pesan)
@@ -353,7 +352,6 @@ class AppBrankas(ctk.CTk):
             font=FONT_SMALL, text_color=CLR_MUTED
         ).pack(pady=(10, 12))
 
-        # Card 1: File picker
         c1 = make_card(self.tab_buka)
         ctk.CTkLabel(c1, text="📄  FILE BRANKAS (.locked)", font=FONT_LABEL,
                      text_color=CLR_MUTED).pack(anchor="w", padx=14, pady=(10, 6))
@@ -381,7 +379,6 @@ class AppBrankas(ctk.CTk):
         )
         self.lbl_path_file.pack(anchor="w", padx=14, pady=(0, 10))
 
-        # Card 2: Password
         c2 = make_card(self.tab_buka)
         ctk.CTkLabel(c2, text="🔑  MASUKKAN PASSWORD", font=FONT_LABEL,
                      text_color=CLR_MUTED).pack(anchor="w", padx=14, pady=(10, 6))
@@ -404,13 +401,11 @@ class AppBrankas(ctk.CTk):
             command=self.toggle_pw_buka
         ).pack(side="right", padx=(6, 0))
 
-        # Progress bar (hidden)
         self.progress_buka = ctk.CTkProgressBar(
             self.tab_buka, mode="indeterminate", height=5,
             progress_color=CLR_ACCENT
         )
 
-        # Action button
         self.btn_eksekusi_buka = ctk.CTkButton(
             self.tab_buka, text="BUKA BRANKAS",
             font=FONT_BTN, height=42, corner_radius=10,
@@ -419,7 +414,6 @@ class AppBrankas(ctk.CTk):
         )
         self.btn_eksekusi_buka.pack(fill="x", padx=20, pady=(6, 8))
 
-        # Notification (ALWAYS in layout)
         self.notif_buka = NotifBar(self.tab_buka)
         self.notif_buka.pack(fill="x", padx=20, ipady=6)
 
@@ -508,7 +502,6 @@ class AppBrankas(ctk.CTk):
 
         else:
             self.notif_buka.show("err", f"✖  Error: {msg}")
-
 
 if __name__ == "__main__":
     app = AppBrankas()

@@ -1,13 +1,24 @@
-# Mengabaikan cache python
+# Python Cache
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Mengabaikan file brankas dan zip sementara
-*.locked
-*.zip
-temp_*/
-
-# Mengabaikan folder virtual environment (kalau lu pake)
+# Virtual Environments
 venv/
 env/
+.env
+
+# Build & Packaging (Untuk PyInstaller/Nuitka nanti)
+build/
+dist/
+*.spec
+*.bin
+
+# File Aplikasi (Jangan sampai file rahasia/test ter-upload)
+*.locked
+*.zip
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
