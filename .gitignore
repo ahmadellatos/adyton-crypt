@@ -1,0 +1,13 @@
+# Mengabaikan cache python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Mengabaikan file brankas dan zip sementara
+*.locked
+*.zip
+temp_*/
+
+# Mengabaikan folder virtual environment (kalau lu pake)
+venv/
+env/
