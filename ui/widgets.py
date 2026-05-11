@@ -40,6 +40,7 @@ class NotifBar(ctk.CTkFrame):
     """
     Strip notifikasi yang selalu ada di layout.
     Tidak menyebabkan elemen lain bergeser saat muncul/hilang.
+    Dilengkapi fitur Auto-Hide yang aman dari Race Condition.
     """
 
     def __init__(self, parent, **kwargs):
@@ -51,8 +52,17 @@ class NotifBar(ctk.CTkFrame):
             wraplength=380, anchor="center",
         )
         self.lbl.place(relx=0.5, rely=0.5, anchor="center")
+        
+        # Variabel untuk menyimpan ID timer
+        self._timer_id = None 
 
-    def show(self, kind: str, msg: str):
+    def show(self, kind: str, msg: str, auto_hide_ms: int = 0):
+        # 1. Batalkan timer lama jika ada notif baru yang masuk
+        if self._timer_id is not None:
+            self.after_cancel(self._timer_id)
+            self._timer_id = None
+
+        # 2. Tampilkan notifikasi baru
         bg, fg = {
             "ok":   CLR_NOTIF_OK,
             "err":  CLR_NOTIF_ERR,
@@ -61,7 +71,16 @@ class NotifBar(ctk.CTkFrame):
         self.configure(fg_color=bg)
         self.lbl.configure(text=msg, text_color=fg)
 
+        # 3. Mulai hitung mundur jika diminta auto-hide
+        if auto_hide_ms > 0:
+            self._timer_id = self.after(auto_hide_ms, self.clear)
+
     def clear(self):
+        # Bersihkan timer juga saat clear dipanggil manual
+        if self._timer_id is not None:
+            self.after_cancel(self._timer_id)
+            self._timer_id = None
+            
         self.configure(fg_color="transparent")
         self.lbl.configure(text="")
 

@@ -1,8 +1,7 @@
 """
 ui/app.py
-Jendela utama aplikasi. Hanya bertanggung jawab untuk:
-- Setup window (ukuran, posisi, warna)
-- Merakit tab Kunci dan Buka ke dalam CTkTabview
+Jendela utama aplikasi.
+Sekarang menggunakan orientasi Horizontal (Landscape).
 """
 import customtkinter as ctk
 
@@ -11,10 +10,6 @@ from .theme import FONT_TITLE, CLR_BG, CLR_ACCENT, CLR_ACCENT_HV, CLR_MUTED, CLR
 from .tab_kunci import TabKunci
 from .tab_buka import TabBuka
 
-
-# TkinterDnD butuh root window yang punya DnD support.
-# Caranya: mixin TkinterDnD.DnDWrapper ke dalam CTk.
-# Kalau tkinterdnd2 tidak terinstall, pakai CTk biasa — app tetap jalan.
 if DND_AVAILABLE:
     class _AppBase(ctk.CTk, TkinterDnD.DnDWrapper):
         def __init__(self):
@@ -25,7 +20,6 @@ else:
         def __init__(self):
             super().__init__()
 
-
 class AppBrankas(_AppBase):
     def __init__(self):
         super().__init__()
@@ -33,7 +27,8 @@ class AppBrankas(_AppBase):
         self.configure(fg_color=CLR_BG)
         self.resizable(False, False)
 
-        w, h = 500, 680
+        # ── WINDOW DIBIKIN HORIZONTAL (LANDSCAPE) ──
+        w, h = 880, 480 
         self.geometry(
             f"{w}x{h}"
             f"+{(self.winfo_screenwidth()  - w) // 2}"
@@ -63,8 +58,9 @@ class AppBrankas(_AppBase):
         )
 
     def _build_tabs(self):
+        # Tabview dilebarkan
         tabview = ctk.CTkTabview(
-            self, width=470, height=590, corner_radius=12,
+            self, width=840, height=390, corner_radius=12,
             fg_color=CLR_BG,
             segmented_button_fg_color="#1E2235",
             segmented_button_selected_color=CLR_ACCENT,
