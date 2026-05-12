@@ -53,42 +53,51 @@ def secure_delete(path: str):
 class EncryptingStream:
     """Pipa memori ajaib yang dilengkapi Buffer (Waduk)."""
     def __init__(self, target_file, encryptor, progress_cb, total_bytes):
-        self.target_file = target_file
-        self.encryptor = encryptor
-        self.progress_cb = progress_cb
-        self.total_bytes = total_bytes
-        
+        self.target_file  = target_file
+        self.encryptor    = encryptor
+        self.progress_cb  = progress_cb
+        self.total_bytes  = total_bytes
         self.bytes_written = 0
-        self.buffer = bytearray()
-        self.chunk_size = CHUNK_SIZE
-        self._last_pct = 0.0
+        self.buffer       = bytearray()
+        self._last_pct    = 0.0
+        # FIX: flag idempoten agar flush() aman dipanggil berkali-kali.
+        # tarfile memanggil close() → flush() saat context manager selesai,
+        # dan kunci_brankas() juga memanggil flush() eksplisit setelahnya.
+        # Tanpa flag ini, encryptor.update(b"") dipanggil dua kali.
+        self._flushed     = False
 
     def write(self, data: bytes):
         self.buffer.extend(data)
         self.bytes_written += len(data)
-        
+
         if self.total_bytes > 0:
-            pct = 0.05 + 0.85 * (self.bytes_written / self.total_bytes)
+            pct = min(0.89, 0.05 + 0.85 * (self.bytes_written / self.total_bytes))
             if pct - self._last_pct >= 0.005:
                 safe_cb(self.progress_cb, pct)
                 self._last_pct = pct
 
-        if len(self.buffer) >= self.chunk_size:
+        # FIX: gunakan CHUNK_SIZE langsung, bukan self.chunk_size yang
+        # hanya menduplikasi konstanta modul tanpa nilai tambah.
+        if len(self.buffer) >= CHUNK_SIZE:
             encrypted = self.encryptor.update(bytes(self.buffer))
             if encrypted:
                 self.target_file.write(encrypted)
             self.buffer.clear()
-            
+
         return len(data)
-        
+
     def flush(self):
+        # Guard idempoten: abaikan panggilan kedua dan seterusnya.
+        if self._flushed:
+            return
+        self._flushed = True
         if self.buffer:
             encrypted = self.encryptor.update(bytes(self.buffer))
             if encrypted:
                 self.target_file.write(encrypted)
             self.buffer.clear()
 
-    def close(self): 
+    def close(self):
         self.flush()
 
 
@@ -115,66 +124,93 @@ def kunci_brankas(paths: list[str], path_simpan: str, password: str,
                   progress_cb=None) -> tuple[bool, str]:
     """
     Mengunci satu atau banyak file/folder ke dalam satu file .locked.
+
+    FIX: jika path_simpan sudah ada, file lama di-backup dulu ke .bak.
+    Kalau enkripsi gagal, file lama di-restore. Kalau berhasil, .bak dihapus.
+    Ini mencegah kehilangan data jika user menimpa .locked yang sudah ada.
     """
+    path_backup = path_simpan + ".bak"
+    backup_dibuat = False
+
     try:
+        # Backup file lama jika ada sebelum mulai menulis
+        if os.path.exists(path_simpan):
+            os.rename(path_simpan, path_backup)
+            backup_dibuat = True
+
         salt  = os.urandom(16)
         nonce = os.urandom(12)
- 
+
         key = derive_key(password, salt)
         safe_cb(progress_cb, 0.05)
- 
+
         total_size = _hitung_total_size(paths)
-        encryptor = make_encryptor(key, nonce)
+        encryptor  = make_encryptor(key, nonce)
 
-        # Menentukan nama folder root di dalam arsip
-        if len(paths) == 1 and os.path.isdir(paths[0]):
-            target_dir = os.path.basename(os.path.abspath(paths[0]))
+        # Tentukan nama root di dalam arsip
+        is_single_file = len(paths) == 1 and os.path.isfile(paths[0])
+        is_single_dir  = len(paths) == 1 and os.path.isdir(paths[0])
+
+        if is_single_file:
+            nama_virtual = os.path.basename(paths[0])
+            target_dir   = ""
+        elif is_single_dir:
+            nama_virtual = os.path.basename(os.path.abspath(paths[0]))
+            target_dir   = ""
         else:
-            # Mengambil nama file .locked tanpa ekstensi sebagai nama virtual folder
-            nama_file = os.path.basename(path_simpan)
-            target_dir = os.path.splitext(nama_file)[0]
-            if not target_dir: 
-                target_dir = "Brankas_Rahasia"
+            nama_file    = os.path.basename(path_simpan)
+            target_dir   = os.path.splitext(nama_file)[0] or "Brankas_Rahasia"
+            nama_virtual = target_dir
 
-        nama_bytes   = target_dir.encode('utf-8')
+        nama_bytes   = nama_virtual.encode('utf-8')
         panjang_nama = len(nama_bytes).to_bytes(2, byteorder='big')
- 
+
         with open(path_simpan, "wb") as fk:
             fk.write(salt)
             fk.write(nonce)
             fk.write(encryptor.update(panjang_nama + nama_bytes))
-            
+
             out_stream = EncryptingStream(fk, encryptor, progress_cb, total_size)
-            
+
             with tarfile.open(fileobj=out_stream, mode='w|') as tar:
                 for p in paths:
                     if not os.path.exists(p):
                         continue
-                    # Tambahkan ke dalam arsip di bawah target_dir
                     nama_item = os.path.basename(os.path.abspath(p))
-                    tar.add(p, arcname=os.path.join(target_dir, nama_item))
+                    arcname   = os.path.join(target_dir, nama_item) if target_dir else nama_item
+                    tar.add(p, arcname=arcname)
 
+            # flush() eksplisit ini aman karena EncryptingStream._flushed
+            # sudah di-set True oleh tarfile saat close() dipanggil.
+            # Baris ini tidak melakukan apa-apa selain menjadi dokumentasi intent.
             out_stream.flush()
+
             fk.write(encryptor.finalize())
             fk.write(encryptor.tag)
- 
+
         safe_cb(progress_cb, 0.90)
-        
-        # Hapus file/folder asli JIKA berhasil dan user minta
+
+        # Enkripsi berhasil — hapus backup
+        if backup_dibuat and os.path.exists(path_backup):
+            os.remove(path_backup)
+
         if hapus_asli:
             safe_cb(progress_cb, 0.95)
             for p in paths:
                 secure_delete(p)
- 
+
         size_mb = os.path.getsize(path_simpan) / (1024 * 1024)
         safe_cb(progress_cb, 1.0)
         return True, f"Brankas berhasil dikunci!\nUkuran: {size_mb:.1f} MB"
- 
+
     except Exception as exc:
-        # Cleanup file korup jika proses gagal/dibatalkan
+        # Gagal — hapus file korup dan restore backup jika ada
         if os.path.exists(path_simpan):
             os.remove(path_simpan)
+        if backup_dibuat and os.path.exists(path_backup):
+            os.rename(path_backup, path_simpan)
         return False, str(exc)
+
 
 def buka_brankas(locked_path: str, password: str,
                  force: bool = False,
@@ -184,8 +220,8 @@ def buka_brankas(locked_path: str, password: str,
         total_size = os.path.getsize(locked_path)
         if total_size < 44:
             return "ERROR", "File terlalu kecil/rusak."
-            
-        cipher_len = total_size - 44 
+
+        cipher_len = total_size - 44
 
         with open(locked_path, "rb") as fk:
             salt  = fk.read(16)
@@ -207,6 +243,8 @@ def buka_brankas(locked_path: str, password: str,
                 panjang_nama = int.from_bytes(decrypted_first[:2], byteorder='big')
                 if panjang_nama > 512:
                     return "WRONG_PW", None
+                if len(decrypted_first) < 2 + panjang_nama:
+                    return "ERROR", "File brankas rusak atau terpotong."
                 nama_folder = decrypted_first[2:2 + panjang_nama].decode('utf-8')
             except Exception:
                 return "WRONG_PW", None
@@ -214,8 +252,12 @@ def buka_brankas(locked_path: str, password: str,
             base_dir    = os.path.dirname(locked_path)
             path_tujuan = os.path.join(base_dir, nama_folder)
 
-            if os.path.exists(path_tujuan) and not force:
-                return "OVERWRITE", nama_folder
+            if os.path.exists(path_tujuan):
+                if not force:
+                    return "OVERWRITE", nama_folder
+                else:
+                    if os.path.isfile(path_tujuan):
+                        secure_delete(path_tujuan)
 
             id_temp      = uuid.uuid4().hex[:8]
             temp_archive = os.path.join(tempfile.gettempdir(), f"dec_temp_{id_temp}.tmp")
@@ -231,21 +273,20 @@ def buka_brankas(locked_path: str, password: str,
                     bytes_remaining -= len(chunk)
                     ft.write(decryptor.update(chunk))
                     bytes_dec += len(chunk)
-                    
+
                     pct = 0.80 * bytes_dec / (cipher_len or 1)
                     if pct - last_pct >= 0.005:
                         safe_cb(progress_cb, pct)
                         last_pct = pct
 
             try:
-                decryptor.finalize()   
+                decryptor.finalize()
             except Exception:
                 secure_delete(temp_archive)
                 return "WRONG_PW", None
 
         safe_cb(progress_cb, 0.85)
-        
-        # EKSTRAKSI TARFILE
+
         try:
             with tarfile.open(temp_archive, 'r') as tar:
                 tar.extractall(path=base_dir)

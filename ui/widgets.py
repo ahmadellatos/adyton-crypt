@@ -7,7 +7,7 @@ import customtkinter as ctk
 
 from .theme import (
     CLR_CARD, CLR_MUTED, CLR_NOTIF_OK, CLR_NOTIF_ERR, CLR_NOTIF_WARN,
-    STRENGTH_COLORS, STRENGTH_LABELS,
+    STRENGTH_COLORS, STRENGTH_LABELS, FONT_BODY, FONT_SMALL,
 )
 
 
@@ -48,21 +48,18 @@ class NotifBar(ctk.CTkFrame):
                          fg_color="transparent", **kwargs)
         self.pack_propagate(False)
         self.lbl = ctk.CTkLabel(
-            self, text="", font=("Segoe UI", 11),
+            self, text="", font=FONT_BODY,
             wraplength=380, anchor="center",
         )
         self.lbl.place(relx=0.5, rely=0.5, anchor="center")
-        
-        # Variabel untuk menyimpan ID timer
-        self._timer_id = None 
+
+        self._timer_id = None
 
     def show(self, kind: str, msg: str, auto_hide_ms: int = 0):
-        # 1. Batalkan timer lama jika ada notif baru yang masuk
         if self._timer_id is not None:
             self.after_cancel(self._timer_id)
             self._timer_id = None
 
-        # 2. Tampilkan notifikasi baru
         bg, fg = {
             "ok":   CLR_NOTIF_OK,
             "err":  CLR_NOTIF_ERR,
@@ -71,16 +68,14 @@ class NotifBar(ctk.CTkFrame):
         self.configure(fg_color=bg)
         self.lbl.configure(text=msg, text_color=fg)
 
-        # 3. Mulai hitung mundur jika diminta auto-hide
         if auto_hide_ms > 0:
             self._timer_id = self.after(auto_hide_ms, self.clear)
 
     def clear(self):
-        # Bersihkan timer juga saat clear dipanggil manual
         if self._timer_id is not None:
             self.after_cancel(self._timer_id)
             self._timer_id = None
-            
+
         self.configure(fg_color="transparent")
         self.lbl.configure(text="")
 
@@ -88,7 +83,6 @@ class NotifBar(ctk.CTkFrame):
 class ProgressRow(ctk.CTkFrame):
     """
     Progress bar + label persentase dalam satu baris.
-    Dipanggil show()/hide() untuk menampilkan/menyembunyikan.
     """
 
     def __init__(self, parent, accent_color: str, **kwargs):
@@ -99,7 +93,7 @@ class ProgressRow(ctk.CTkFrame):
         self.bar.pack(side="left", expand=True, fill="x", padx=(0, 10))
 
         self.lbl = ctk.CTkLabel(self, text="0%", width=38,
-                                font=("Segoe UI", 10), text_color=CLR_MUTED, anchor="e")
+                                font=FONT_SMALL, text_color=CLR_MUTED, anchor="e")
         self.lbl.pack(side="right")
 
     def update(self, val: float):
@@ -111,10 +105,7 @@ class ProgressRow(ctk.CTkFrame):
         self.lbl.configure(text="0%")
 
     def make_callback(self, root_widget) -> callable:
-        """
-        Buat progress callback yang thread-safe.
-        Semua update GUI dijadwalkan ke main thread via after().
-        """
+        """Buat progress callback yang thread-safe via after()."""
         def cb(val: float):
             root_widget.after(0, lambda: self.update(val))
         return cb

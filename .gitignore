@@ -20,6 +20,7 @@ release_build/
 *.locked
 *.zip
 *.log
+*.rar
 
 # OS generated files
 .DS_Store
