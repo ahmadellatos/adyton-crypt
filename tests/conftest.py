@@ -3,13 +3,14 @@ tests/conftest.py
 Fixtures bersama yang dipakai oleh semua test file.
 Dijalankan otomatis oleh pytest sebelum test apapun.
 """
+
 import os
 import shutil
 import tempfile
 import pytest
 
-
 # ── Fixtures Dasar ────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def tmp_dir():
@@ -36,7 +37,7 @@ def sample_folder(tmp_dir):
             └── empty_file.txt   (file kosong — edge case)
     """
     folder = os.path.join(tmp_dir, "sample_folder")
-    sub    = os.path.join(folder, "subfolder")
+    sub = os.path.join(folder, "subfolder")
     os.makedirs(sub)
 
     # File teks biasa
@@ -94,6 +95,7 @@ def sample_folder_spasi(tmp_dir):
 
 # ── Helper Functions ──────────────────────────────────────────────────────────
 
+
 def folder_checksum(folder_path: str) -> dict:
     """
     Buat checksum sederhana dari semua file dalam folder.
@@ -101,10 +103,11 @@ def folder_checksum(folder_path: str) -> dict:
     Returns: dict {relative_path: (size_bytes, content_hash)}
     """
     import hashlib
+
     result = {}
     for root, _, files in os.walk(folder_path):
         for fname in files:
-            fpath    = os.path.join(root, fname)
+            fpath = os.path.join(root, fname)
             rel_path = os.path.relpath(fpath, folder_path)
             with open(fpath, "rb") as f:
                 content = f.read()

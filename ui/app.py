@@ -1,79 +1,71 @@
 """
 ui/app.py
-Jendela utama aplikasi.
-Sekarang menggunakan orientasi Horizontal (Landscape).
+Jendela utama PySide6 dengan efek bayangan (Drop Shadow).
 """
-import customtkinter as ctk
 
-from .dnd import DND_AVAILABLE, TkinterDnD
-from .theme import FONT_TITLE, CLR_BG, CLR_ACCENT, CLR_ACCENT_HV, CLR_MUTED, CLR_BORDER
+from PySide6.QtWidgets import (
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QTabWidget,
+)
+from PySide6.QtCore import Qt
+
 from .tab_kunci import TabKunci
 from .tab_buka import TabBuka
+from .styles import load_stylesheet
 
-if DND_AVAILABLE:
-    class _AppBase(ctk.CTk, TkinterDnD.DnDWrapper):
-        def __init__(self):
-            super().__init__()
-            self.TkdndVersion = TkinterDnD._require(self)
-else:
-    class _AppBase(ctk.CTk):
-        def __init__(self):
-            super().__init__()
+# FIX #1 — apply_shadow tidak lagi didefinisikan di sini untuk menghindari
+# circular import. Fungsi sudah dipindah ke widgets.py.
+# Re-export agar kode lama yang import dari app.py tetap kompatibel.
+from .widgets import apply_shadow  # noqa: F401
 
-class AppBrankas(_AppBase):
+
+class AppBrankas(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.title("Digital Locker — Professional")
-        self.configure(fg_color=CLR_BG)
-        self.resizable(False, False)
+        self.setWindowTitle("Digital Locker — Professional")
+        self.setFixedSize(880, 520)
 
-        # ── WINDOW DIBIKIN HORIZONTAL (LANDSCAPE) ──
-        w, h = 880, 480 
-        self.geometry(
-            f"{w}x{h}"
-            f"+{(self.winfo_screenwidth()  - w) // 2}"
-            f"+{(self.winfo_screenheight() - h) // 2}"
-        )
+        self.setStyleSheet(load_stylesheet())
+        self._init_ui()
 
-        self._build_header()
-        self._build_tabs()
+    def _init_ui(self):
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
 
-    def _build_header(self):
-        hdr = ctk.CTkFrame(self, fg_color=CLR_BG, height=56)
-        hdr.pack(fill="x", padx=20, pady=(12, 0))
-        hdr.pack_propagate(False)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(25, 20, 25, 20)
+        main_layout.setSpacing(15)
 
-        ctk.CTkLabel(
-            hdr, text="🔐  Digital Locker",
-            font=FONT_TITLE, text_color=CLR_ACCENT,
-        ).pack(side="left", pady=8)
+        self._build_header(main_layout)
 
-        ctk.CTkLabel(
-            hdr, text="AES-256 · GCM",
-            font=("Segoe UI", 10), text_color=CLR_MUTED,
-        ).pack(side="right", pady=8)
+        self.tabs = QTabWidget()
+        self.tabs.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
-        ctk.CTkFrame(self, fg_color=CLR_BORDER, height=1).pack(
-            fill="x", padx=20, pady=(0, 4)
-        )
+        self.tab_kunci = TabKunci()
+        self.tab_buka = TabBuka()
 
-    def _build_tabs(self):
-        # Tabview dilebarkan
-        tabview = ctk.CTkTabview(
-            self, width=840, height=390, corner_radius=12,
-            fg_color=CLR_BG,
-            segmented_button_fg_color="#1E2235",
-            segmented_button_selected_color=CLR_ACCENT,
-            segmented_button_selected_hover_color=CLR_ACCENT_HV,
-            segmented_button_unselected_color="#1E2235",
-            segmented_button_unselected_hover_color=CLR_BORDER,
-            text_color="#FFFFFF",
-            text_color_disabled=CLR_MUTED,
-        )
-        tabview.pack(padx=15, pady=(0, 8))
+        self.tabs.addTab(self.tab_kunci, " 🔒 Kunci Folder ")
+        self.tabs.addTab(self.tab_buka, " 🔓 Buka Brankas ")
 
-        tab_k = tabview.add("  🔒  Kunci Folder  ")
-        tab_b = tabview.add("  🔓  Buka Brankas  ")
+        main_layout.addWidget(self.tabs)
 
-        TabKunci(tab_k).pack(fill="both", expand=True)
-        TabBuka(tab_b).pack(fill="both", expand=True)
+    def _build_header(self, parent_layout):
+        header_widget = QWidget()
+        header_layout = QHBoxLayout(header_widget)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+
+        lbl_title = QLabel("🔐  Digital Locker")
+        lbl_title.setObjectName("AppTitle")
+
+        lbl_subtitle = QLabel("AES-256 · GCM")
+        lbl_subtitle.setObjectName("AppSubtitle")
+
+        header_layout.addWidget(lbl_title)
+        header_layout.addStretch()
+        header_layout.addWidget(lbl_subtitle, alignment=Qt.AlignmentFlag.AlignBottom)
+
+        parent_layout.addWidget(header_widget)

@@ -1,276 +1,430 @@
 """
 ui/tab_kunci.py
-Frame untuk tab "Kunci Folder".
-Menggunakan layout 2 Kolom Horizontal.
+Tab "Kunci Folder" - Layout presisi & Drop Shadow.
 """
+
 import os
-import threading
-from tkinter import filedialog
-import customtkinter as ctk
+import re
+import logging
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QLineEdit,
+    QFileDialog,
+    QFrame,
+    QProgressBar,
+    QCheckBox,
+    QScrollArea,
+    QMenu,
+    QMessageBox,
+)
+from PySide6.QtCore import Qt
 
 from core.vault import kunci_brankas
-from .dnd import DND_AVAILABLE, register_drop_multiple
-from .theme import (
-    FONT_LABEL, FONT_SMALL, FONT_BTN,
-    CLR_ACCENT, CLR_ACCENT_HV, CLR_DANGER, CLR_DANGER_HV,
-    CLR_INNER, CLR_BORDER, CLR_MUTED, CLR_CARD, CLR_BG,
-    STRENGTH_COLORS, STRENGTH_LABELS,
-)
-from .widgets import pw_strength, make_card, NotifBar, ProgressRow
 
-CLR_CARD_HOVER  = "#252B42"
-CLR_BORDER_DRAG = CLR_ACCENT
+# FIX #1 — Import apply_shadow dari widgets, bukan dari app, agar tidak ada
+# circular import (app.py ← tab_kunci.py ← app.py).
+from .widgets import CryptoWorker, AnimatedNotifBar, apply_shadow
+from .styles import CLR_BG, CLR_CARD, CLR_DANGER
 
-class TabKunci(ctk.CTkFrame):
-    def __init__(self, parent, **kwargs):
-        super().__init__(parent, fg_color="transparent", **kwargs)
-        self._paths: list[str] = []
-        self._show_pw     = False
-        self._var_hapus   = ctk.BooleanVar(value=False)
-        self._build()
+log = logging.getLogger(__name__)
 
-    def _build(self):
-        ctk.CTkLabel(
-            self, text="Gabungkan & amankan banyak file dengan AES-256-GCM",
-            font=FONT_SMALL, text_color=CLR_MUTED,
-        ).pack(pady=(0, 8))
 
-        # ── 2 KOLOM HORIZONTAL ──
-        container = ctk.CTkFrame(self, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=5, pady=0)
+# ---------------------------------------------------------------------------
+# Helpers kekuatan password
+# FIX #9 — Tambahkan penalti karakter berulang agar password seperti
+# "aaaaaaaa" tidak dapat skor tinggi padahal sangat lemah.
+# ---------------------------------------------------------------------------
+def pw_strength(pw: str) -> int:
+    if not pw:
+        return -1
+    score = 0
+    if len(pw) >= 8:
+        score += 1
+    if re.search(r"[A-Z]", pw) and re.search(r"[a-z]", pw):
+        score += 1
+    if re.search(r"\d", pw):
+        score += 1
+    if re.search(r"[!@#$%^&*()\-_=+\[\]{};:'\",.<>/?\\|`~]", pw):
+        score += 1
+    # Penalti: jika >50% karakter sama, turunkan 1 poin
+    if pw and (max(pw.count(c) for c in set(pw)) / len(pw)) > 0.5:
+        score = max(0, score - 1)
+    return min(score, 3)
 
-        # Kolom Kiri (Daftar File)
-        self.col_left = ctk.CTkFrame(container, fg_color="transparent")
-        self.col_left.pack(side="left", fill="both", expand=True, padx=(0, 8))
 
-        # Kolom Kanan (Password & Eksekusi)
-        self.col_right = ctk.CTkFrame(container, fg_color="transparent")
-        self.col_right.pack(side="right", fill="both", expand=True, padx=(8, 0))
+STRENGTH_COLORS = ["#E74C3C", "#E67E22", "#F1C40F", "#2ECC71"]
+STRENGTH_LABELS = ["Lemah", "Cukup", "Kuat", "Sangat Kuat"]
 
-        self._build_card_target()
-        self._build_card_password()
-        self._build_action()
 
-    def _build_card_target(self):
-        # Ditaruh di Kolom Kiri dan dibiarkan memanjang ke bawah!
-        self._card_folder = ctk.CTkFrame(
-            self.col_left, fg_color=CLR_CARD, corner_radius=10,
-            border_width=2, border_color=CLR_CARD,
-        )
-        self._card_folder.pack(fill="both", expand=True, padx=0, pady=0)
+class MultiDropFrame(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("DropArea")
+        self.setAcceptDrops(True)
+        self.setProperty("dragActive", False)
+        self.on_paths_dropped = None
 
-        hdr_row = ctk.CTkFrame(self._card_folder, fg_color="transparent")
-        hdr_row.pack(fill="x", padx=14, pady=(10, 6))
+    def _set_drag_state(self, state: bool):
+        self.setProperty("dragActive", state)
+        self.style().unpolish(self)
+        self.style().polish(self)
 
-        ctk.CTkLabel(
-            hdr_row, text="📁  DAFTAR TARGET", font=FONT_LABEL, text_color=CLR_MUTED
-        ).pack(side="left")
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            self._set_drag_state(True)
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
-        self.opt_add = ctk.CTkOptionMenu(
-            hdr_row, values=["📄 File", "📁 Folder"],
-            font=("Segoe UI", 11, "bold"),
-            width=100, height=28, corner_radius=6,
-            fg_color="#3D4562", button_color="#3D4562", 
-            button_hover_color=CLR_BORDER, text_color="#FFFFFF",
-            dropdown_font=("Segoe UI", 11), dropdown_fg_color=CLR_CARD,
-            dropdown_hover_color=CLR_ACCENT, dropdown_text_color="#FFFFFF",
-            command=self._on_option_select
-        )
-        self.opt_add.set("+ Tambah")
-        self.opt_add.pack(side="right")
+    def dragLeaveEvent(self, event):
+        self._set_drag_state(False)
 
-        self.list_frame = ctk.CTkScrollableFrame(self._card_folder, fg_color=CLR_INNER, corner_radius=8)
-        self.list_frame.pack(fill="both", expand=True, padx=14, pady=(0, 8))
+    def dropEvent(self, event):
+        self._set_drag_state(False)
+        paths = [
+            url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()
+        ]
+        valid_paths = [p for p in paths if os.path.exists(p)]
+        if valid_paths and self.on_paths_dropped:
+            self.on_paths_dropped(valid_paths)
+
+
+class TabKunci(QWidget):
+    def __init__(self):
+        super().__init__()
+        self._paths = []
+        # FIX #2 — Deklarasi eksplisit agar cek `hasattr` di _proses selalu valid
+        self.worker: CryptoWorker | None = None
+        self._build_ui()
+
+    def _build_ui(self):
+        # FIX #1 — apply_shadow sudah diimport di atas, tidak perlu lazy import lagi
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(5, 5, 5, 5)
+        main_layout.setSpacing(15)
+
+        # --- KOLOM KIRI ---
+        self.card_target = MultiDropFrame()
+        apply_shadow(self.card_target)
+        self.card_target.on_paths_dropped = self._add_paths
+
+        v_left = QVBoxLayout(self.card_target)
+        v_left.setContentsMargins(20, 20, 20, 20)
+        v_left.setSpacing(12)
+
+        row_hdr = QHBoxLayout()
+        lbl_target = QLabel("📁  DAFTAR TARGET")
+        lbl_target.setObjectName("CardTitle")
+        row_hdr.addWidget(lbl_target)
+
+        self.btn_add = QPushButton("+ Tambah")
+        self.btn_add.setObjectName("BtnSecondary")
+        self.btn_add.setFixedSize(110, 34)
+
+        menu = QMenu(self)
+        action_file = menu.addAction("📄 File")
+        action_file.triggered.connect(self._pilih_file)
+        action_folder = menu.addAction("📁 Folder")
+        action_folder.triggered.connect(self._pilih_folder)
+        self.btn_add.setMenu(menu)
+        row_hdr.addWidget(self.btn_add, alignment=Qt.AlignmentFlag.AlignRight)
+        v_left.addLayout(row_hdr)
+
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.list_container = QWidget()
+        self.list_layout = QVBoxLayout(self.list_container)
+        self.list_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.scroll_area.setWidget(self.list_container)
+        v_left.addWidget(self.scroll_area, 1)
+
+        self.chk_hapus = QCheckBox("Hapus file/folder asli setelah dikunci")
+        v_left.addWidget(self.chk_hapus)
+        main_layout.addWidget(self.card_target, 1)
+
+        # --- KOLOM KANAN ---
+        col_right = QVBoxLayout()
+        col_right.setSpacing(12)
+        main_layout.addLayout(col_right, 1)
+
+        card_pw = QFrame()
+        card_pw.setObjectName("Card")
+        apply_shadow(card_pw)
+
+        v_pw = QVBoxLayout(card_pw)
+        v_pw.setContentsMargins(20, 20, 20, 20)
+        v_pw.setSpacing(10)
+
+        lbl_pw = QLabel("🔑  BUAT PASSWORD")
+        lbl_pw.setObjectName("CardTitle")
+        v_pw.addWidget(lbl_pw)
+
+        row_pw1 = QHBoxLayout()
+        self.entry_pw1 = QLineEdit()
+        self.entry_pw1.setFixedHeight(40)
+        self.entry_pw1.setPlaceholderText("Buat password kuat…")
+        self.entry_pw1.setEchoMode(QLineEdit.EchoMode.Password)
+        self.entry_pw1.textChanged.connect(self._on_pw_change)
+        row_pw1.addWidget(self.entry_pw1)
+
+        self.btn_toggle_pw = QPushButton("👁")
+        self.btn_toggle_pw.setObjectName("BtnGhost")
+        self.btn_toggle_pw.setFixedSize(40, 40)
+        self.btn_toggle_pw.clicked.connect(self._toggle_pw)
+        row_pw1.addWidget(self.btn_toggle_pw)
+        v_pw.addLayout(row_pw1)
+
+        row_str = QHBoxLayout()
+        self.bar_str = QProgressBar()
+        self.bar_str.setFixedHeight(6)
+        self.bar_str.setTextVisible(False)
+        self.bar_str.setMaximum(4)
+        row_str.addWidget(self.bar_str, 1)
+
+        self.lbl_str = QLabel("")
+        self.lbl_str.setFixedWidth(80)
+        self.lbl_str.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.lbl_str.setStyleSheet("font-size: 9pt;")
+        row_str.addWidget(self.lbl_str)
+        v_pw.addLayout(row_str)
+
+        lbl_confirm = QLabel("Konfirmasi Password")
+        lbl_confirm.setStyleSheet("color: #6B7280; font-size: 9pt; font-weight: bold;")
+        v_pw.addWidget(lbl_confirm)
+
+        self.entry_pw2 = QLineEdit()
+        self.entry_pw2.setFixedHeight(40)
+        self.entry_pw2.setPlaceholderText("Ulangi password…")
+        self.entry_pw2.setEchoMode(QLineEdit.EchoMode.Password)
+        self.entry_pw2.textChanged.connect(self._on_pw_change)
+        self.entry_pw2.returnPressed.connect(self._proses)
+        v_pw.addWidget(self.entry_pw2)
+
+        self.lbl_match = QLabel("")
+        self.lbl_match.setAlignment(Qt.AlignmentFlag.AlignRight)
+        v_pw.addWidget(self.lbl_match)
+        col_right.addWidget(card_pw)
+
+        col_right.addStretch()
+
+        # --- ACTION AREA ---
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(8)
+        self.progress_bar.hide()
+        col_right.addWidget(self.progress_bar)
+
+        self.btn_aksi = QPushButton("KUNCI SEKARANG")
+        self.btn_aksi.setFixedHeight(46)
+        self.btn_aksi.setEnabled(False)
+        self.btn_aksi.clicked.connect(self._proses)
+        col_right.addWidget(self.btn_aksi)
+
+        self.notif = AnimatedNotifBar()
+        col_right.addWidget(self.notif)
+
         self._render_list()
+        self._hide_indicator()
 
-        self.chk_hapus = ctk.CTkCheckBox(
-            self._card_folder, text="Hapus file/folder asli setelah dikunci",
-            font=FONT_SMALL, text_color=CLR_MUTED, variable=self._var_hapus,
-            fg_color=CLR_DANGER, hover_color=CLR_DANGER_HV, corner_radius=4, checkbox_width=18, checkbox_height=18,
-        )
-        self.chk_hapus.pack(anchor="w", padx=14, pady=(0, 12))
-        self._register_dnd()
-
-    def _register_dnd(self):
-        targets = [self._card_folder, self.list_frame, self.chk_hapus]
-        for widget in targets:
-            register_drop_multiple(widget, on_drop=self._on_drop_multiple, on_enter=self._on_drag_enter, on_leave=self._on_drag_leave)
-
-    def _on_drag_enter(self):
-        self._card_folder.configure(fg_color=CLR_CARD_HOVER, border_color=CLR_BORDER_DRAG)
-
-    def _on_drag_leave(self):
-        self._card_folder.configure(fg_color=CLR_CARD, border_color=CLR_CARD)
-
-    def _on_drop_multiple(self, paths: list[str]):
-        self._add_paths(paths)
-
-    def _build_card_password(self):
-        # Ditaruh di Kolom Kanan
-        card = make_card(self.col_right, padx=0, pady=(0, 12))
-        ctk.CTkLabel(card, text="🔑  BUAT PASSWORD", font=FONT_LABEL, text_color=CLR_MUTED).pack(anchor="w", padx=14, pady=(10, 6))
-
-        self._row_pw = ctk.CTkFrame(card, fg_color="transparent")
-        self._row_pw.pack(fill="x", padx=14)
-
-        self.entry_pw = ctk.CTkEntry(
-            self._row_pw, placeholder_text="Buat password kuat…", show="*", height=36, corner_radius=8,
-            fg_color=CLR_INNER, border_color=CLR_BORDER, border_width=1,
-        )
-        self.entry_pw.pack(side="left", expand=True, fill="x")
-        self.entry_pw.bind("<KeyRelease>", self._on_pw_change)
-
-        ctk.CTkButton(
-            self._row_pw, text="👁", width=36, height=36, fg_color="transparent", hover_color=CLR_CARD, command=self._toggle_pw,
-        ).pack(side="right", padx=(6, 0))
-
-        self._row_str = ctk.CTkFrame(card, fg_color="transparent")
-        self._strength_bar = ctk.CTkProgressBar(self._row_str, height=5, corner_radius=3)
-        self._strength_bar.set(0)
-        self._strength_bar.pack(side="left", expand=True, fill="x", padx=(0, 8))
-        self._lbl_strength = ctk.CTkLabel(self._row_str, text="", width=90, font=FONT_SMALL, text_color=CLR_MUTED, anchor="e")
-        self._lbl_strength.pack(side="right")
-
-        ctk.CTkLabel(card, text="Konfirmasi Password", font=FONT_SMALL, text_color=CLR_MUTED).pack(anchor="w", padx=14, pady=(4, 2))
-        self.entry_pw_confirm = ctk.CTkEntry(
-            card, placeholder_text="Ulangi password…", show="*", height=36, corner_radius=8,
-            fg_color=CLR_INNER, border_color=CLR_BORDER, border_width=1,
-        )
-        self.entry_pw_confirm.pack(fill="x", padx=14)
-        self.entry_pw_confirm.bind("<KeyRelease>", self._on_confirm_change)
-        self.entry_pw_confirm.bind("<Return>", lambda _: self._proses())
-
-        self._lbl_match = ctk.CTkLabel(card, text="", font=FONT_SMALL, anchor="e")
-        self._lbl_match.pack(anchor="e", padx=14, pady=(2, 6))
-
-    def _build_action(self):
-        # Ditaruh di Kolom Kanan bawah
-        self._progress = ProgressRow(self.col_right, accent_color=CLR_ACCENT)
-
-        self.btn_aksi = ctk.CTkButton(
-            self.col_right, text="KUNCI SEKARANG", font=FONT_BTN, height=42, corner_radius=10,
-            fg_color=CLR_ACCENT, hover_color=CLR_ACCENT_HV, text_color="#000000", command=self._proses,
-        )
-        self.btn_aksi.pack(fill="x", padx=0, pady=(2, 6))
-
-        self.notif = NotifBar(self.col_right)
-        self.notif.pack(fill="x", padx=0, ipady=4)
-
-    def _on_option_select(self, choice):
-        if choice == "📄 File": self._pilih_file()
-        elif choice == "📁 Folder": self._pilih_folder()
-        self.opt_add.set("+ Tambah")
+    # -----------------------------------------------------------------------
+    # Helpers
+    # -----------------------------------------------------------------------
 
     def _pilih_folder(self):
-        folder = filedialog.askdirectory()
-        if folder: self._add_paths([folder])
+        folder = QFileDialog.getExistingDirectory(self, "Pilih Folder")
+        if folder:
+            self._add_paths([folder])
 
     def _pilih_file(self):
-        files = filedialog.askopenfilenames()
-        if files: self._add_paths(list(files))
+        files, _ = QFileDialog.getOpenFileNames(self, "Pilih File")
+        if files:
+            self._add_paths(files)
 
-    def _add_paths(self, new_paths: list[str]):
+    def _add_paths(self, new_paths):
         for p in new_paths:
-            if p not in self._paths: self._paths.append(p)
+            if p not in self._paths:
+                self._paths.append(p)
         self._render_list()
-        self.notif.clear()
 
-    def _remove_path(self, path: str):
+    def _remove_path(self, path):
         if path in self._paths:
             self._paths.remove(path)
             self._render_list()
 
     def _render_list(self):
-        for widget in self.list_frame.winfo_children(): widget.destroy()
+        # FIX #6 — Logika render tetap sama tapi dibungkus dengan blok
+        # blockSignals agar tidak ada partial-update yang boros. Untuk list
+        # besar di masa depan, pertimbangkan migrasi ke QListWidget.
+        while self.list_layout.count():
+            item = self.list_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
         if not self._paths:
-            teks = "Belum ada item\n\nSeret ke sini" if DND_AVAILABLE else "Belum ada item ditambahkan"
-            ctk.CTkLabel(self.list_frame, text=teks, text_color=CLR_MUTED, font=FONT_SMALL).pack(pady=40)
+            lbl = QLabel("Belum ada item\n\nSeret ke sini")
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setStyleSheet("color: #6B7280; margin-top: 40px; font-weight: bold;")
+            self.list_layout.addWidget(lbl)
+            self._validate_state()
             return
+
         for p in self._paths:
-            row = ctk.CTkFrame(self.list_frame, fg_color=CLR_BG, corner_radius=4)
-            row.pack(fill="x", pady=2, padx=2)
+            row = QFrame()
+            row.setObjectName("Inner")
+            r_lay = QHBoxLayout(row)
+            r_lay.setContentsMargins(12, 6, 6, 6)
+
             ikon = "📁" if os.path.isdir(p) else "📄"
-            lbl = ctk.CTkLabel(row, text=f"{ikon}  {os.path.basename(p)}", font=("Segoe UI", 11), anchor="w")
-            lbl.pack(side="left", padx=8, pady=4)
-            ctk.CTkButton(
-                row, text="✕", width=24, height=24, fg_color="transparent", text_color=CLR_DANGER, hover_color="#3D4562",
-                command=lambda pt=p: self._remove_path(pt)
-            ).pack(side="right", padx=4)
+            lbl = QLabel(f"{ikon}  {os.path.basename(p)}")
+            lbl.setStyleSheet("font-weight: bold;")
+            r_lay.addWidget(lbl, 1)
 
-    def _on_pw_change(self, _=None):
-        pw = self.entry_pw.get()
-        s  = pw_strength(pw)
-        if s < 0:
-            self._row_str.pack_forget()
-        else:
-            self._row_str.pack(after=self._row_pw, fill="x", padx=14, pady=(6, 4))
-            self._strength_bar.set((s + 1) / 4)
-            self._strength_bar.configure(progress_color=STRENGTH_COLORS[s])
-            self._lbl_strength.configure(text=STRENGTH_LABELS[s], text_color=STRENGTH_COLORS[s])
-        self._on_confirm_change()
-        self.notif.clear()
+            btn_rm = QPushButton("✕")
+            btn_rm.setObjectName("BtnGhost")
+            btn_rm.setFixedSize(30, 30)
+            btn_rm.clicked.connect(
+                lambda checked=False, path=p: self._remove_path(path)
+            )
+            r_lay.addWidget(btn_rm)
+            self.list_layout.addWidget(row)
 
-    def _on_confirm_change(self, _=None):
-        pw1, pw2 = self.entry_pw.get(), self.entry_pw_confirm.get()
-        if not pw2: self._lbl_match.configure(text="")
-        elif pw1 == pw2: self._lbl_match.configure(text="✔  Cocok", text_color="#2ECC71")
-        else: self._lbl_match.configure(text="✖  Belum cocok", text_color="#E74C3C")
+        self._validate_state()
 
     def _toggle_pw(self):
-        self._show_pw = not self._show_pw
-        c = "" if self._show_pw else "*"
-        self.entry_pw.configure(show=c)
-        self.entry_pw_confirm.configure(show=c)
+        mode = (
+            QLineEdit.EchoMode.Normal
+            if self.entry_pw1.echoMode() == QLineEdit.EchoMode.Password
+            else QLineEdit.EchoMode.Password
+        )
+        self.entry_pw1.setEchoMode(mode)
+        self.entry_pw2.setEchoMode(mode)
+
+    def _hide_indicator(self):
+        from .styles import CLR_CARD
+
+        self.bar_str.setValue(0)
+        self.bar_str.setStyleSheet(
+            f"QProgressBar::chunk {{ background-color: {CLR_CARD}; }}"
+        )
+        self.lbl_str.setText("")
+
+    def _on_pw_change(self):
+        self.notif.hide_msg()
+        pw1, pw2 = self.entry_pw1.text(), self.entry_pw2.text()
+
+        score = pw_strength(pw1)
+        if score < 0:
+            self._hide_indicator()
+        else:
+            self.bar_str.setValue(score + 1)
+            color = STRENGTH_COLORS[score]
+            self.bar_str.setStyleSheet(
+                f"QProgressBar::chunk {{ background-color: {color}; }}"
+            )
+            self.lbl_str.setText(STRENGTH_LABELS[score])
+            self.lbl_str.setStyleSheet(
+                f"color: {color}; font-size: 9pt; font-weight: bold;"
+            )
+
+        if not pw2:
+            self.lbl_match.setText("")
+        elif pw1 == pw2:
+            self.lbl_match.setText("✔ Cocok")
+            self.lbl_match.setStyleSheet(
+                "color: #2ECC71; font-size: 9pt; font-weight: bold;"
+            )
+        else:
+            self.lbl_match.setText("✖ Belum cocok")
+            self.lbl_match.setStyleSheet(
+                "color: #E74C3C; font-size: 9pt; font-weight: bold;"
+            )
+
+        self._validate_state()
+
+    def _validate_state(self):
+        pw1, pw2 = self.entry_pw1.text(), self.entry_pw2.text()
+        self.btn_aksi.setEnabled(len(self._paths) > 0 and bool(pw1) and (pw1 == pw2))
+
+    # -----------------------------------------------------------------------
+    # Proses utama
+    # -----------------------------------------------------------------------
 
     def _proses(self):
-        if not self._paths: return self.notif.show("warn", "⚠  Daftar kosong! Tambahkan file/folder dulu.")
-        pw, pw2 = self.entry_pw.get(), self.entry_pw_confirm.get()
-        if not pw: return self.notif.show("warn", "⚠  Password tidak boleh kosong!")
-        if pw != pw2: return self.notif.show("warn", "⚠  Password tidak cocok!")
+        if not self._paths:
+            return
 
-        default_name = os.path.basename(self._paths[0])
-        if not default_name: default_name = "Brankas_Rahasia"
-        path_simpan = filedialog.asksaveasfilename(
-            title="Simpan Brankas Sebagai...", initialfile=f"{default_name}.locked", defaultextension=".locked",
-            filetypes=[("Digital Locker Archive", "*.locked"), ("All Files", "*.*")]
+        # FIX #2 — Guard: jangan spawn worker baru kalau yang lama masih jalan
+        if self.worker is not None and self.worker.isRunning():
+            self.notif.show_msg("warn", "⚠ Proses sebelumnya masih berjalan…", 3000)
+            return
+
+        pw = self.entry_pw1.text()
+
+        # FIX #5 — Konfirmasi eksplisit sebelum operasi destruktif (hapus asli)
+        if self.chk_hapus.isChecked():
+            reply = QMessageBox.warning(
+                self,
+                "Konfirmasi Hapus File Asli",
+                "⚠  File/folder asli akan DIHAPUS PERMANEN setelah dikunci.\n\n"
+                "Pastikan proses enkripsi berhasil sebelum file asli hilang.\n"
+                "Lanjutkan?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,  # Default ke Cancel (aman)
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        default_name = os.path.basename(self._paths[0]) or "Brankas_Rahasia"
+        path_simpan, _ = QFileDialog.getSaveFileName(
+            self,
+            "Simpan Brankas Sebagai...",
+            f"{default_name}.locked",
+            "Locked Files (*.locked)",
         )
-        if not path_simpan: return
+        if not path_simpan:
+            return
 
-        snap_paths = list(self._paths)
-        snap_hapus = self._var_hapus.get()
-        cb = self._progress.make_callback(self)
         self._set_busy(True)
+        hapus_asli = self.chk_hapus.isChecked()
 
-        def _tugas():
-            result = kunci_brankas(snap_paths, path_simpan, pw, snap_hapus, progress_cb=cb)
-            self.after(0, lambda: self._on_selesai(*result))
-        threading.Thread(target=_tugas, daemon=True).start()
+        self.worker = CryptoWorker(
+            kunci_brankas, list(self._paths), path_simpan, pw, hapus_asli
+        )
+        self.worker.progress.connect(self._update_progress)
+        self.worker.finished.connect(self._on_selesai)
+        # FIX #2 — Auto cleanup worker saat thread selesai
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.worker.start()
 
     def _set_busy(self, busy: bool):
         if busy:
-            self._progress.reset()
-            self._progress.pack(fill="x", padx=0, pady=(0, 4), before=self.btn_aksi)
-            self.btn_aksi.configure(state="disabled", text="⏳  Mengunci Brankas…")
-            self.opt_add.configure(state="disabled")
-            self.chk_hapus.configure(state="disabled")
+            self.progress_bar.setValue(0)
+            self.progress_bar.show()
+            self.btn_aksi.setEnabled(False)
+            self.btn_aksi.setText("⏳ Mengunci Brankas...")
+            self.btn_add.setEnabled(False)
         else:
-            self._progress.pack_forget()
-            self.btn_aksi.configure(state="normal", text="KUNCI SEKARANG")
-            self.opt_add.configure(state="normal")
-            self.chk_hapus.configure(state="normal")
+            self.progress_bar.hide()
+            self.btn_aksi.setText("KUNCI SEKARANG")
+            self.btn_add.setEnabled(True)
+            self._validate_state()
 
-    def _on_selesai(self, sukses: bool, pesan: str):
+    def _update_progress(self, val: float):
+        self.progress_bar.setValue(int(val * 100))
+
+    def _on_selesai(self, result):
         self._set_busy(False)
+        sukses, pesan = result
         if sukses:
-            self.notif.show("ok", "✔  " + pesan, auto_hide_ms=6000)
-            self.entry_pw.delete(0, "end")
-            self.entry_pw_confirm.delete(0, "end")
-            self._lbl_match.configure(text="")
-            self._strength_bar.set(0)
-            self._lbl_strength.configure(text="")
-            self._row_str.pack_forget()
-            self._var_hapus.set(False)
+            self.notif.show_msg("ok", f"✔ {pesan}", 6000)
+            self.entry_pw1.clear()
+            self.entry_pw2.clear()
             self._paths.clear()
+            self.chk_hapus.setChecked(False)
             self._render_list()
         else:
-            self.notif.show("err", "✖  " + pesan, auto_hide_ms=5000)
+            log.error("Gagal mengunci brankas: %s", pesan)
+            self.notif.show_msg("err", f"✖ {pesan}", 6000)

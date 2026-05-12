@@ -2,12 +2,13 @@
 core/crypto.py
 Primitif kriptografi: key derivation dan helper enkripsi/dekripsi AES-256-GCM.
 """
+
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
 
-CHUNK_SIZE = 16 * 1024 * 1024   # 16 MB — sweet spot performa vs memory
+CHUNK_SIZE = 16 * 1024 * 1024  # 16 MB — sweet spot performa vs memory
 
 
 def derive_key(password: str, salt: bytes) -> bytes:

@@ -18,6 +18,7 @@ Jalankan:
 CATATAN: Test ini sengaja dibiarkan EXPOSE bug nyata di kode.
 Kalau ada yang FAIL, itu artinya ada yang perlu difix di vault.py.
 """
+
 import os
 import sys
 import stat
@@ -29,10 +30,10 @@ import pytest
 from core.vault import kunci_brankas, buka_brankas, secure_delete
 from tests.conftest import folder_checksum
 
-
 PASSWORD = "P@ssw0rd!Kuat"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _tmp():
     """Buat temp dir bersih, return path-nya."""
@@ -59,6 +60,7 @@ def _cleanup(path: str):
 # 1. THE INCEPTION TEST — Folder Sangat Dalam
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestInceptionTest:
     """
     Windows MAX_PATH = 260 karakter.
@@ -80,7 +82,7 @@ class TestInceptionTest:
         try:
             # Bangun struktur folder: tmp/a/a/a/.../a (40 level)
             folder_root = os.path.join(tmp, "inception_40")
-            current     = folder_root
+            current = folder_root
             for _ in range(40):
                 current = os.path.join(current, "a")
             os.makedirs(current)
@@ -97,17 +99,20 @@ class TestInceptionTest:
             shutil.rmtree(folder_root)
 
             locked_files = [
-                os.path.join(tmp, f) for f in os.listdir(tmp)
-                if f.endswith(".locked")
+                os.path.join(tmp, f) for f in os.listdir(tmp) if f.endswith(".locked")
             ]
             assert locked_files, "Tidak ada file .locked yang terbentuk"
 
             status, nama = buka_brankas(locked_files[0], PASSWORD)
-            assert status == "SUCCESS", f"Gagal buka folder 40 level: status={status}, msg={nama}"
+            assert (
+                status == "SUCCESS"
+            ), f"Gagal buka folder 40 level: status={status}, msg={nama}"
 
-            restored       = os.path.join(tmp, nama)
-            checksum_buka  = folder_checksum(restored)
-            assert checksum_asli == checksum_buka, "Isi folder tidak sama setelah 40 level!"
+            restored = os.path.join(tmp, nama)
+            checksum_buka = folder_checksum(restored)
+            assert (
+                checksum_asli == checksum_buka
+            ), "Isi folder tidak sama setelah 40 level!"
 
         finally:
             _cleanup(tmp)
@@ -122,12 +127,12 @@ class TestInceptionTest:
         try:
             # Hitung sisa ruang untuk nama folder
             # Format: tmp_path \ folder_name \ sub \ file.txt
-            sisa        = 240 - len(tmp) - 20  # 20 untuk "\sub\file.txt"
-            sisa        = max(10, min(sisa, 80))  # clamp supaya tidak negatif
+            sisa = 240 - len(tmp) - 20  # 20 untuk "\sub\file.txt"
+            sisa = max(10, min(sisa, 80))  # clamp supaya tidak negatif
             nama_panjang = "F" * sisa
 
             folder_root = os.path.join(tmp, nama_panjang)
-            sub         = os.path.join(folder_root, "sub")
+            sub = os.path.join(folder_root, "sub")
             os.makedirs(sub)
             with open(os.path.join(sub, "file.txt"), "w") as f:
                 f.write("test mendekati MAX_PATH")
@@ -145,8 +150,7 @@ class TestInceptionTest:
             _cleanup(tmp)
 
     @pytest.mark.skipif(
-        platform.system() != "Windows",
-        reason="MAX_PATH hanya relevan di Windows"
+        platform.system() != "Windows", reason="MAX_PATH hanya relevan di Windows"
     )
     def test_folder_melampaui_max_path_windows(self):
         """
@@ -166,7 +170,7 @@ class TestInceptionTest:
             # Buat path yang pasti > 260 char
             # Nama folder 200 karakter + path tmp yang biasanya 40-60 char = > 260
             nama_sangat_panjang = "X" * 200
-            folder_root         = os.path.join(tmp, nama_sangat_panjang)
+            folder_root = os.path.join(tmp, nama_sangat_panjang)
 
             try:
                 sub = os.path.join(folder_root, "sub")
@@ -186,7 +190,7 @@ class TestInceptionTest:
                 # Tidak perlu assert sukses — boleh gagal
                 # Yang penting: return (bool, str), bukan crash
                 assert isinstance(sukses, bool), "Return type harus bool"
-                assert isinstance(pesan, str),   "Pesan harus string"
+                assert isinstance(pesan, str), "Pesan harus string"
             except Exception as e:
                 pytest.fail(
                     f"kunci_brankas() CRASH dengan unhandled exception: {type(e).__name__}: {e}\n"
@@ -200,6 +204,7 @@ class TestInceptionTest:
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. THE IOPS KILLER — Ribuan File Kecil
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestIOPSKiller:
     """
@@ -216,7 +221,7 @@ class TestIOPSKiller:
         os.makedirs(folder)
         for i in range(1_000):
             with open(os.path.join(folder, f"file_{i:04d}.txt"), "wb") as f:
-                f.write(os.urandom(1024))   # 1 KB per file
+                f.write(os.urandom(1024))  # 1 KB per file
         yield folder, tmp
         _cleanup(tmp)
 
@@ -250,7 +255,8 @@ class TestIOPSKiller:
         shutil.rmtree(folder)
 
         locked_file = [
-            os.path.join(tmp, f) for f in os.listdir(tmp)
+            os.path.join(tmp, f)
+            for f in os.listdir(tmp)
             if f.endswith(".locked") and f not in locked_before
         ]
         assert locked_file
@@ -259,9 +265,9 @@ class TestIOPSKiller:
         assert status == "SUCCESS", f"Gagal buka 1.000 file: {nama}"
 
         restored = os.path.join(tmp, nama)
-        assert folder_checksum(restored) == checksum_asli, (
-            "Ada file yang corrupt atau hilang setelah buka 1.000 file!"
-        )
+        assert (
+            folder_checksum(restored) == checksum_asli
+        ), "Ada file yang corrupt atau hilang setelah buka 1.000 file!"
 
     def test_1000_file_jumlah_file_terjaga(self, folder_banyak_file):
         """Jumlah file setelah dekripsi harus sama persis — tidak ada yang hilang."""
@@ -274,17 +280,18 @@ class TestIOPSKiller:
         shutil.rmtree(folder)
 
         locked_file = [
-            os.path.join(tmp, f) for f in os.listdir(tmp)
+            os.path.join(tmp, f)
+            for f in os.listdir(tmp)
             if f.endswith(".locked") and f not in locked_before
         ]
         buka_brankas(locked_file[0], PASSWORD)
 
-        restored     = os.path.join(tmp, os.path.basename(folder))
-        jumlah_buka  = sum(len(files) for _, _, files in os.walk(restored))
+        restored = os.path.join(tmp, os.path.basename(folder))
+        jumlah_buka = sum(len(files) for _, _, files in os.walk(restored))
 
-        assert jumlah_asli == jumlah_buka, (
-            f"Jumlah file berbeda! Asli: {jumlah_asli}, Setelah buka: {jumlah_buka}"
-        )
+        assert (
+            jumlah_asli == jumlah_buka
+        ), f"Jumlah file berbeda! Asli: {jumlah_asli}, Setelah buka: {jumlah_buka}"
 
     def test_5000_file_kunci_tidak_crash(self, folder_sangat_banyak_file):
         """
@@ -307,11 +314,10 @@ class TestIOPSKiller:
         (indikasi throttle terlalu ketat yang bikin progress bar visual freeze).
         Minimal harus dipanggil > 3 kali untuk file 1MB.
         """
-        folder, tmp  = folder_banyak_file
+        folder, tmp = folder_banyak_file
         progress_log = []
 
-        kunci_brankas(folder, PASSWORD,
-                      progress_cb=lambda v: progress_log.append(v))
+        kunci_brankas(folder, PASSWORD, progress_cb=lambda v: progress_log.append(v))
 
         assert len(progress_log) > 3, (
             f"Progress hanya dipanggil {len(progress_log)} kali untuk 1.000 file — "
@@ -322,6 +328,7 @@ class TestIOPSKiller:
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. THE STUBBORN FILE — File Read-Only / Terkunci
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestStubbornFile:
     """
@@ -335,7 +342,7 @@ class TestStubbornFile:
         """
         Folder dengan campuran file normal dan read-only.
         """
-        tmp    = _tmp()
+        tmp = _tmp()
         folder = os.path.join(tmp, "stubborn_folder")
         os.makedirs(folder)
 
@@ -367,25 +374,26 @@ class TestStubbornFile:
         """
         folder, tmp = folder_dengan_readonly
         sukses, pesan = kunci_brankas(folder, PASSWORD)
-        assert sukses, (
-            f"kunci_brankas() gagal pada folder dengan file read-only: {pesan}"
-        )
+        assert (
+            sukses
+        ), f"kunci_brankas() gagal pada folder dengan file read-only: {pesan}"
 
     def test_kunci_readonly_isi_terjaga(self, folder_dengan_readonly):
         """
         Isi file read-only harus ter-enkripsi dan bisa dikembalikan dengan benar.
         """
-        folder, tmp   = folder_dengan_readonly
+        folder, tmp = folder_dengan_readonly
         checksum_asli = folder_checksum(folder)
 
         locked_before = set(os.listdir(tmp))
-        sukses, _     = kunci_brankas(folder, PASSWORD)
+        sukses, _ = kunci_brankas(folder, PASSWORD)
         assert sukses
 
         _cleanup(folder)
 
         locked_file = [
-            os.path.join(tmp, f) for f in os.listdir(tmp)
+            os.path.join(tmp, f)
+            for f in os.listdir(tmp)
             if f.endswith(".locked") and f not in locked_before
         ]
         assert locked_file
@@ -393,14 +401,14 @@ class TestStubbornFile:
         status, nama = buka_brankas(locked_file[0], PASSWORD)
         assert status == "SUCCESS"
 
-        restored      = os.path.join(tmp, nama)
+        restored = os.path.join(tmp, nama)
         checksum_buka = folder_checksum(restored)
 
         # Bandingkan isi (ukuran + hash) — permission tidak dibandingkan
         # karena tar tidak selalu preserve permission Windows
-        assert checksum_asli == checksum_buka, (
-            "Isi file read-only berubah setelah enkripsi-dekripsi!"
-        )
+        assert (
+            checksum_asli == checksum_buka
+        ), "Isi file read-only berubah setelah enkripsi-dekripsi!"
 
     def test_secure_delete_readonly_tidak_crash(self, folder_dengan_readonly):
         """
@@ -416,7 +424,9 @@ class TestStubbornFile:
                 f"secure_delete() CRASH pada file read-only: {type(e).__name__}: {e}"
             )
 
-    def test_secure_delete_hapus_asli_readonly_tidak_crash(self, folder_dengan_readonly):
+    def test_secure_delete_hapus_asli_readonly_tidak_crash(
+        self, folder_dengan_readonly
+    ):
         """
         hapus_asli=True dengan file read-only di dalamnya tidak boleh crash.
         Program boleh meninggalkan file read-only yang tidak bisa dihapus,
@@ -435,7 +445,7 @@ class TestStubbornFile:
 
     @pytest.mark.skipif(
         platform.system() != "Windows",
-        reason="File locking dengan sharing violation spesifik Windows"
+        reason="File locking dengan sharing violation spesifik Windows",
     )
     def test_kunci_file_yang_sedang_dibuka_windows(self):
         """
@@ -444,7 +454,7 @@ class TestStubbornFile:
         """
         import msvcrt
 
-        tmp    = _tmp()
+        tmp = _tmp()
         folder = os.path.join(tmp, "locked_folder")
         os.makedirs(folder)
 

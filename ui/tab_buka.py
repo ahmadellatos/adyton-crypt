@@ -1,202 +1,306 @@
 """
 ui/tab_buka.py
-Frame untuk tab "Buka Brankas".
-Disamakan dengan layout 2 Kolom Horizontal.
+Tab "Buka Brankas" dengan proporsi mewah ala CustomTkinter.
 """
-import threading
-from tkinter import filedialog
-import customtkinter as ctk
+
+import logging
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QLineEdit,
+    QFileDialog,
+    QFrame,
+    QProgressBar,
+)
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFontMetrics
 
 from core.vault import buka_brankas
-from .dnd import DND_AVAILABLE, register_drop_file
-from .theme import (
-    FONT_LABEL, FONT_SMALL, FONT_BTN,
-    CLR_ACCENT, CLR_ACCENT_HV, CLR_DANGER, CLR_DANGER_HV,
-    CLR_INNER, CLR_BORDER, CLR_MUTED, CLR_CARD,
-)
-from .widgets import make_card, NotifBar, ProgressRow
 
-CLR_CARD_HOVER  = "#252B42"
-CLR_BORDER_DRAG = CLR_ACCENT
+# FIX #1 — Import apply_shadow dari widgets, bukan dari app, agar tidak ada
+# circular import (app.py ← tab_buka.py ← app.py).
+from .widgets import CryptoWorker, AnimatedNotifBar, apply_shadow
+from .styles import CLR_ACCENT
 
-class TabBuka(ctk.CTkFrame):
-    def __init__(self, parent, **kwargs):
-        super().__init__(parent, fg_color="transparent", **kwargs)
-        self._path_file: str | None = None
-        self._show_pw               = False
-        self._konfirmasi_timpa      = False
-        self._build()
+log = logging.getLogger(__name__)
 
-    def _build(self):
-        ctk.CTkLabel(
-            self, text="Masukkan file .locked dan password untuk membuka",
-            font=FONT_SMALL, text_color=CLR_MUTED,
-        ).pack(pady=(0, 8))
 
-        # ── 2 KOLOM HORIZONTAL ──
-        container = ctk.CTkFrame(self, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=5, pady=0)
+class DropTargetFrame(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("DropArea")
+        self.setAcceptDrops(True)
+        self.setProperty("dragActive", False)
+        self.on_file_dropped = None
 
-        # Kolom Kiri
-        self.col_left = ctk.CTkFrame(container, fg_color="transparent")
-        self.col_left.pack(side="left", fill="both", expand=True, padx=(0, 8))
+    def _set_drag_state(self, state: bool):
+        self.setProperty("dragActive", state)
+        self.style().unpolish(self)
+        self.style().polish(self)
 
-        # Kolom Kanan
-        self.col_right = ctk.CTkFrame(container, fg_color="transparent")
-        self.col_right.pack(side="right", fill="both", expand=True, padx=(8, 0))
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.toLocalFile().lower().endswith(".locked"):
+                    self._set_drag_state(True)
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
 
-        self._build_card_file()
-        self._build_card_password()
-        self._build_action()
+    def dragLeaveEvent(self, event):
+        self._set_drag_state(False)
 
-    def _build_card_file(self):
-        # Membentang sampai bawah di kolom kiri
-        self._card_file = ctk.CTkFrame(
-            self.col_left, fg_color=CLR_CARD, corner_radius=10,
-            border_width=2, border_color=CLR_CARD,
-        )
-        self._card_file.pack(fill="both", expand=True, padx=0, pady=0)
+    def dropEvent(self, event):
+        self._set_drag_state(False)
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if path.lower().endswith(".locked"):
+                if self.on_file_dropped:
+                    self.on_file_dropped(path)
+                break
 
-        ctk.CTkLabel(
-            self._card_file, text="📄  FILE BRANKAS (.locked)", font=FONT_LABEL, text_color=CLR_MUTED
-        ).pack(anchor="w", padx=14, pady=(10, 6))
 
-        row = ctk.CTkFrame(self._card_file, fg_color="transparent")
-        row.pack(fill="x", padx=14, pady=(0, 10))
+class TabBuka(QWidget):
+    def __init__(self):
+        super().__init__()
+        self._path_file = None
+        self._konfirmasi_timpa = False
+        # FIX #2 — Deklarasi eksplisit agar cek `is not None` selalu valid
+        self.worker: CryptoWorker | None = None
+        self._build_ui()
 
-        self.btn_browse = ctk.CTkButton(
-            row, text="Browse  .locked", font=FONT_BTN, height=36, corner_radius=8,
-            fg_color=CLR_ACCENT, hover_color=CLR_ACCENT_HV, text_color="#000000", command=self._pilih_file,
-        )
-        self.btn_browse.pack(side="left", expand=True, fill="x", padx=(0, 6))
+    def _build_ui(self):
+        # FIX #1 — apply_shadow sudah diimport di atas, tidak perlu lazy import lagi
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(5, 5, 5, 5)
+        main_layout.setSpacing(15)
 
-        self.btn_clear = ctk.CTkButton(
-            row, text="✖", width=36, height=36, fg_color=CLR_BORDER, hover_color="#3D4562", font=("Segoe UI", 11), command=self._clear_file,
-        )
+        lbl_info = QLabel("Masukkan file .locked dan password untuk membuka")
+        lbl_info.setStyleSheet("color: #6B7280; font-size: 10pt; font-weight: bold;")
+        main_layout.addWidget(lbl_info)
 
-        # Area Drag and Drop Raksasa!
-        self.lbl_path = ctk.CTkLabel(
-            self._card_file,
-            text="File belum dipilih" + ("\n\natau seret file .locked ke sini" if DND_AVAILABLE else ""),
-            font=FONT_SMALL, text_color=CLR_MUTED, wraplength=250, anchor="center",
-            fg_color=CLR_INNER, corner_radius=8
-        )
-        self.lbl_path.pack(fill="both", expand=True, padx=14, pady=(0, 14))
-        self._register_dnd()
+        h_container = QHBoxLayout()
+        h_container.setSpacing(15)
+        main_layout.addLayout(h_container)
 
-    def _register_dnd(self):
-        targets = [self._card_file, self.btn_browse, self.lbl_path]
-        for widget in targets:
-            register_drop_file(widget, on_drop=self._on_drop_file, extension=".locked", on_enter=self._on_drag_enter, on_leave=self._on_drag_leave)
+        # --- KOLOM KIRI ---
+        self.card_file = DropTargetFrame()
+        apply_shadow(self.card_file)
+        self.card_file.on_file_dropped = self._set_file
 
-    def _on_drag_enter(self):
-        self._card_file.configure(fg_color=CLR_CARD_HOVER, border_color=CLR_BORDER_DRAG)
-        if not self._path_file: self.lbl_path.configure(text="📄  Lepaskan file .locked di sini…", text_color=CLR_ACCENT)
+        v_left = QVBoxLayout(self.card_file)
+        v_left.setContentsMargins(20, 20, 20, 20)
+        v_left.setSpacing(15)
 
-    def _on_drag_leave(self):
-        self._card_file.configure(fg_color=CLR_CARD, border_color=CLR_CARD)
-        if not self._path_file: self.lbl_path.configure(text="File belum dipilih\n\natau seret file .locked ke sini", text_color=CLR_MUTED)
+        lbl_title_file = QLabel("📄  FILE BRANKAS (.locked)")
+        lbl_title_file.setObjectName("CardTitle")
+        v_left.addWidget(lbl_title_file)
 
-    def _on_drop_file(self, path: str):
-        self._set_file(path)
+        row_browse = QHBoxLayout()
+        self.btn_browse = QPushButton("Browse .locked")
+        self.btn_browse.setFixedHeight(42)
+        self.btn_browse.clicked.connect(self._pilih_file)
+        row_browse.addWidget(self.btn_browse)
 
-    def _build_card_password(self):
-        card = make_card(self.col_right, padx=0, pady=(0, 12))
-        ctk.CTkLabel(card, text="🔑  MASUKKAN PASSWORD", font=FONT_LABEL, text_color=CLR_MUTED).pack(anchor="w", padx=14, pady=(10, 6))
+        self.btn_clear = QPushButton("✖")
+        self.btn_clear.setObjectName("BtnGhost")
+        self.btn_clear.setFixedSize(42, 42)
+        self.btn_clear.clicked.connect(self._clear_file)
+        self.btn_clear.hide()
+        row_browse.addWidget(self.btn_clear)
+        v_left.addLayout(row_browse)
 
-        row_pw = ctk.CTkFrame(card, fg_color="transparent")
-        row_pw.pack(fill="x", padx=14, pady=(0, 14))
+        self.lbl_path = QLabel("File belum dipilih\n\natau seret file .locked ke sini")
+        self.lbl_path.setObjectName("Inner")
+        self.lbl_path.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_path.setWordWrap(True)
+        self.lbl_path.setStyleSheet("color: #6B7280; font-weight: bold;")
+        v_left.addWidget(self.lbl_path, 1)
+        h_container.addWidget(self.card_file, 1)
 
-        self.entry_pw = ctk.CTkEntry(
-            row_pw, placeholder_text="Ketik password di sini…", show="*", height=36, corner_radius=8,
-            fg_color=CLR_INNER, border_color=CLR_BORDER, border_width=1,
-        )
-        self.entry_pw.pack(side="left", expand=True, fill="x")
-        self.entry_pw.bind("<Return>", lambda _: self._proses())
-        self.entry_pw.bind("<KeyRelease>", lambda _: self.notif.clear())
+        # --- KOLOM KANAN ---
+        col_right = QVBoxLayout()
+        col_right.setSpacing(12)
+        h_container.addLayout(col_right, 1)
 
-        ctk.CTkButton(
-            row_pw, text="👁", width=36, height=36, fg_color="transparent", hover_color=CLR_CARD, command=self._toggle_pw,
-        ).pack(side="right", padx=(6, 0))
+        card_pw = QFrame()
+        card_pw.setObjectName("Card")
+        apply_shadow(card_pw)
 
-    def _build_action(self):
-        self._progress = ProgressRow(self.col_right, accent_color=CLR_ACCENT)
-        self.btn_aksi = ctk.CTkButton(
-            self.col_right, text="BUKA BRANKAS", font=FONT_BTN, height=42, corner_radius=10,
-            fg_color=CLR_ACCENT, hover_color=CLR_ACCENT_HV, text_color="#000000", command=self._proses,
-        )
-        self.btn_aksi.pack(fill="x", padx=0, pady=(2, 6))
-        self.notif = NotifBar(self.col_right)
-        self.notif.pack(fill="x", padx=0, ipady=4)
+        v_pw = QVBoxLayout(card_pw)
+        v_pw.setContentsMargins(20, 20, 20, 20)
+        v_pw.setSpacing(15)
+
+        lbl_title_pw = QLabel("🔑  MASUKKAN PASSWORD")
+        lbl_title_pw.setObjectName("CardTitle")
+        v_pw.addWidget(lbl_title_pw)
+
+        row_pw_input = QHBoxLayout()
+        self.entry_pw = QLineEdit()
+        self.entry_pw.setFixedHeight(42)
+        self.entry_pw.setPlaceholderText("Ketik password di sini…")
+        self.entry_pw.setEchoMode(QLineEdit.EchoMode.Password)
+        self.entry_pw.textChanged.connect(self._validate_state)
+        self.entry_pw.returnPressed.connect(self._proses)
+        row_pw_input.addWidget(self.entry_pw)
+
+        self.btn_toggle_pw = QPushButton("👁")
+        self.btn_toggle_pw.setObjectName("BtnGhost")
+        self.btn_toggle_pw.setFixedSize(42, 42)
+        self.btn_toggle_pw.clicked.connect(self._toggle_pw)
+        row_pw_input.addWidget(self.btn_toggle_pw)
+
+        v_pw.addLayout(row_pw_input)
+        col_right.addWidget(card_pw)
+
+        col_right.addStretch()
+
+        # --- ACTION AREA ---
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(8)
+        self.progress_bar.hide()
+        col_right.addWidget(self.progress_bar)
+
+        self.btn_aksi = QPushButton("BUKA BRANKAS")
+        self.btn_aksi.setFixedHeight(46)
+        self.btn_aksi.setEnabled(False)
+        self.btn_aksi.clicked.connect(self._proses)
+        col_right.addWidget(self.btn_aksi)
+
+        self.notif = AnimatedNotifBar()
+        col_right.addWidget(self.notif)
+
+    # -----------------------------------------------------------------------
+    # Helpers
+    # -----------------------------------------------------------------------
 
     def _toggle_pw(self):
-        self._show_pw = not self._show_pw
-        self.entry_pw.configure(show="" if self._show_pw else "*")
+        mode = (
+            QLineEdit.EchoMode.Normal
+            if self.entry_pw.echoMode() == QLineEdit.EchoMode.Password
+            else QLineEdit.EchoMode.Password
+        )
+        self.entry_pw.setEchoMode(mode)
+
+    def _validate_state(self):
+        self.notif.hide_msg()
+        if not self._konfirmasi_timpa:
+            self.btn_aksi.setEnabled(
+                self._path_file is not None and bool(self.entry_pw.text())
+            )
 
     def _set_file(self, path: str):
         self._path_file = path
-        tampil = path if len(path) < 40 else "…" + path[-37:]
-        self.lbl_path.configure(text=tampil, text_color=CLR_ACCENT)
-        self.btn_clear.pack(side="right", padx=(6, 0))
-        self.notif.clear()
-        self._reset_timpa()
 
-    def _pilih_file(self):
-        f = filedialog.askopenfilename(filetypes=[("Locked Files", "*.locked")])
-        if f: self._set_file(f)
+        # FIX #7 — Gunakan QFontMetrics.elidedText agar truncation responsif
+        # terhadap lebar widget, bukan magic number hardcoded.
+        metrics = QFontMetrics(self.lbl_path.font())
+        available_width = self.lbl_path.width() - 24  # 24px untuk padding
+        if available_width > 0:
+            tampil = metrics.elidedText(
+                path, Qt.TextElideMode.ElideLeft, available_width
+            )
+        else:
+            # Fallback saat widget belum ter-render (width masih 0)
+            tampil = path if len(path) < 50 else "…" + path[-47:]
+
+        self.lbl_path.setText(tampil)
+        self.lbl_path.setToolTip(path)  # Full path tetap bisa dilihat via tooltip
+        self.lbl_path.setStyleSheet(f"color: {CLR_ACCENT}; font-weight: bold;")
+        self.btn_clear.show()
+        self._reset_timpa()
+        self._validate_state()
 
     def _clear_file(self):
         self._path_file = None
-        hint = "File belum dipilih\n\natau seret file .locked ke sini" if DND_AVAILABLE else "File belum dipilih"
-        self.lbl_path.configure(text=hint, text_color=CLR_MUTED)
-        self.btn_clear.pack_forget()
+        self.lbl_path.setText("File belum dipilih\n\natau seret file .locked ke sini")
+        self.lbl_path.setToolTip("")
+        self.lbl_path.setStyleSheet("color: #6B7280; font-weight: bold;")
+        self.btn_clear.hide()
         self._reset_timpa()
+        self._validate_state()
+
+    def _pilih_file(self):
+        f, _ = QFileDialog.getOpenFileName(
+            self, "Pilih File Brankas", "", "Locked Files (*.locked)"
+        )
+        if f:
+            self._set_file(f)
 
     def _reset_timpa(self):
         self._konfirmasi_timpa = False
-        self.btn_aksi.configure(text="BUKA BRANKAS", fg_color=CLR_ACCENT, hover_color=CLR_ACCENT_HV, text_color="#000000")
+        self.btn_aksi.setText("BUKA BRANKAS")
+        self.btn_aksi.setObjectName("")
+        self.btn_aksi.setStyleSheet("")
+
+    # -----------------------------------------------------------------------
+    # Proses utama
+    # -----------------------------------------------------------------------
 
     def _proses(self):
-        force = False
-        if self._konfirmasi_timpa:
-            force = True
+        # FIX #2 — Guard: jangan spawn worker baru kalau yang lama masih jalan
+        if self.worker is not None and self.worker.isRunning():
+            self.notif.show_msg("warn", "⚠ Proses sebelumnya masih berjalan…", 3000)
+            return
+
+        force = self._konfirmasi_timpa
+        if force:
             self._reset_timpa()
-        if not self._path_file: return self.notif.show("warn", "⚠  Pilih file .locked dulu!")
-        pw = self.entry_pw.get()
-        if not pw: return self.notif.show("warn", "⚠  Masukkan password!")
 
-        snap_path = self._path_file
-        cb        = self._progress.make_callback(self)
+        if not self._path_file:
+            return self.notif.show_msg("warn", "⚠ Pilih file .locked dulu!", 4000)
+        pw = self.entry_pw.text()
+        if not pw:
+            return self.notif.show_msg("warn", "⚠ Masukkan password!", 4000)
+
         self._set_busy(True)
-
-        def _tugas():
-            result = buka_brankas(snap_path, pw, force, progress_cb=cb)
-            self.after(0, lambda: self._on_selesai(*result))
-        threading.Thread(target=_tugas, daemon=True).start()
+        self.worker = CryptoWorker(buka_brankas, self._path_file, pw, force)
+        self.worker.progress.connect(self._update_progress)
+        self.worker.finished.connect(self._on_selesai)
+        # FIX #2 — Auto cleanup worker saat thread selesai
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.worker.start()
 
     def _set_busy(self, busy: bool):
         if busy:
-            self._progress.reset()
-            self._progress.pack(fill="x", padx=0, pady=(0, 4), before=self.btn_aksi)
-            self.btn_aksi.configure(state="disabled", text="⏳  Membuka…")
-            self.btn_browse.configure(state="disabled")
+            self.progress_bar.setValue(0)
+            self.progress_bar.show()
+            self.btn_aksi.setEnabled(False)
+            self.btn_aksi.setText("⏳ Membuka...")
+            self.btn_browse.setEnabled(False)
         else:
-            self._progress.pack_forget()
-            self.btn_aksi.configure(state="normal")
-            self.btn_browse.configure(state="normal")
+            self.progress_bar.hide()
+            self.btn_aksi.setText("BUKA BRANKAS")
+            self.btn_browse.setEnabled(True)
+            self._validate_state()
 
-    def _on_selesai(self, status: str, msg: str | None):
+    def _update_progress(self, val: float):
+        self.progress_bar.setValue(int(val * 100))
+
+    def _on_selesai(self, result):
         self._set_busy(False)
+        status, msg = result
+
         if status == "SUCCESS":
-            self.notif.show("ok", f"✔  Folder '{msg}' berhasil dikembalikan!", auto_hide_ms=5000)
-            self.entry_pw.delete(0, "end")
+            self.notif.show_msg(
+                "ok", f"✔ Folder/File '{msg}' berhasil dikembalikan!", 6000
+            )
+            self.entry_pw.clear()
             self._clear_file()
         elif status == "WRONG_PW":
-            self.notif.show("err", "✖  Password salah! Coba lagi.", auto_hide_ms=4000)
-            self.btn_aksi.configure(text="BUKA BRANKAS")
+            self.notif.show_msg("err", "✖ Password salah! Coba lagi.")
         elif status == "OVERWRITE":
             self._konfirmasi_timpa = True
-            self.btn_aksi.configure(text="⚠  KLIK LAGI UNTUK TIMPA", fg_color=CLR_DANGER, hover_color=CLR_DANGER_HV, text_color="#FFFFFF")
-            self.notif.show("warn", f"⚠  Folder '{msg}' sudah ada! Klik tombol lagi untuk menimpa.")
+            self.btn_aksi.setText("⚠ KLIK LAGI UNTUK TIMPA")
+            self.btn_aksi.setObjectName("BtnDanger")
+            self.btn_aksi.setStyleSheet("/* Refreshing QSS state */")
+            self.btn_aksi.setEnabled(True)
+            self.notif.show_msg(
+                "warn", f"⚠ '{msg}' sudah ada! Klik lagi untuk menimpa."
+            )
         else:
-            self.notif.show("err", f"✖  Error: {msg}")
+            log.error("Gagal membuka brankas: %s", msg)
+            self.notif.show_msg("err", f"✖ Error: {msg}", 8000)

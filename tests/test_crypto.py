@@ -5,13 +5,14 @@ Unit test untuk core/crypto.py — primitif kriptografi.
 Jalankan:
     pytest tests/test_crypto.py -v
 """
+
 import os
 import pytest
 
 from core.crypto import derive_key, make_encryptor, make_decryptor, safe_cb, CHUNK_SIZE
 
-
 # ── derive_key ────────────────────────────────────────────────────────────────
+
 
 class TestDeriveKey:
 
@@ -29,7 +30,7 @@ class TestDeriveKey:
 
     def test_different_salt_different_key(self):
         """Salt berbeda harus hasilkan kunci berbeda meskipun password sama."""
-        pw   = "password"
+        pw = "password"
         key1 = derive_key(pw, os.urandom(16))
         key2 = derive_key(pw, os.urandom(16))
         assert key1 != key2
@@ -64,19 +65,20 @@ class TestDeriveKey:
 
 # ── make_encryptor / make_decryptor ───────────────────────────────────────────
 
+
 class TestEncryptorDecryptor:
 
     def test_encrypt_decrypt_roundtrip(self):
         """Data yang dienkripsi harus bisa didekripsi kembali ke data asli."""
-        key   = os.urandom(32)
+        key = os.urandom(32)
         nonce = os.urandom(12)
-        data  = b"Data rahasia yang sangat penting!"
+        data = b"Data rahasia yang sangat penting!"
 
-        enc        = make_encryptor(key, nonce)
+        enc = make_encryptor(key, nonce)
         ciphertext = enc.update(data) + enc.finalize()
-        tag        = enc.tag
+        tag = enc.tag
 
-        dec       = make_decryptor(key, nonce, tag)
+        dec = make_decryptor(key, nonce, tag)
         plaintext = dec.update(ciphertext) + dec.finalize()
 
         assert plaintext == data
@@ -87,12 +89,12 @@ class TestEncryptorDecryptor:
 
         key_benar = os.urandom(32)
         key_salah = os.urandom(32)
-        nonce     = os.urandom(12)
-        data      = b"data sensitif"
+        nonce = os.urandom(12)
+        data = b"data sensitif"
 
-        enc        = make_encryptor(key_benar, nonce)
+        enc = make_encryptor(key_benar, nonce)
         ciphertext = enc.update(data) + enc.finalize()
-        tag        = enc.tag
+        tag = enc.tag
 
         dec = make_decryptor(key_salah, nonce, tag)
         dec.update(ciphertext)
@@ -103,14 +105,14 @@ class TestEncryptorDecryptor:
         """Nonce yang salah harus menghasilkan data yang berbeda / gagal verifikasi."""
         from cryptography.exceptions import InvalidTag
 
-        key         = os.urandom(32)
+        key = os.urandom(32)
         nonce_benar = os.urandom(12)
         nonce_salah = os.urandom(12)
-        data        = b"data sensitif"
+        data = b"data sensitif"
 
-        enc        = make_encryptor(key, nonce_benar)
+        enc = make_encryptor(key, nonce_benar)
         ciphertext = enc.update(data) + enc.finalize()
-        tag        = enc.tag
+        tag = enc.tag
 
         dec = make_decryptor(key, nonce_salah, tag)
         dec.update(ciphertext)
@@ -121,13 +123,13 @@ class TestEncryptorDecryptor:
         """Ciphertext yang dimodifikasi harus gagal verifikasi GCM."""
         from cryptography.exceptions import InvalidTag
 
-        key   = os.urandom(32)
+        key = os.urandom(32)
         nonce = os.urandom(12)
-        data  = b"data asli yang panjang untuk testing"
+        data = b"data asli yang panjang untuk testing"
 
-        enc        = make_encryptor(key, nonce)
+        enc = make_encryptor(key, nonce)
         ciphertext = bytearray(enc.update(data) + enc.finalize())
-        tag        = enc.tag
+        tag = enc.tag
 
         # Modifikasi 1 byte di tengah ciphertext
         ciphertext[len(ciphertext) // 2] ^= 0xFF
@@ -139,41 +141,42 @@ class TestEncryptorDecryptor:
 
     def test_empty_data(self):
         """Data kosong tetap harus bisa diproses tanpa crash."""
-        key   = os.urandom(32)
+        key = os.urandom(32)
         nonce = os.urandom(12)
 
-        enc        = make_encryptor(key, nonce)
+        enc = make_encryptor(key, nonce)
         ciphertext = enc.update(b"") + enc.finalize()
-        tag        = enc.tag
+        tag = enc.tag
 
-        dec       = make_decryptor(key, nonce, tag)
+        dec = make_decryptor(key, nonce, tag)
         plaintext = dec.update(ciphertext) + dec.finalize()
 
         assert plaintext == b""
 
     def test_large_data_chunked(self):
         """Data besar yang diproses dalam beberapa chunk harus tetap konsisten."""
-        key   = os.urandom(32)
+        key = os.urandom(32)
         nonce = os.urandom(12)
-        data  = os.urandom(CHUNK_SIZE * 3 + 500)  # 3 chunk + sisa tanggung
+        data = os.urandom(CHUNK_SIZE * 3 + 500)  # 3 chunk + sisa tanggung
 
         enc = make_encryptor(key, nonce)
         ciphertext = b""
         for i in range(0, len(data), CHUNK_SIZE):
-            ciphertext += enc.update(data[i:i + CHUNK_SIZE])
+            ciphertext += enc.update(data[i : i + CHUNK_SIZE])
         ciphertext += enc.finalize()
         tag = enc.tag
 
         dec = make_decryptor(key, nonce, tag)
         plaintext = b""
         for i in range(0, len(ciphertext), CHUNK_SIZE):
-            plaintext += dec.update(ciphertext[i:i + CHUNK_SIZE])
+            plaintext += dec.update(ciphertext[i : i + CHUNK_SIZE])
         plaintext += dec.finalize()
 
         assert plaintext == data
 
 
 # ── safe_cb ───────────────────────────────────────────────────────────────────
+
 
 class TestSafeCb:
 
@@ -189,8 +192,10 @@ class TestSafeCb:
 
     def test_exception_dalam_callback_tidak_crash(self):
         """Exception di dalam callback tidak boleh crash program utama."""
+
         def cb_rusak(_):
             raise RuntimeError("callback error")
+
         safe_cb(cb_rusak, 0.5)  # Tidak boleh raise exception
 
     def test_nilai_diklem_0_sampai_1(self):
@@ -210,6 +215,7 @@ class TestSafeCb:
 
 
 # ── CHUNK_SIZE ────────────────────────────────────────────────────────────────
+
 
 class TestConstants:
 
