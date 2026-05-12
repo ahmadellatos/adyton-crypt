@@ -10,6 +10,7 @@ import shutil
 import uuid
 import tempfile
 import tarfile
+from cryptography.exceptions import InvalidTag
 
 from .crypto import CHUNK_SIZE, derive_key, make_encryptor, make_decryptor, safe_cb
 
@@ -54,7 +55,7 @@ def secure_delete(path: str):
 
 
 class EncryptingStream:
-    """Pipa memori ajaib yang dilengkapi Buffer (Waduk)."""
+    """Pipa memori ajaib yang dilengkapi Buffer (Waduk) untuk enkripsi."""
 
     def __init__(self, target_file, encryptor, progress_cb, total_bytes):
         self.target_file = target_file
@@ -64,10 +65,6 @@ class EncryptingStream:
         self.bytes_written = 0
         self.buffer = bytearray()
         self._last_pct = 0.0
-        # FIX: flag idempoten agar flush() aman dipanggil berkali-kali.
-        # tarfile memanggil close() → flush() saat context manager selesai,
-        # dan kunci_brankas() juga memanggil flush() eksplisit setelahnya.
-        # Tanpa flag ini, encryptor.update(b"") dipanggil dua kali.
         self._flushed = False
 
     def write(self, data: bytes):
@@ -80,8 +77,6 @@ class EncryptingStream:
                 safe_cb(self.progress_cb, pct)
                 self._last_pct = pct
 
-        # FIX: gunakan CHUNK_SIZE langsung, bukan self.chunk_size yang
-        # hanya menduplikasi konstanta modul tanpa nilai tambah.
         if len(self.buffer) >= CHUNK_SIZE:
             encrypted = self.encryptor.update(bytes(self.buffer))
             if encrypted:
@@ -91,7 +86,6 @@ class EncryptingStream:
         return len(data)
 
     def flush(self):
-        # Guard idempoten: abaikan panggilan kedua dan seterusnya.
         if self._flushed:
             return
         self._flushed = True
@@ -103,6 +97,92 @@ class EncryptingStream:
 
     def close(self):
         self.flush()
+
+
+class DecryptingStream:
+    """
+    Pipa memori ajaib untuk dekripsi Single-Pass.
+    Membaca langsung dari ciphertext, mendekripsi, dan membuang ke buffer tarfile.
+    Menghindari double-disk space usage.
+    """
+
+    def __init__(
+        self,
+        target_file,
+        decryptor,
+        bytes_remaining,
+        initial_buffer,
+        progress_cb,
+        total_len,
+        bytes_read_so_far,
+    ):
+        self.target_file = target_file
+        self.decryptor = decryptor
+        self.bytes_remaining = bytes_remaining
+        self.buffer = bytearray(initial_buffer)
+        self.progress_cb = progress_cb
+        self.total_len = total_len
+        self.bytes_read_so_far = bytes_read_so_far
+        self._last_pct = 0.0
+        self._finalized = False
+
+    def read(self, size=-1):
+        # Jika diminta membaca semua (exhaust)
+        if size < 0:
+            result = bytearray(self.buffer)
+            self.buffer.clear()
+            while self.bytes_remaining > 0:
+                chunk_sz = min(CHUNK_SIZE, self.bytes_remaining)
+                chunk = self.target_file.read(chunk_sz)
+                self.bytes_remaining -= len(chunk)
+                result.extend(self.decryptor.update(chunk))
+                self._update_progress(len(chunk))
+
+            if not self._finalized:
+                self._finalized = True
+                result.extend(
+                    self.decryptor.finalize()
+                )  # Raises InvalidTag jika data tampered
+            return bytes(result)
+
+        # Membaca per chunk sesuai permintaan tarfile
+        result = bytearray()
+        while len(result) < size and (self.bytes_remaining > 0 or self.buffer):
+            if self.buffer:
+                take = min(size - len(result), len(self.buffer))
+                result.extend(self.buffer[:take])
+                del self.buffer[:take]
+            else:
+                chunk_sz = min(CHUNK_SIZE, self.bytes_remaining)
+                if chunk_sz == 0:
+                    break
+                chunk = self.target_file.read(chunk_sz)
+                self.bytes_remaining -= len(chunk)
+                self._update_progress(len(chunk))
+
+                decrypted = self.decryptor.update(chunk)
+                self.buffer.extend(decrypted)
+
+        # Finalisasi GCM ketika semua ciphertext sudah dibaca
+        if self.bytes_remaining == 0 and not self.buffer and not self._finalized:
+            self._finalized = True
+            final_bytes = (
+                self.decryptor.finalize()
+            )  # Raises InvalidTag jika password salah/tampered
+            if final_bytes:
+                take = min(size - len(result), len(final_bytes))
+                result.extend(final_bytes[:take])
+                self.buffer.extend(final_bytes[take:])
+
+        return bytes(result)
+
+    def _update_progress(self, bytes_added):
+        self.bytes_read_so_far += bytes_added
+        # Skala progress ke 0.95 (5% sisa untuk proses shutil di tahap akhir)
+        pct = min(0.95, 0.80 * (self.bytes_read_so_far / (self.total_len or 1)))
+        if pct - self._last_pct >= 0.005:
+            safe_cb(self.progress_cb, pct)
+            self._last_pct = pct
 
 
 # ── Logic Pembantu ────────────────────────────────────────────────────────────
@@ -134,18 +214,11 @@ def kunci_brankas(
     hapus_asli: bool = False,
     progress_cb=None,
 ) -> tuple[bool, str]:
-    """
-    Mengunci satu atau banyak file/folder ke dalam satu file .locked.
-
-    FIX: jika path_simpan sudah ada, file lama di-backup dulu ke .bak.
-    Kalau enkripsi gagal, file lama di-restore. Kalau berhasil, .bak dihapus.
-    Ini mencegah kehilangan data jika user menimpa .locked yang sudah ada.
-    """
+    """Mengunci satu atau banyak file/folder ke dalam satu file .locked."""
     path_backup = path_simpan + ".bak"
     backup_dibuat = False
 
     try:
-        # Backup file lama jika ada sebelum mulai menulis
         if os.path.exists(path_simpan):
             os.replace(path_simpan, path_backup)
             backup_dibuat = True
@@ -159,7 +232,6 @@ def kunci_brankas(
         total_size = _hitung_total_size(paths)
         encryptor = make_encryptor(key, nonce)
 
-        # Tentukan nama root di dalam arsip
         is_single_file = len(paths) == 1 and os.path.isfile(paths[0])
         is_single_dir = len(paths) == 1 and os.path.isdir(paths[0])
 
@@ -194,17 +266,12 @@ def kunci_brankas(
                     )
                     tar.add(p, arcname=arcname)
 
-            # flush() eksplisit ini aman karena EncryptingStream._flushed
-            # sudah di-set True oleh tarfile saat close() dipanggil.
-            # Baris ini tidak melakukan apa-apa selain menjadi dokumentasi intent.
             out_stream.flush()
-
             fk.write(encryptor.finalize())
             fk.write(encryptor.tag)
 
         safe_cb(progress_cb, 0.90)
 
-        # Enkripsi berhasil — hapus backup
         if backup_dibuat and os.path.exists(path_backup):
             os.remove(path_backup)
 
@@ -218,7 +285,6 @@ def kunci_brankas(
         return True, f"Brankas berhasil dikunci!\nUkuran: {size_mb:.1f} MB"
 
     except Exception as exc:
-        # Gagal — hapus file korup dan restore backup jika ada
         if os.path.exists(path_simpan):
             os.remove(path_simpan)
         if backup_dibuat and os.path.exists(path_backup):
@@ -229,7 +295,11 @@ def kunci_brankas(
 def buka_brankas(
     locked_path: str, password: str, force: bool = False, progress_cb=None
 ) -> tuple[str, str | None]:
-    temp_archive = None
+    """
+    Membuka file .locked secara streaming (Single-Pass) tanpa menggunakan file temporary disk.
+    Mencegah storage kembung (double disk space) dan meningkatkan kecepatan.
+    """
+    temp_ext_dir = None
     try:
         total_size = os.path.getsize(locked_path)
         if total_size < 44:
@@ -253,6 +323,7 @@ def buka_brankas(
 
             decrypted_first = decryptor.update(first_chunk)
 
+            # Ekstrak header (nama_folder)
             try:
                 panjang_nama = int.from_bytes(decrypted_first[:2], byteorder="big")
                 if panjang_nama > 512:
@@ -266,55 +337,61 @@ def buka_brankas(
             base_dir = os.path.dirname(locked_path)
             path_tujuan = os.path.join(base_dir, nama_folder)
 
-            if os.path.exists(path_tujuan):
-                if not force:
-                    return "OVERWRITE", nama_folder
-                else:
-                    if os.path.isfile(path_tujuan):
-                        secure_delete(path_tujuan)
+            # Cek eksistensi sebelum bongkar
+            if os.path.exists(path_tujuan) and not force:
+                return "OVERWRITE", nama_folder
 
-            id_temp = uuid.uuid4().hex[:8]
-            temp_archive = os.path.join(
-                tempfile.gettempdir(), f"dec_temp_{id_temp}.tmp"
+            initial_buffer = decrypted_first[2 + panjang_nama :]
+            in_stream = DecryptingStream(
+                fk,
+                decryptor,
+                bytes_remaining,
+                initial_buffer,
+                progress_cb,
+                cipher_len,
+                first_sz,
             )
-            bytes_dec = first_sz
-            last_pct = 0.0
 
-            with open(temp_archive, "wb") as ft:
-                ft.write(decrypted_first[2 + panjang_nama :])
-                safe_cb(progress_cb, 0.80 * bytes_dec / (cipher_len or 1))
-
-                while bytes_remaining > 0:
-                    chunk = fk.read(min(CHUNK_SIZE, bytes_remaining))
-                    bytes_remaining -= len(chunk)
-                    ft.write(decryptor.update(chunk))
-                    bytes_dec += len(chunk)
-
-                    pct = 0.80 * bytes_dec / (cipher_len or 1)
-                    if pct - last_pct >= 0.005:
-                        safe_cb(progress_cb, pct)
-                        last_pct = pct
+            # Ekstrak ke folder sembunyi di directory yang SAMA agar pindah file bersifat instant (atomic O(1))
+            id_temp = uuid.uuid4().hex[:8]
+            temp_ext_dir = os.path.join(base_dir, f"._dec_{id_temp}")
+            os.makedirs(temp_ext_dir, exist_ok=True)
 
             try:
-                decryptor.finalize()
-            except Exception:
-                secure_delete(temp_archive)
+                # Eksekusi ekstraksi secara Streaming
+                with tarfile.open(fileobj=in_stream, mode="r|") as tar:
+                    tar.extractall(path=temp_ext_dir)
+
+                # Drain sisa bytes untuk memastikan finalize() terpanggil dan AES-GCM divalidasi
+                in_stream.read()
+
+                src = os.path.join(temp_ext_dir, nama_folder)
+                if not os.path.exists(src):
+                    raise ValueError("Isi brankas tidak sesuai format ekspektasi.")
+
+                # Berhasil divalidasi! Hapus file lama jika 'force' aktif
+                if os.path.exists(path_tujuan):
+                    secure_delete(path_tujuan)
+
+                # Pindah atomic instan (karena di disk/volume yang sama)
+                shutil.move(src, path_tujuan)
+
+            except InvalidTag:
                 return "WRONG_PW", None
+            except Exception as exc:
+                # Fallback untuk exception turunan dari error AES-GCM atau Tar rusak
+                if getattr(
+                    exc, "__class__", None
+                ) is InvalidTag or "DECRYPT_FAIL" in str(exc):
+                    return "WRONG_PW", None
+                return "ERROR", f"Ekstraksi gagal/arsip rusak: {exc}"
 
-        safe_cb(progress_cb, 0.85)
-
-        try:
-            with tarfile.open(temp_archive, "r") as tar:
-                tar.extractall(path=base_dir)
-        except tarfile.ReadError:
-            secure_delete(temp_archive)
-            return "ERROR", "Format arsip di dalam brankas rusak atau tidak dikenali."
-
-        secure_delete(temp_archive)
         safe_cb(progress_cb, 1.0)
         return "SUCCESS", nama_folder
 
     except Exception as exc:
-        if temp_archive and os.path.exists(temp_archive):
-            secure_delete(temp_archive)
         return "ERROR", str(exc)
+    finally:
+        # Cleanup: hapus folder sementara jika ternyata masih ada (karena gagal/crash)
+        if temp_ext_dir and os.path.exists(temp_ext_dir):
+            secure_delete(temp_ext_dir)

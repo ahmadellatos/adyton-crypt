@@ -1,92 +1,160 @@
 """
-ui/style.py
-Definisi warna dan Qt Style Sheets (QSS) level mahir.
+ui/styles.py
+Tema UI Modern Dark Mode (Cyber Teal/Cyan) Presisi 100%.
 """
 
-# Warna Utama (Persis dengan CustomTkinter)
-CLR_BG = "#12141F"
-CLR_CARD = "#1E2235"
-CLR_INNER = "#161824"
-CLR_ACCENT = "#00C6BE"
-CLR_ACCENT_HV = "#009E96"
-CLR_DANGER = "#C0392B"
-CLR_DANGER_HV = "#A93226"
-CLR_MUTED = "#6B7280"
-CLR_BORDER = "#2D3452"
-
-# Warna Status Notifikasi
-CLR_NOTIF_OK_BG = "#0D2B1E"
-CLR_NOTIF_OK_FG = "#1DB954"
-CLR_NOTIF_ERR_BG = "#2B0D0D"
-CLR_NOTIF_ERR_FG = "#E74C3C"
-CLR_NOTIF_WARN_BG = "#2B1E0D"
-CLR_NOTIF_WARN_FG = "#F39C12"
+CLR_BG = "#0B101E"
+CLR_CARD = "#111625"
+CLR_INNER = "#181F32"
+CLR_ACCENT = "#00D2C8"
+CLR_ACCENT_DK = "#008780"
+CLR_BORDER = "#232B3E"
+CLR_TEXT_MAIN = "#FFFFFF"
+CLR_TEXT_MUTED = "#8B95A5"
 
 
 def load_stylesheet() -> str:
     return f"""
     /* --- GLOBAL --- */
-    QWidget {{ background-color: {CLR_BG}; color: white; font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 10pt; }}
+    QWidget {{ 
+        background-color: {CLR_BG}; 
+        color: {CLR_TEXT_MAIN}; 
+        font-family: 'Segoe UI', sans-serif; 
+        font-size: 10pt; 
+    }}
+    
+    /* --- FONT IKON KHUSUS --- */
+    QLabel#Icon {{
+        font-family: 'Segoe MDL2 Assets', 'Segoe Fluent Icons', sans-serif;
+        background: transparent;
+    }}
     
     /* --- CARDS & CONTAINERS --- */
-    QFrame#Card {{ background-color: {CLR_CARD}; border-radius: 12px; }}
-    QFrame#DropArea {{ background-color: {CLR_CARD}; border-radius: 12px; border: 2px solid transparent; }}
-    QFrame#DropArea[dragActive="true"] {{ border: 2px dashed {CLR_ACCENT}; background-color: #252B42; }}
-    QFrame#Inner {{ background-color: {CLR_INNER}; border-radius: 8px; border: 1px solid {CLR_BORDER}; }}
+    QFrame#Card {{ 
+        background-color: {CLR_CARD}; 
+        border-radius: 12px; 
+        border: 1px solid {CLR_BORDER};
+    }}
+    QFrame#DropArea {{ 
+        background-color: {CLR_CARD}; 
+        border-radius: 12px; 
+        border: 1px solid {CLR_BORDER}; 
+    }}
+    QFrame#DropArea[dragActive="true"] {{ 
+        border: 2px dashed {CLR_ACCENT}; 
+        background-color: {CLR_INNER}; 
+    }}
+    QFrame#Inner {{ 
+        background-color: {CLR_INNER}; 
+        border-radius: 8px; 
+        border: 1px solid {CLR_BORDER}; 
+    }}
+    QFrame#TipsBox {{
+        background-color: #0E1A24;
+        border: 1px solid #142E3B;
+        border-radius: 8px;
+    }}
+    
+    /* --- HEADER & TABS (Segmented Control) --- */
+    QFrame#TabContainer {{
+        background-color: {CLR_CARD};
+        border-radius: 10px;
+        border: 1px solid {CLR_BORDER};
+    }}
+    QPushButton#TabBtn {{
+        background-color: transparent;
+        color: {CLR_TEXT_MUTED};
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 10pt;
+    }}
+    QPushButton#TabBtn:checked {{
+        background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00D2C8, stop:1 #008780);
+        color: {CLR_TEXT_MAIN};
+        font-weight: 800;
+        border: 1px solid #00EFE5;
+    }}
+    QPushButton#TabBtn:hover:!checked {{
+        background-color: {CLR_INNER};
+        color: {CLR_TEXT_MAIN};
+    }}
     
     /* --- TYPOGRAPHY --- */
-    QLabel#AppTitle {{ font-size: 16pt; font-weight: 800; color: {CLR_ACCENT}; }}
-    QLabel#AppSubtitle {{ font-size: 10pt; color: {CLR_MUTED}; font-weight: 600; margin-bottom: 2px; }}
-    QLabel#CardTitle {{ font-size: 10pt; font-weight: 800; color: {CLR_MUTED}; letter-spacing: 1px; }}
+    QLabel {{ background-color: transparent; }}
+    QLabel#AppTitle {{ font-size: 16pt; font-weight: 800; color: {CLR_TEXT_MAIN}; }}
+    QLabel#AppSubtitle {{ font-size: 9pt; color: {CLR_TEXT_MUTED}; font-weight: 500; }}
+    QLabel#CardTitle {{ font-size: 11pt; font-weight: 800; color: {CLR_TEXT_MAIN}; letter-spacing: 0.5px; text-transform: uppercase; }}
+    QLabel#CardSubtitle {{ font-size: 9pt; color: {CLR_TEXT_MUTED}; margin-bottom: 5px; }}
     
-    /* --- TABS (Mimicking CTk Segmented Button) --- */
-    QTabWidget::pane {{ border: none; background: transparent; top: 10px; }}
-    QTabWidget::tab-bar {{ alignment: left; }}
-    QTabBar {{ background-color: {CLR_INNER}; border-radius: 8px; }}
-    QTabBar::tab {{
-        background: transparent; color: {CLR_MUTED};
-        padding: 8px 30px; margin: 4px; border-radius: 6px; font-weight: 800; font-size: 10pt;
+    /* --- INPUTS (Dengan Ikon Di Dalamnya) --- */
+    QFrame#InputBox {{
+        background-color: {CLR_INNER}; 
+        border: 1px solid {CLR_BORDER};
+        border-radius: 8px; 
     }}
-    QTabBar::tab:selected {{ background-color: {CLR_ACCENT}; color: #000000; }}
-    QTabBar::tab:hover:!selected {{ background-color: {CLR_BORDER}; color: white; }}
-    
-    /* --- INPUTS --- */
-    QLineEdit {{
-        background-color: {CLR_INNER}; border: 1px solid {CLR_BORDER};
-        border-radius: 8px; padding: 0px 14px; color: white; font-size: 10pt;
+    QLineEdit#InputInside {{
+        background-color: transparent; 
+        border: none;
+        padding: 0px 5px; 
+        color: white; 
+        font-size: 10pt;
     }}
-    QLineEdit:focus {{ border: 1px solid {CLR_ACCENT}; background-color: #1A1D2D; }}
+    QPushButton#BtnEye {{
+        background-color: transparent;
+        border: none;
+        color: {CLR_TEXT_MUTED};
+        font-family: 'Segoe MDL2 Assets', sans-serif;
+        font-size: 12pt;
+        padding: 0px; /* FIX 4: Menghilangkan padding bawaan global agar ikon tidak kegencet */
+        margin: 0px;
+    }}
+    QPushButton#BtnEye:hover {{
+        color: {CLR_TEXT_MAIN};
+    }}
+    QLabel#IconInside {{
+        background-color: transparent;
+        padding: 0px;
+        margin: 0px;
+    }}
     
     /* --- BUTTONS --- */
     QPushButton {{
-        background-color: {CLR_ACCENT}; color: #000000;
-        border: none; border-radius: 8px; font-weight: 800; padding: 0 16px; font-size: 10pt;
+        background-color: {CLR_INNER}; color: {CLR_TEXT_MAIN};
+        border: 1px solid {CLR_BORDER}; border-radius: 8px; 
+        font-weight: 600; padding: 0 16px; font-size: 9pt;
     }}
-    QPushButton:hover {{ background-color: {CLR_ACCENT_HV}; }}
-    QPushButton:disabled {{ background-color: {CLR_BORDER}; color: {CLR_MUTED}; }}
+    QPushButton:hover {{ background-color: #232B3E; }}
     
-    QPushButton#BtnSecondary {{ background-color: {CLR_BORDER}; color: white; }}
-    QPushButton#BtnSecondary:hover {{ background-color: #3D4562; }}
+    QPushButton#BtnGhost {{ 
+        background-color: transparent; border: none; color: {CLR_TEXT_MUTED}; 
+        font-size: 12pt; padding: 0; 
+        font-family: 'Segoe MDL2 Assets', sans-serif;
+    }}
+    QPushButton#BtnGhost:hover {{ color: {CLR_TEXT_MAIN}; background-color: {CLR_BORDER}; border-radius: 8px; }}
     
-    QPushButton#BtnGhost {{ background-color: transparent; color: {CLR_MUTED}; font-size: 14pt; padding: 0; }}
-    QPushButton#BtnGhost:hover {{ color: {CLR_DANGER}; background-color: #2B0D0D; border-radius: 8px; }}
+    /* --- BIG ACTION BUTTON --- */
+    QPushButton#BtnAksiBesar {{
+        background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {CLR_ACCENT}, stop:1 {CLR_ACCENT_DK});
+        border: 1px solid #00EFE5;
+        border-radius: 12px;
+    }}
+    QPushButton#BtnAksiBesar:hover {{
+        background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00EFE5, stop:1 #00A69D);
+    }}
+    QPushButton#BtnAksiBesar:disabled {{
+        background-color: #151C2C;
+        border: 1px solid {CLR_BORDER};
+    }}
     
-    /* --- PROGRESS & SCROLL --- */
-    QProgressBar {{ background-color: {CLR_INNER}; border: none; border-radius: 4px; color: transparent; }}
-    QProgressBar::chunk {{ background-color: {CLR_ACCENT}; border-radius: 4px; }}
-    
-    QScrollArea {{ border: none; background-color: transparent; }}
-    QScrollBar:vertical {{ background: {CLR_BG}; width: 8px; border-radius: 4px; margin: 0px; }}
-    QScrollBar::handle:vertical {{ background: {CLR_BORDER}; border-radius: 4px; min-height: 20px; }}
-    QScrollBar::handle:vertical:hover {{ background: {CLR_MUTED}; }}
-    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
-    
-    /* --- MENUS & CHECKBOX --- */
+    /* --- SCROLL & MENUS --- */
     QMenu {{ background-color: {CLR_CARD}; border: 1px solid {CLR_BORDER}; border-radius: 8px; padding: 4px; }}
     QMenu::item {{ padding: 8px 24px; border-radius: 4px; color: white; }}
-    QMenu::item:selected {{ background-color: {CLR_ACCENT}; color: black; }}
+    QMenu::item:selected {{ background-color: {CLR_INNER}; }}
     
-    QCheckBox {{ color: {CLR_MUTED}; font-weight: 600; spacing: 10px; }}
-    QCheckBox::indicator {{ width: 18px; height: 18px; border-radius: 4px; border: 1px solid {CLR_BORDER}; background-color: {CLR_INNER}; }}
-    QCheckBox::indicator:checked {{ background-color: {CLR_DANGER}; border: 1px solid {CLR_DANGER}; }}
+    QScrollArea {{ border: none; background-color: transparent; }}
+    QScrollBar:vertical {{ background: transparent; width: 6px; border-radius: 3px; margin: 0px; }}
+    QScrollBar::handle:vertical {{ background: {CLR_BORDER}; border-radius: 3px; min-height: 20px; }}
+    QScrollBar::handle:vertical:hover {{ background: {CLR_TEXT_MUTED}; }}
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
     """

@@ -16,14 +16,10 @@ echo.
 python -m nuitka ^
     --onefile ^
     --windows-disable-console ^
-    --enable-plugin=tk-inter ^
-    --include-package=customtkinter ^
-    --include-package-data=customtkinter ^
+    --enable-plugin=pyside6 ^
     --include-package=core ^
     --include-package=ui ^
     --include-package=cryptography ^
-    --include-package=tkinterdnd2 ^
-    --include-package-data=tkinterdnd2 ^
     --assume-yes-for-downloads ^
     --output-filename="Digital Locker.exe" ^
     --output-dir=release_build ^
