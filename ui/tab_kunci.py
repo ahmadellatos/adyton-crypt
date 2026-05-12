@@ -191,10 +191,22 @@ class TabKunci(QWidget):
         lay_chk.setContentsMargins(5, 5, 5, 0)
         lay_chk.setSpacing(0)
 
-        self.chk_hapus = QCheckBox()
-        self.chk_hapus.setStyleSheet(
-            "QCheckBox::indicator { width: 20px; height: 20px; border-radius: 4px; background: #181F32; border: 1px solid #232B3E; } QCheckBox::indicator:checked { background: #E74C3C; image: none; }"
-        )
+        self.chk_hapus = QFrame()
+        self.chk_hapus.setFixedSize(22, 22)
+        self.chk_hapus.setStyleSheet("""
+            QFrame { background: #181F32; border: 1px solid #232B3E; border-radius: 4px; }
+            QFrame[checked="true"] { background: #E74C3C; border: 1px solid #E74C3C; }
+        """)
+        self.chk_hapus.setProperty("checked", False)
+        self.chk_hapus._checked = False
+
+        def _toggle_chk():
+            self.chk_hapus._checked = not self.chk_hapus._checked
+            self.chk_hapus.setProperty("checked", self.chk_hapus._checked)
+            self.chk_hapus.style().unpolish(self.chk_hapus)
+            self.chk_hapus.style().polish(self.chk_hapus)
+
+        self.chk_hapus.mousePressEvent = lambda e: _toggle_chk()
 
         v_chk_txt = QVBoxLayout()
         v_chk_txt.setSpacing(2)
@@ -207,7 +219,7 @@ class TabKunci(QWidget):
         v_chk_txt.addWidget(lbl_chk_title)
         v_chk_txt.addWidget(lbl_chk_desc)
 
-        lay_chk.addWidget(self.chk_hapus, alignment=Qt.AlignmentFlag.AlignTop)
+        lay_chk.addWidget(self.chk_hapus, alignment=Qt.AlignmentFlag.AlignVCenter)
         lay_chk.addSpacing(10)
         lay_chk.addLayout(v_chk_txt)
         v_left.addLayout(lay_chk)
@@ -338,8 +350,16 @@ class TabKunci(QWidget):
         v_tips.addWidget(lbl_tips_title)
         v_tips.addWidget(lbl_tips_desc)
 
-        lay_tips.addWidget(icon_shield, alignment=Qt.AlignmentFlag.AlignTop)
-        lay_tips.addSpacing(12)
+        row_tips_title = QHBoxLayout()
+        row_tips_title.setSpacing(12)
+        row_tips_title.addWidget(icon_shield, alignment=Qt.AlignmentFlag.AlignVCenter)
+        row_tips_title.addWidget(lbl_tips_title)
+
+        v_tips.insertLayout(
+            0, row_tips_title
+        )  # masukkin row icon+title ke posisi paling atas
+        v_tips.removeWidget(lbl_tips_title)  # hapus title dari posisi lama
+
         lay_tips.addLayout(v_tips)
         lay_pw.addWidget(tips_box)
 
@@ -529,7 +549,7 @@ class TabKunci(QWidget):
             return
         pw = self.entry_pw1.text()
 
-        if self.chk_hapus.isChecked():
+        if self.chk_hapus._checked:
             # FIX: Panggil Dialog Kustom, bukan QMessageBox bawaan Windows!
             dialog = ModernMessageBox(
                 title="Konfirmasi Hapus Asli",
@@ -555,7 +575,7 @@ class TabKunci(QWidget):
             list(self._paths),
             path_simpan,
             pw,
-            self.chk_hapus.isChecked(),
+            self.chk_hapus._checked,
         )
 
         self.entry_pw1.blockSignals(True)

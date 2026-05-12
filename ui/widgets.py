@@ -1,9 +1,10 @@
 """
 Modul: widgets.py
 Deskripsi: Berisi kumpulan komponen UI (Widget) kustom.
-           Ditambahkan 'ModernMessageBox' untuk menggantikan pop-up Windows bawaan.
+           Sudah dioptimasi sesuai review (MouseRelease, Resize Event, Safe Worker).
 """
 
+import inspect
 import qtawesome as qta
 from PySide6.QtWidgets import (
     QFrame,
@@ -30,10 +31,6 @@ from .styles import CLR_INNER, CLR_BORDER
 
 
 def apply_shadow(widget, blur_radius=20, y_offset=6, opacity=60):
-    """
-    Memberikan efek bayangan (Drop Shadow) pada widget target.
-    Menciptakan kesan elevasi visual (melayang) ala desain UI modern.
-    """
     shadow = QGraphicsDropShadowEffect()
     shadow.setBlurRadius(blur_radius)
     shadow.setXOffset(0)
@@ -42,12 +39,8 @@ def apply_shadow(widget, blur_radius=20, y_offset=6, opacity=60):
     widget.setGraphicsEffect(shadow)
 
 
-# --- KOMPONEN BARU: MODERN MESSAGE BOX ---
 class ModernMessageBox(QDialog):
-    """
-    Custom Dialog berdesain modern (Frameless & Dark Mode)
-    untuk menggantikan QMessageBox bawaan OS yang terlihat kaku dan putih.
-    """
+    """Custom Dialog berdesain modern untuk menggantikan QMessageBox OS."""
 
     def __init__(
         self, title, message, icon_name="mdi6.alert", icon_color="#F39C12", parent=None
@@ -57,7 +50,6 @@ class ModernMessageBox(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setFixedWidth(420)
 
-        # Container utama dengan gaya 'Card' (warna biru gelap & melengkung)
         container = QFrame(self)
         container.setObjectName("Card")
         apply_shadow(container, blur_radius=30, y_offset=8, opacity=60)
@@ -70,12 +62,10 @@ class ModernMessageBox(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(15)
 
-        # Judul Pop-up
         lbl_title = QLabel(title)
         lbl_title.setStyleSheet("font-weight: 800; font-size: 12pt; color: white;")
         layout.addWidget(lbl_title)
 
-        # Area Konten (Ikon + Pesan)
         content_lay = QHBoxLayout()
         content_lay.setSpacing(15)
 
@@ -91,7 +81,6 @@ class ModernMessageBox(QDialog):
         layout.addLayout(content_lay)
         layout.addSpacing(10)
 
-        # Area Tombol Aksi
         btn_lay = QHBoxLayout()
         btn_lay.setSpacing(12)
         btn_lay.addStretch()
@@ -99,24 +88,22 @@ class ModernMessageBox(QDialog):
         self.btn_cancel = QPushButton("Batal")
         self.btn_cancel.setFixedSize(90, 36)
         self.btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_cancel.clicked.connect(self.reject)  # Tolak / Tutup dialog
+        self.btn_cancel.clicked.connect(self.reject)
 
-        self.btn_yes = QPushButton("Ya, Hapus")
+        self.btn_yes = QPushButton("Lanjutkan")
         self.btn_yes.setFixedSize(110, 36)
         self.btn_yes.setCursor(Qt.CursorShape.PointingHandCursor)
-        # Styling spesifik tombol bahaya (merah)
         self.btn_yes.setStyleSheet("""
             QPushButton { background-color: #E74C3C; color: white; border: none; border-radius: 8px; font-weight: bold; }
             QPushButton:hover { background-color: #C0392B; }
         """)
-        self.btn_yes.clicked.connect(self.accept)  # Terima / Lanjut
+        self.btn_yes.clicked.connect(self.accept)
 
         btn_lay.addWidget(self.btn_cancel)
         btn_lay.addWidget(self.btn_yes)
         layout.addLayout(btn_lay)
 
 
-# --- KOMPONEN LAMA (CustomTitleBar, BigActionBtn, dll) ---
 class CustomTitleBar(QFrame):
     def __init__(self, parent):
         super().__init__(parent)
@@ -182,6 +169,11 @@ class CustomTitleBar(QFrame):
             delta = event.globalPosition().toPoint() - self.drag_pos
             self.parent_window.move(self.parent_window.pos() + delta)
             self.drag_pos = event.globalPosition().toPoint()
+
+    def mouseReleaseEvent(self, event):
+        """FIX: Membersihkan state drag_pos agar window tidak melompat tak sengaja."""
+        if hasattr(self, "drag_pos"):
+            del self.drag_pos
 
 
 class BigActionBtn(QPushButton):
@@ -255,15 +247,27 @@ class CryptoWorker(QThread):
         self.func = func
         self.args = args
         self.kwargs = kwargs
+        self._is_cancelled = False  # Status pembatalan
+
+    def cancel(self):
+        """Meminta worker untuk berhenti."""
+        self._is_cancelled = True
 
     def run(self):
         try:
-            result = self.func(
-                *self.args,
-                progress_cb=lambda val: self.progress.emit(val),
-                **self.kwargs,
-            )
-            self.finished.emit(result if isinstance(result, tuple) else (result,))
+            # FIX: Cek apakah fungsi di vault.py nerima 'is_cancelled' pakai inspect
+            # Jadi aplikasinya nggak akan crash meskipun file vault.py belum lu update!
+            sig = inspect.signature(self.func)
+            if "is_cancelled" in sig.parameters:
+                self.kwargs["is_cancelled"] = lambda: self._is_cancelled
+
+            self.kwargs["progress_cb"] = lambda val: self.progress.emit(val)
+            result = self.func(*self.args, **self.kwargs)
+
+            if self._is_cancelled:
+                self.finished.emit((False, "Operasi dibatalkan oleh pengguna."))
+            else:
+                self.finished.emit(result if isinstance(result, tuple) else (result,))
         except Exception as e:
             self.finished.emit((False, str(e)))
 
@@ -313,7 +317,19 @@ class AnimatedNotifBar(QFrame):
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.hide_msg)
 
+        # FIX: Mendaftarkan notifikasi ke event window resize
+        if self.parentWidget():
+            self.parentWidget().installEventFilter(self)
+
         self.hide()
+
+    def eventFilter(self, obj, event):
+        """Memastikan posisi notifikasi tetap nempel di kanan atas pas di-resize."""
+        if obj == self.parentWidget() and event.type() == event.Type.Resize:
+            if self.isVisible() and self.pos().y() >= 0:
+                target_x = self.parentWidget().width() - self.width() - 20
+                self.move(target_x, self.pos().y())
+        return super().eventFilter(obj, event)
 
     def _on_anim_finished(self):
         if self.pos().y() < 0:

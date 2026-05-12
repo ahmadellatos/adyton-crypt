@@ -14,6 +14,10 @@ from cryptography.exceptions import InvalidTag
 
 from .crypto import CHUNK_SIZE, derive_key, make_encryptor, make_decryptor, safe_cb
 
+HEADER_SIZE = 16 + 12
+TAG_SIZE = 16
+OVERHEAD = HEADER_SIZE + TAG_SIZE
+
 # ── File Operations ───────────────────────────────────────────────────────────
 
 
@@ -302,7 +306,7 @@ def buka_brankas(
     temp_ext_dir = None
     try:
         total_size = os.path.getsize(locked_path)
-        if total_size < 44:
+        if total_size < OVERHEAD:
             return "ERROR", "File terlalu kecil/rusak."
 
         cipher_len = total_size - 44
@@ -378,13 +382,6 @@ def buka_brankas(
 
             except InvalidTag:
                 return "WRONG_PW", None
-            except Exception as exc:
-                # Fallback untuk exception turunan dari error AES-GCM atau Tar rusak
-                if getattr(
-                    exc, "__class__", None
-                ) is InvalidTag or "DECRYPT_FAIL" in str(exc):
-                    return "WRONG_PW", None
-                return "ERROR", f"Ekstraksi gagal/arsip rusak: {exc}"
 
         safe_cb(progress_cb, 1.0)
         return "SUCCESS", nama_folder
