@@ -1,7 +1,7 @@
 """
 Modul: widgets.py
-Deskripsi: Berisi kumpulan komponen UI (Widget) kustom.
-           Sudah dioptimasi sesuai review (MouseRelease, Resize Event, Safe Worker).
+Deskripsi: Kumpulan komponen UI (Widget) kustom.
+           Worker disederhanakan karena core vault sekarang me-return nilai secara elegan.
 """
 
 import inspect
@@ -40,8 +40,6 @@ def apply_shadow(widget, blur_radius=20, y_offset=6, opacity=60):
 
 
 class ModernMessageBox(QDialog):
-    """Custom Dialog berdesain modern untuk menggantikan QMessageBox OS."""
-
     def __init__(
         self, title, message, icon_name="mdi6.alert", icon_color="#F39C12", parent=None
     ):
@@ -171,7 +169,6 @@ class CustomTitleBar(QFrame):
             self.drag_pos = event.globalPosition().toPoint()
 
     def mouseReleaseEvent(self, event):
-        """FIX: Membersihkan state drag_pos agar window tidak melompat tak sengaja."""
         if hasattr(self, "drag_pos"):
             del self.drag_pos
 
@@ -247,7 +244,7 @@ class CryptoWorker(QThread):
         self.func = func
         self.args = args
         self.kwargs = kwargs
-        self._is_cancelled = False  # Status pembatalan
+        self._is_cancelled = False
 
     def cancel(self):
         """Meminta worker untuk berhenti."""
@@ -255,26 +252,25 @@ class CryptoWorker(QThread):
 
     def run(self):
         try:
-            # FIX: Cek apakah fungsi di vault.py nerima 'is_cancelled' pakai inspect
-            # Jadi aplikasinya nggak akan crash meskipun file vault.py belum lu update!
+            # Inject parameter pembatalan & progress secara dinamis
             sig = inspect.signature(self.func)
             if "is_cancelled" in sig.parameters:
                 self.kwargs["is_cancelled"] = lambda: self._is_cancelled
 
             self.kwargs["progress_cb"] = lambda val: self.progress.emit(val)
-            result = self.func(*self.args, **self.kwargs)
 
-            if self._is_cancelled:
-                self.finished.emit((False, "Operasi dibatalkan oleh pengguna."))
-            else:
-                self.finished.emit(result if isinstance(result, tuple) else (result,))
+            result = self.func(*self.args, **self.kwargs)
+            self.finished.emit(result if isinstance(result, tuple) else (result,))
+
         except Exception as e:
-            self.finished.emit((False, str(e)))
+            # Menangani fungsi yang belum menangani VaultStatus sepenuhnya
+            self.finished.emit((None, str(e)))
 
 
 class AnimatedNotifBar(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("NotifBar")
         self.setFixedWidth(380)
         self.setMinimumHeight(55)
         self.setStyleSheet("background-color: transparent; border-radius: 8px;")
@@ -306,7 +302,7 @@ class AnimatedNotifBar(QFrame):
 
         layout.addWidget(self.lbl_icon)
         layout.addWidget(self.lbl_text, 1)
-        layout.addWidget(self.btn_close, alignment=Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.btn_close, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         self.anim = QPropertyAnimation(self, b"pos")
         self.anim.setDuration(400)
@@ -317,14 +313,12 @@ class AnimatedNotifBar(QFrame):
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.hide_msg)
 
-        # FIX: Mendaftarkan notifikasi ke event window resize
         if self.parentWidget():
             self.parentWidget().installEventFilter(self)
 
         self.hide()
 
     def eventFilter(self, obj, event):
-        """Memastikan posisi notifikasi tetap nempel di kanan atas pas di-resize."""
         if obj == self.parentWidget() and event.type() == event.Type.Resize:
             if self.isVisible() and self.pos().y() >= 0:
                 target_x = self.parentWidget().width() - self.width() - 20
@@ -352,7 +346,8 @@ class AnimatedNotifBar(QFrame):
         )
 
         self.setStyleSheet(
-            f"background-color: {bg_color}; border-radius: 8px; border: 1px solid {CLR_BORDER};"
+            f"QFrame#NotifBar {{ background-color: {bg_color}; border-radius: 8px; border: none; }}"
+            f"QLabel {{ border: none; background: transparent; color: {fg_color}; font-weight: bold; font-size: 10pt; }}"
         )
         self.lbl_icon.setPixmap(qta.icon(icon_name, color=fg_color).pixmap(24, 24))
         self.lbl_text.setStyleSheet(

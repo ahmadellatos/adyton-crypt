@@ -1,15 +1,17 @@
 """
 core/vault.py
 Logika utama: kunci folder/file (enkripsi) dan buka brankas (dekripsi).
-Dioptimasi dengan Single-Pass I/O Streaming menggunakan Tarfile + Memory Buffering.
-Multi-file support: Menggabungkan banyak file/folder menjadi satu brankas.
+Dioptimasi dengan Single-Pass I/O Streaming, pathlib, dan Cancellation Support.
+Dilengkapi mode opsi Secure Wipe untuk HDD tradisional.
 """
 
 import os
 import shutil
 import uuid
-import tempfile
 import tarfile
+from pathlib import Path
+from enum import Enum
+from typing import Callable, Optional
 from cryptography.exceptions import InvalidTag
 
 from .crypto import CHUNK_SIZE, derive_key, make_encryptor, make_decryptor, safe_cb
@@ -18,39 +20,47 @@ HEADER_SIZE = 16 + 12
 TAG_SIZE = 16
 OVERHEAD = HEADER_SIZE + TAG_SIZE
 
+
+class VaultStatus(Enum):
+    SUCCESS = "success"
+    WRONG_PASSWORD = "wrong_password"
+    OVERWRITE_NEEDED = "overwrite_needed"
+    ERROR = "error"
+    CANCELLED = "cancelled"
+
+
 # ── File Operations ───────────────────────────────────────────────────────────
 
 
-def secure_delete(path: str):
+def hapus_permanen(path: Path, secure_wipe: bool = False):
     """
-    Menimpa file dengan nol sebelum dihapus.
-    PERHATIAN: Tidak menjamin penghapusan aman di SSD/NVMe karena wear leveling.
+    Menghapus file/folder.
+    Jika secure_wipe aktif, file akan ditimpa dengan byte 0x00 sebelum dihapus.
     """
-    if not os.path.exists(path):
+    if not path.exists():
         return
-    if os.path.isfile(path):
+
+    if path.is_file() or path.is_symlink():
+        if secure_wipe and not path.is_symlink():
+            try:
+                size = path.stat().st_size
+                with path.open("r+b") as f:
+                    written = 0
+                    kosong = b"\x00" * CHUNK_SIZE
+                    while written < size:
+                        chunk = min(CHUNK_SIZE, size - written)
+                        f.write(kosong[:chunk])
+                        written += chunk
+            except Exception:
+                pass  # Fallback: jika gagal menimpa (misal file dikunci OS), abaikan & lanjut hapus
+
+        path.unlink(missing_ok=True)
+
+    elif path.is_dir():
+        for child in path.iterdir():
+            hapus_permanen(child, secure_wipe)
         try:
-            size = os.path.getsize(path)
-            with open(path, "r+b") as f:
-                written = 0
-                while written < size:
-                    chunk = min(CHUNK_SIZE, size - written)
-                    f.write(b"\x00" * chunk)
-                    written += chunk
-            os.remove(path)
-        except Exception:
-            pass
-    elif os.path.isdir(path):
-        for root, dirs, files in os.walk(path, topdown=False):
-            for name in files:
-                secure_delete(os.path.join(root, name))
-            for name in dirs:
-                try:
-                    os.rmdir(os.path.join(root, name))
-                except OSError:
-                    pass
-        try:
-            os.rmdir(path)
+            path.rmdir()
         except OSError:
             shutil.rmtree(path, ignore_errors=True)
 
@@ -59,9 +69,14 @@ def secure_delete(path: str):
 
 
 class EncryptingStream:
-    """Pipa memori ajaib yang dilengkapi Buffer (Waduk) untuk enkripsi."""
-
-    def __init__(self, target_file, encryptor, progress_cb, total_bytes):
+    def __init__(
+        self,
+        target_file,
+        encryptor,
+        progress_cb,
+        total_bytes,
+        is_cancelled: Callable[[], bool] = None,
+    ):
         self.target_file = target_file
         self.encryptor = encryptor
         self.progress_cb = progress_cb
@@ -70,8 +85,12 @@ class EncryptingStream:
         self.buffer = bytearray()
         self._last_pct = 0.0
         self._flushed = False
+        self.is_cancelled = is_cancelled
 
     def write(self, data: bytes):
+        if self.is_cancelled and self.is_cancelled():
+            raise InterruptedError("Operasi dibatalkan oleh pengguna.")
+
         self.buffer.extend(data)
         self.bytes_written += len(data)
 
@@ -104,12 +123,6 @@ class EncryptingStream:
 
 
 class DecryptingStream:
-    """
-    Pipa memori ajaib untuk dekripsi Single-Pass.
-    Membaca langsung dari ciphertext, mendekripsi, dan membuang ke buffer tarfile.
-    Menghindari double-disk space usage.
-    """
-
     def __init__(
         self,
         target_file,
@@ -119,23 +132,30 @@ class DecryptingStream:
         progress_cb,
         total_len,
         bytes_read_so_far,
+        is_cancelled: Callable[[], bool] = None,
     ):
         self.target_file = target_file
         self.decryptor = decryptor
         self.bytes_remaining = bytes_remaining
-        self.buffer = bytearray(initial_buffer)
+        self.buffer = bytes(initial_buffer)
         self.progress_cb = progress_cb
         self.total_len = total_len
         self.bytes_read_so_far = bytes_read_so_far
         self._last_pct = 0.0
         self._finalized = False
+        self.is_cancelled = is_cancelled
 
     def read(self, size=-1):
-        # Jika diminta membaca semua (exhaust)
+        if self.is_cancelled and self.is_cancelled():
+            raise InterruptedError("Operasi dibatalkan oleh pengguna.")
+
         if size < 0:
             result = bytearray(self.buffer)
-            self.buffer.clear()
+            self.buffer = b""
             while self.bytes_remaining > 0:
+                if self.is_cancelled and self.is_cancelled():
+                    raise InterruptedError("Operasi dibatalkan oleh pengguna.")
+
                 chunk_sz = min(CHUNK_SIZE, self.bytes_remaining)
                 chunk = self.target_file.read(chunk_sz)
                 self.bytes_remaining -= len(chunk)
@@ -144,19 +164,19 @@ class DecryptingStream:
 
             if not self._finalized:
                 self._finalized = True
-                result.extend(
-                    self.decryptor.finalize()
-                )  # Raises InvalidTag jika data tampered
+                result.extend(self.decryptor.finalize())
             return bytes(result)
 
-        # Membaca per chunk sesuai permintaan tarfile
         result = bytearray()
         while len(result) < size and (self.bytes_remaining > 0 or self.buffer):
             if self.buffer:
                 take = min(size - len(result), len(self.buffer))
                 result.extend(self.buffer[:take])
-                del self.buffer[:take]
+                self.buffer = self.buffer[take:]
             else:
+                if self.is_cancelled and self.is_cancelled():
+                    raise InterruptedError("Operasi dibatalkan oleh pengguna.")
+
                 chunk_sz = min(CHUNK_SIZE, self.bytes_remaining)
                 if chunk_sz == 0:
                     break
@@ -165,24 +185,20 @@ class DecryptingStream:
                 self._update_progress(len(chunk))
 
                 decrypted = self.decryptor.update(chunk)
-                self.buffer.extend(decrypted)
+                self.buffer = decrypted
 
-        # Finalisasi GCM ketika semua ciphertext sudah dibaca
         if self.bytes_remaining == 0 and not self.buffer and not self._finalized:
             self._finalized = True
-            final_bytes = (
-                self.decryptor.finalize()
-            )  # Raises InvalidTag jika password salah/tampered
+            final_bytes = self.decryptor.finalize()
             if final_bytes:
                 take = min(size - len(result), len(final_bytes))
                 result.extend(final_bytes[:take])
-                self.buffer.extend(final_bytes[take:])
+                self.buffer = final_bytes[take:]
 
         return bytes(result)
 
     def _update_progress(self, bytes_added):
         self.bytes_read_so_far += bytes_added
-        # Skala progress ke 0.95 (5% sisa untuk proses shutil di tahap akhir)
         pct = min(0.95, 0.05 + 0.90 * (self.bytes_read_so_far / (self.total_len or 1)))
         if pct - self._last_pct >= 0.005:
             safe_cb(self.progress_cb, pct)
@@ -193,17 +209,16 @@ class DecryptingStream:
 
 
 def _hitung_total_size(paths: list[str]) -> int:
-    """Menghitung total ukuran byte dari kumpulan file/folder."""
     total = 0
     for p in paths:
-        if os.path.isfile(p):
-            total += os.path.getsize(p)
-        elif os.path.isdir(p):
+        path = Path(p)
+        if path.is_file() and not path.is_symlink():
+            total += path.stat().st_size
+        elif path.is_dir():
             total += sum(
-                os.path.getsize(os.path.join(r, f))
-                for r, _, files in os.walk(p)
-                for f in files
-                if not os.path.islink(os.path.join(r, f))
+                f.stat().st_size
+                for f in path.rglob("*")
+                if f.is_file() and not f.is_symlink()
             )
     return total or 1
 
@@ -216,59 +231,60 @@ def kunci_brankas(
     path_simpan: str,
     password: str,
     hapus_asli: bool = False,
+    secure_wipe: bool = False,
     progress_cb=None,
-) -> tuple[bool, str]:
-    """Mengunci satu atau banyak file/folder ke dalam satu file .locked."""
-    path_backup = path_simpan + ".bak"
+    is_cancelled: Callable[[], bool] = None,
+) -> tuple[VaultStatus, str]:
+    target_path = Path(path_simpan)
+    backup_path = target_path.with_suffix(".locked.bak")
     backup_dibuat = False
 
     try:
-        if os.path.exists(path_simpan):
-            os.replace(path_simpan, path_backup)
+        if target_path.exists():
+            target_path.replace(backup_path)
             backup_dibuat = True
 
         salt = os.urandom(16)
         nonce = os.urandom(12)
-
         key = derive_key(password, salt)
         safe_cb(progress_cb, 0.05)
 
         total_size = _hitung_total_size(paths)
         encryptor = make_encryptor(key, nonce)
 
-        is_single_file = len(paths) == 1 and os.path.isfile(paths[0])
-        is_single_dir = len(paths) == 1 and os.path.isdir(paths[0])
+        is_single_file = len(paths) == 1 and Path(paths[0]).is_file()
+        is_single_dir = len(paths) == 1 and Path(paths[0]).is_dir()
 
-        if is_single_file:
-            nama_virtual = os.path.basename(paths[0])
-            target_dir = ""
-        elif is_single_dir:
-            nama_virtual = os.path.basename(os.path.abspath(paths[0]))
+        if is_single_file or is_single_dir:
+            nama_virtual = Path(paths[0]).name
             target_dir = ""
         else:
-            nama_file = os.path.basename(path_simpan)
-            target_dir = os.path.splitext(nama_file)[0] or "Brankas_Rahasia"
-            nama_virtual = target_dir
+            nama_virtual = target_path.stem or "Brankas_Rahasia"
+            target_dir = nama_virtual
 
         nama_bytes = nama_virtual.encode("utf-8")
         panjang_nama = len(nama_bytes).to_bytes(2, byteorder="big")
 
-        with open(path_simpan, "wb") as fk:
+        with target_path.open("wb") as fk:
             fk.write(salt)
             fk.write(nonce)
             fk.write(encryptor.update(panjang_nama + nama_bytes))
 
-            out_stream = EncryptingStream(fk, encryptor, progress_cb, total_size)
+            out_stream = EncryptingStream(
+                fk, encryptor, progress_cb, total_size, is_cancelled
+            )
 
             with tarfile.open(fileobj=out_stream, mode="w|") as tar:
                 for p in paths:
-                    if not os.path.exists(p):
+                    path_item = Path(p)
+                    if not path_item.exists():
                         continue
-                    nama_item = os.path.basename(os.path.abspath(p))
                     arcname = (
-                        os.path.join(target_dir, nama_item) if target_dir else nama_item
+                        str(Path(target_dir) / path_item.name)
+                        if target_dir
+                        else path_item.name
                     )
-                    tar.add(p, arcname=arcname)
+                    tar.add(str(path_item), arcname=arcname)
 
             out_stream.flush()
             fk.write(encryptor.finalize())
@@ -276,42 +292,58 @@ def kunci_brankas(
 
         safe_cb(progress_cb, 0.90)
 
-        if backup_dibuat and os.path.exists(path_backup):
-            os.remove(path_backup)
+        if backup_dibuat and backup_path.exists():
+            backup_path.unlink()
 
         if hapus_asli:
             safe_cb(progress_cb, 0.95)
             for p in paths:
-                secure_delete(p)
+                hapus_permanen(Path(p), secure_wipe)
 
-        size_mb = os.path.getsize(path_simpan) / (1024 * 1024)
+        size_mb = target_path.stat().st_size / (1024 * 1024)
         safe_cb(progress_cb, 1.0)
-        return True, f"Brankas berhasil dikunci!\nUkuran: {size_mb:.1f} MB"
+        return (
+            VaultStatus.SUCCESS,
+            f"Brankas berhasil dikunci!\nUkuran: {size_mb:.1f} MB",
+        )
 
+    except InterruptedError:
+        if target_path.exists():
+            target_path.unlink(missing_ok=True)
+        if backup_dibuat and backup_path.exists():
+            backup_path.replace(target_path)
+        return VaultStatus.CANCELLED, "Proses dibatalkan."
     except Exception as exc:
-        if os.path.exists(path_simpan):
-            os.remove(path_simpan)
-        if backup_dibuat and os.path.exists(path_backup):
-            os.rename(path_backup, path_simpan)
-        return False, str(exc)
+        if target_path.exists():
+            target_path.unlink(missing_ok=True)
+        if backup_dibuat and backup_path.exists():
+            backup_path.replace(target_path)
+        return VaultStatus.ERROR, str(exc)
 
 
 def buka_brankas(
-    locked_path: str, password: str, force: bool = False, progress_cb=None
-) -> tuple[str, str | None]:
-    """
-    Membuka file .locked secara streaming (Single-Pass) tanpa menggunakan file temporary disk.
-    Mencegah storage kembung (double disk space) dan meningkatkan kecepatan.
-    """
+    locked_path: str,
+    password: str,
+    force: bool = False,
+    progress_cb=None,
+    is_cancelled: Callable[[], bool] = None,
+) -> tuple[VaultStatus, str | None]:
+    target_path = Path(locked_path)
     temp_ext_dir = None
+
     try:
-        total_size = os.path.getsize(locked_path)
+        total_size = target_path.stat().st_size
         if total_size < OVERHEAD:
-            return "ERROR", "File terlalu kecil/rusak."
+            return VaultStatus.ERROR, "File terlalu kecil/rusak."
 
         cipher_len = total_size - 44
+        base_dir = target_path.parent
 
-        with open(locked_path, "rb") as fk:
+        for old_temp in base_dir.glob("._dec_*"):
+            if old_temp.is_dir():
+                shutil.rmtree(old_temp, ignore_errors=True)
+
+        with target_path.open("rb") as fk:
             salt = fk.read(16)
             nonce = fk.read(12)
             fk.seek(-16, os.SEEK_END)
@@ -327,23 +359,20 @@ def buka_brankas(
 
             decrypted_first = decryptor.update(first_chunk)
 
-            # Ekstrak header (nama_folder)
             try:
                 panjang_nama = int.from_bytes(decrypted_first[:2], byteorder="big")
                 if panjang_nama > 512:
-                    return "WRONG_PW", None
+                    return VaultStatus.WRONG_PASSWORD, None
                 if len(decrypted_first) < 2 + panjang_nama:
-                    return "ERROR", "File brankas rusak atau terpotong."
+                    return VaultStatus.ERROR, "File brankas rusak atau terpotong."
                 nama_folder = decrypted_first[2 : 2 + panjang_nama].decode("utf-8")
             except Exception:
-                return "WRONG_PW", None
+                return VaultStatus.WRONG_PASSWORD, None
 
-            base_dir = os.path.dirname(locked_path)
-            path_tujuan = os.path.join(base_dir, nama_folder)
+            path_tujuan = base_dir / nama_folder
 
-            # Cek eksistensi sebelum bongkar
-            if os.path.exists(path_tujuan) and not force:
-                return "OVERWRITE", nama_folder
+            if path_tujuan.exists() and not force:
+                return VaultStatus.OVERWRITE_NEEDED, nama_folder
 
             initial_buffer = decrypted_first[2 + panjang_nama :]
             in_stream = DecryptingStream(
@@ -354,41 +383,38 @@ def buka_brankas(
                 progress_cb,
                 cipher_len,
                 first_sz,
+                is_cancelled,
             )
 
-            # Ekstrak ke folder sembunyi di directory yang SAMA agar pindah file bersifat instant (atomic O(1))
             id_temp = uuid.uuid4().hex[:8]
-            temp_ext_dir = os.path.join(base_dir, f"._dec_{id_temp}")
-            os.makedirs(temp_ext_dir, exist_ok=True)
+            temp_ext_dir = base_dir / f"._dec_{id_temp}"
+            temp_ext_dir.mkdir(parents=True, exist_ok=True)
 
             try:
-                # Eksekusi ekstraksi secara Streaming
                 with tarfile.open(fileobj=in_stream, mode="r|") as tar:
-                    tar.extractall(path=temp_ext_dir, filter="data")
+                    tar.extractall(path=str(temp_ext_dir), filter="data")
 
-                # Drain sisa bytes untuk memastikan finalize() terpanggil dan AES-GCM divalidasi
                 in_stream.read()
 
-                src = os.path.join(temp_ext_dir, nama_folder)
-                if not os.path.exists(src):
+                src = temp_ext_dir / nama_folder
+                if not src.exists():
                     raise ValueError("Isi brankas tidak sesuai format ekspektasi.")
 
-                # Berhasil divalidasi! Hapus file lama jika 'force' aktif
-                if os.path.exists(path_tujuan):
-                    secure_delete(path_tujuan)
+                if path_tujuan.exists():
+                    hapus_permanen(path_tujuan)
 
-                # Pindah atomic instan (karena di disk/volume yang sama)
-                shutil.move(src, path_tujuan)
+                shutil.move(str(src), str(path_tujuan))
 
             except InvalidTag:
-                return "WRONG_PW", None
+                return VaultStatus.WRONG_PASSWORD, None
+            except InterruptedError:
+                return VaultStatus.CANCELLED, "Proses dibatalkan."
 
         safe_cb(progress_cb, 1.0)
-        return "SUCCESS", nama_folder
+        return VaultStatus.SUCCESS, nama_folder
 
     except Exception as exc:
-        return "ERROR", str(exc)
+        return VaultStatus.ERROR, str(exc)
     finally:
-        # Cleanup: hapus folder sementara jika ternyata masih ada (karena gagal/crash)
-        if temp_ext_dir and os.path.exists(temp_ext_dir):
-            secure_delete(temp_ext_dir)
+        if temp_ext_dir and temp_ext_dir.exists():
+            hapus_permanen(temp_ext_dir)

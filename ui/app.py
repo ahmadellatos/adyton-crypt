@@ -22,8 +22,9 @@ from PySide6.QtWidgets import (
     QSystemTrayIcon,
     QMenu,
     QApplication,
+    QGraphicsOpacityEffect,
 )
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QPropertyAnimation
 from loguru import logger
 
 from .tab_kunci import TabKunci
@@ -257,6 +258,42 @@ class AppBrankas(QMainWindow):
         parent_layout.addLayout(lay_footer)
 
     def _on_tab_changed(self, button):
-        """Slot untuk berpindah indeks halaman QStackedWidget sesuai tombol yang ditekan."""
-        idx = self.tab_group.id(button)
-        self.stacked_tabs.setCurrentIndex(idx)
+        new_idx = self.tab_group.id(button)
+        if new_idx == self.stacked_tabs.currentIndex():
+            return
+
+        old_widget = self.stacked_tabs.currentWidget()
+        effect = QGraphicsOpacityEffect(old_widget)
+        old_widget.setGraphicsEffect(effect)
+
+        self._anim_out = QPropertyAnimation(effect, b"opacity")
+        self._anim_out.setDuration(60)
+        self._anim_out.setStartValue(1.0)
+        self._anim_out.setEndValue(0.0)
+        self._anim_out.finished.connect(
+            lambda: self._finish_tab_switch(new_idx, old_widget)
+        )
+        self._anim_out.start()
+
+    def _finish_tab_switch(self, new_idx, old_widget):
+        old_widget.setGraphicsEffect(None)
+        self.stacked_tabs.setCurrentIndex(new_idx)
+
+        new_widget = self.stacked_tabs.currentWidget()
+        effect = QGraphicsOpacityEffect(new_widget)
+        new_widget.setGraphicsEffect(effect)
+
+        self._anim_in = QPropertyAnimation(effect, b"opacity")
+        self._anim_in.setDuration(75)
+        self._anim_in.setStartValue(0.0)
+        self._anim_in.setEndValue(1.0)
+        self._anim_in.finished.connect(lambda: new_widget.setGraphicsEffect(None))
+        self._anim_in.start()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._anim_window = QPropertyAnimation(self, b"windowOpacity")
+        self._anim_window.setDuration(300)
+        self._anim_window.setStartValue(0.0)
+        self._anim_window.setEndValue(1.0)
+        self._anim_window.start()

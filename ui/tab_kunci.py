@@ -1,8 +1,8 @@
 """
 Modul: tab_kunci.py
-Deskripsi: Antarmuka untuk Tab "Kunci Folder". Menangani interaksi pengguna terkait
-           pemilihan file/folder target, validasi zxcvbn, dan inisiasi utas enkripsi.
-           Menerapkan dialog kustom ModernMessageBox menggantikan QMessageBox OS.
+Deskripsi: Antarmuka untuk Tab "Kunci Folder"
+           Ditambahkan fitur Advanced: Secure Wipe dengan peringatan UI.
+           Secure Wipe sekarang collapsible (muncul animasi saat Hapus Asli dicentang).
 """
 
 import os
@@ -18,16 +18,13 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QFileDialog,
     QFrame,
-    QCheckBox,
     QScrollArea,
     QMenu,
     QDialog,
 )
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve
 
-from core.vault import kunci_brankas
-
-# FIX: Import ModernMessageBox yang baru kita buat
+from core.vault import kunci_brankas, VaultStatus
 from .widgets import (
     CryptoWorker,
     AnimatedNotifBar,
@@ -48,18 +45,9 @@ except ImportError:
 def pw_strength(pw: str) -> int:
     if not pw:
         return -1
-
     hasil = zxcvbn(pw)
-    skor_asli = hasil["score"]
-
-    if skor_asli <= 1:
-        return 0  # Lemah
-    elif skor_asli == 2:
-        return 1  # Cukup
-    elif skor_asli == 3:
-        return 2  # Kuat
-    else:
-        return 3  # Sangat Kuat
+    skor = hasil["score"]
+    return 0 if skor <= 1 else skor - 1
 
 
 STRENGTH_COLORS = ["#E74C3C", "#E67E22", "#00D2C8", "#00D2C8"]
@@ -113,7 +101,9 @@ class TabKunci(QWidget):
         h_cols = QHBoxLayout()
         h_cols.setSpacing(20)
 
-        # --- KOLOM KIRI (Daftar File / Target) ---
+        # ---------------------------------------------
+        # KIRI (Daftar Target)
+        # ---------------------------------------------
         v_left = QVBoxLayout()
         self.card_target = MultiDropFrame()
         self.card_target.on_paths_dropped = self._add_paths
@@ -183,13 +173,18 @@ class TabKunci(QWidget):
 
         inner_lay.addWidget(self.scroll_area)
         lay_target.addWidget(self.inner_frame, 1)
-
         v_left.addWidget(self.card_target, 1)
 
-        # Checkbox konfirmasi penghapusan data asli
-        lay_chk = QHBoxLayout()
-        lay_chk.setContentsMargins(5, 5, 5, 0)
-        lay_chk.setSpacing(0)
+        # ---------------------------------------------
+        # CONTAINER OPSI HAPUS (Hapus Asli & Secure Wipe)
+        # ---------------------------------------------
+        lay_opsi_hapus = QVBoxLayout()
+        lay_opsi_hapus.setSpacing(0)
+
+        # 1. Checkbox Hapus File Asli
+        lay_chk1 = QHBoxLayout()
+        lay_chk1.setContentsMargins(5, 5, 5, 0)
+        lay_chk1.setSpacing(0)
 
         self.chk_hapus = QFrame()
         self.chk_hapus.setFixedSize(22, 22)
@@ -200,32 +195,116 @@ class TabKunci(QWidget):
         self.chk_hapus.setProperty("checked", False)
         self.chk_hapus._checked = False
 
-        def _toggle_chk():
+        v_chk_txt1 = QVBoxLayout()
+        v_chk_txt1.setSpacing(2)
+        lbl_chk_title1 = QLabel("Hapus file/folder asli setelah dikunci")
+        lbl_chk_title1.setStyleSheet("font-size: 10pt; color: #FFFFFF;")
+        lbl_chk_desc1 = QLabel(
+            "File atau folder asli akan dihapus secara standar (Cepat & Aman untuk SSD)."
+        )
+        lbl_chk_desc1.setStyleSheet("font-size: 9pt; color: #8B95A5;")
+        v_chk_txt1.addWidget(lbl_chk_title1)
+        v_chk_txt1.addWidget(lbl_chk_desc1)
+
+        lay_chk1.addWidget(self.chk_hapus, alignment=Qt.AlignmentFlag.AlignVCenter)
+        lay_chk1.addSpacing(10)
+        lay_chk1.addLayout(v_chk_txt1)
+        lay_opsi_hapus.addLayout(lay_chk1)
+
+        # 2. Secure Wipe — Collapsible Container
+        self.widget_secure_wipe = QWidget()
+        self.widget_secure_wipe.setMaximumHeight(0)  # collapsed by default
+        self.widget_secure_wipe.setMinimumHeight(0)
+
+        lay_collapse = QVBoxLayout(self.widget_secure_wipe)
+        lay_collapse.setContentsMargins(0, 4, 0, 0)
+        lay_collapse.setSpacing(0)
+
+        lay_chk2 = QHBoxLayout()
+        lay_chk2.setContentsMargins(37, 5, 5, 5)
+        lay_chk2.setSpacing(0)
+
+        self.chk_secure = QFrame()
+        self.chk_secure.setFixedSize(18, 18)
+        self.chk_secure.setStyleSheet("""
+            QFrame { background: #181F32; border: 1px solid #232B3E; border-radius: 4px; }
+            QFrame[checked="true"] { background: #E67E22; border: 1px solid #E67E22; }
+        """)
+        self.chk_secure.setProperty("checked", False)
+        self.chk_secure._checked = False
+
+        lbl_chk_title2 = QLabel("Advanced: Secure Wipe (Timpa data)")
+        lbl_chk_title2.setStyleSheet("font-size: 9pt; color: #FFFFFF;")
+
+        lay_chk2.addWidget(self.chk_secure, alignment=Qt.AlignmentFlag.AlignVCenter)
+        lay_chk2.addSpacing(10)
+        lay_chk2.addWidget(lbl_chk_title2)
+        lay_chk2.addStretch()
+        lay_collapse.addLayout(lay_chk2)
+
+        lay_opsi_hapus.addWidget(self.widget_secure_wipe)
+        v_left.addLayout(lay_opsi_hapus)
+        h_cols.addLayout(v_left, 1)
+
+        # Animasi expand/collapse Secure Wipe
+        self.anim_secure = QPropertyAnimation(self.widget_secure_wipe, b"maximumHeight")
+        self.anim_secure.setDuration(250)
+        self.anim_secure.setEasingCurve(QEasingCurve.Type.InOutCubic)
+
+        # Logic Event Checkbox
+        def _toggle_hapus_asli():
             self.chk_hapus._checked = not self.chk_hapus._checked
             self.chk_hapus.setProperty("checked", self.chk_hapus._checked)
             self.chk_hapus.style().unpolish(self.chk_hapus)
             self.chk_hapus.style().polish(self.chk_hapus)
 
-        self.chk_hapus.mousePressEvent = lambda e: _toggle_chk()
+            if self.chk_hapus._checked:
+                # Expand Secure Wipe
+                self.anim_secure.setStartValue(0)
+                self.anim_secure.setEndValue(35)
+                self.anim_secure.start()
+            else:
+                # Collapse Secure Wipe + reset
+                self.anim_secure.setStartValue(self.widget_secure_wipe.maximumHeight())
+                self.anim_secure.setEndValue(0)
+                self.anim_secure.start()
 
-        v_chk_txt = QVBoxLayout()
-        v_chk_txt.setSpacing(2)
-        lbl_chk_title = QLabel("Hapus file/folder asli setelah dikunci")
-        lbl_chk_title.setStyleSheet("font-size: 10pt; color: #FFFFFF;")
-        lbl_chk_desc = QLabel(
-            "File atau folder asli akan dihapus setelah proses penguncian berhasil."
-        )
-        lbl_chk_desc.setStyleSheet("font-size: 9pt; color: #8B95A5;")
-        v_chk_txt.addWidget(lbl_chk_title)
-        v_chk_txt.addWidget(lbl_chk_desc)
+                if self.chk_secure._checked:
+                    self.chk_secure._checked = False
+                    self.chk_secure.setProperty("checked", False)
+                    self.chk_secure.style().unpolish(self.chk_secure)
+                    self.chk_secure.style().polish(self.chk_secure)
 
-        lay_chk.addWidget(self.chk_hapus, alignment=Qt.AlignmentFlag.AlignVCenter)
-        lay_chk.addSpacing(10)
-        lay_chk.addLayout(v_chk_txt)
-        v_left.addLayout(lay_chk)
-        h_cols.addLayout(v_left, 1)
+        def _toggle_secure_wipe():
+            if not self.chk_hapus._checked:
+                return
 
-        # --- KOLOM KANAN (Formulir Password) ---
+            if not self.chk_secure._checked:
+                dialog = ModernMessageBox(
+                    title="Peringatan Perangkat Keras",
+                    message="Secure Wipe akan menimpa data asli dengan byte kosong sebelum dihapus agar sulit dipulihkan.\n\n"
+                    "PERHATIAN:\n"
+                    "• Jangan gunakan opsi ini jika file berada di SSD atau Flashdisk karena dapat merusak umur disk.\n"
+                    "• Hanya gunakan untuk Harddisk (HDD) piringan tradisional.\n\n"
+                    "Apakah Anda yakin ingin mengaktifkan opsi ini?",
+                    icon_name="mdi6.alert-decagram",
+                    icon_color="#E67E22",
+                    parent=self,
+                )
+                if dialog.exec() != QDialog.DialogCode.Accepted:
+                    return
+
+            self.chk_secure._checked = not self.chk_secure._checked
+            self.chk_secure.setProperty("checked", self.chk_secure._checked)
+            self.chk_secure.style().unpolish(self.chk_secure)
+            self.chk_secure.style().polish(self.chk_secure)
+
+        self.chk_hapus.mousePressEvent = lambda e: _toggle_hapus_asli()
+        self.chk_secure.mousePressEvent = lambda e: _toggle_secure_wipe()
+
+        # ---------------------------------------------
+        # KANAN (Password Form)
+        # ---------------------------------------------
         v_right = QVBoxLayout()
         card_pw = QFrame()
         card_pw.setObjectName("Card")
@@ -252,7 +331,6 @@ class TabKunci(QWidget):
         row_hdr_pw.addLayout(v_hdr_pw_txt)
         row_hdr_pw.addStretch()
         lay_pw.addLayout(row_hdr_pw)
-
         lay_pw.addSpacing(10)
 
         lbl_in1 = QLabel("Password")
@@ -281,7 +359,6 @@ class TabKunci(QWidget):
         lay_box1.addWidget(self.btn_toggle_pw)
         lay_pw.addWidget(box_pw1)
 
-        # Indikator Segmen Kekuatan Sandi
         row_str = QHBoxLayout()
         row_str.setSpacing(8)
         self.str_bars = []
@@ -297,7 +374,6 @@ class TabKunci(QWidget):
         self.lbl_str.setStyleSheet("font-size: 9pt; color: #8B95A5; font-weight: bold;")
         row_str.addWidget(self.lbl_str)
         lay_pw.addLayout(row_str)
-
         lay_pw.addSpacing(10)
 
         lbl_in2 = QLabel("Konfirmasi Password")
@@ -331,43 +407,39 @@ class TabKunci(QWidget):
         tips_box.setObjectName("TipsBox")
         lay_tips = QHBoxLayout(tips_box)
         lay_tips.setContentsMargins(15, 15, 15, 15)
-        lay_tips.setSpacing(0)
+        lay_tips.setSpacing(12)
 
         icon_shield = QLabel()
         icon_shield.setPixmap(
-            qta.icon("mdi6.shield-check-outline", color="#00D2C8").pixmap(30, 30)
+            qta.icon("mdi6.shield-check-outline", color="#00D2C8").pixmap(32, 32)
         )
+        icon_shield.setFixedSize(32, 32)
 
         v_tips = QVBoxLayout()
-        v_tips.setSpacing(2)
+        v_tips.setSpacing(4)
+
         lbl_tips_title = QLabel("Tips Keamanan")
         lbl_tips_title.setStyleSheet("font-weight: 800; font-size: 10pt;")
+
         lbl_tips_desc = QLabel(
-            "Gunakan minimal 8 karakter dengan kombinasi huruf besar, huruf kecil, angka, dan simbol untuk keamanan maksimal."
+            "Minimal 8 karakter: huruf besar, huruf kecil, angka & simbol."
         )
         lbl_tips_desc.setWordWrap(True)
         lbl_tips_desc.setStyleSheet("font-size: 9pt; color: #8B95A5;")
+
         v_tips.addWidget(lbl_tips_title)
         v_tips.addWidget(lbl_tips_desc)
 
-        row_tips_title = QHBoxLayout()
-        row_tips_title.setSpacing(12)
-        row_tips_title.addWidget(icon_shield, alignment=Qt.AlignmentFlag.AlignVCenter)
-        row_tips_title.addWidget(lbl_tips_title)
-
-        v_tips.insertLayout(
-            0, row_tips_title
-        )  # masukkin row icon+title ke posisi paling atas
-        v_tips.removeWidget(lbl_tips_title)  # hapus title dari posisi lama
-
+        lay_tips.addWidget(icon_shield, alignment=Qt.AlignmentFlag.AlignVCenter)
         lay_tips.addLayout(v_tips)
+
         lay_pw.addWidget(tips_box)
 
         v_right.addWidget(card_pw, 1)
         h_cols.addLayout(v_right, 1)
         main_layout.addLayout(h_cols)
 
-        # --- BOTTOM ACTION BAR ---
+        # BOTTOM ACTION BAR
         self.btn_aksi = BigActionBtn(
             "KUNCI SEKARANG", "Proses penguncian akan dimulai", icon_name="mdi6.lock"
         )
@@ -393,9 +465,7 @@ class TabKunci(QWidget):
         for p in new_paths:
             if p.lower().endswith(".locked"):
                 self.notif.show_msg(
-                    "warn",
-                    f"⚠ '{os.path.basename(p)}' sudah merupakan file brankas!",
-                    4000,
+                    "warn", f"⚠ '{os.path.basename(p)}' sudah file brankas!", 4000
                 )
                 continue
             if p not in self._paths:
@@ -545,15 +615,19 @@ class TabKunci(QWidget):
         self.btn_aksi.setEnabled(len(self._paths) > 0 and bool(pw1) and (pw1 == pw2))
 
     def _proses(self):
+        # Cancel Support
         if self.worker is not None and self.worker.isRunning():
+            self.worker.cancel()
+            self.btn_aksi.setTextLabels("MEMBATALKAN...", "Harap tunggu...")
+            self.btn_aksi.setEnabled(False)
             return
+
         pw = self.entry_pw1.text()
 
         if self.chk_hapus._checked:
-            # FIX: Panggil Dialog Kustom, bukan QMessageBox bawaan Windows!
             dialog = ModernMessageBox(
                 title="Konfirmasi Hapus Asli",
-                message="File/folder asli akan DIHAPUS PERMANEN setelah berhasil dikunci.\n\nApakah Anda yakin ingin melanjutkan?",
+                message="File atau folder asli akan DIHAPUS PERMANEN setelah berhasil dikunci.\n\nApakah Anda yakin ingin melanjutkan?",
                 parent=self,
             )
             if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -561,10 +635,7 @@ class TabKunci(QWidget):
 
         default_name = os.path.basename(self._paths[0]) or "Brankas_Rahasia"
         path_simpan, _ = QFileDialog.getSaveFileName(
-            self,
-            "Simpan Brankas Sebagai",
-            f"{default_name}.locked",
-            "Locked Files (*.locked)",
+            self, "Simpan Brankas", f"{default_name}.locked", "Locked Files (*.locked)"
         )
         if not path_simpan:
             return
@@ -575,7 +646,8 @@ class TabKunci(QWidget):
             list(self._paths),
             path_simpan,
             pw,
-            self.chk_hapus._checked,
+            hapus_asli=self.chk_hapus._checked,
+            secure_wipe=self.chk_secure._checked,
         )
 
         self.entry_pw1.blockSignals(True)
@@ -597,7 +669,7 @@ class TabKunci(QWidget):
 
         self.worker.progress.connect(
             lambda v: self.btn_aksi.setTextLabels(
-                "MENGUNCI...", f"Progress: {int(v*100)}%"
+                "MENGUNCI...", f"Progress: {int(v*100)}% (Klik untuk Batal)"
             )
         )
         self.worker.finished.connect(self._on_selesai)
@@ -605,12 +677,12 @@ class TabKunci(QWidget):
         self.worker.start()
 
     def _set_busy(self, busy: bool):
-        self.btn_aksi.setEnabled(not busy)
         self.btn_add.setEnabled(not busy)
         if busy:
             self.btn_aksi.setTextLabels(
                 "MENGUNCI BRANKAS...", "Harap tunggu, proses sedang berjalan"
             )
+            self.btn_aksi.setEnabled(True)
         else:
             self.btn_aksi.setTextLabels(
                 "KUNCI SEKARANG", "Proses penguncian akan dimulai"
@@ -619,38 +691,45 @@ class TabKunci(QWidget):
 
     def _on_selesai(self, result):
         self.worker = None
-        sukses, pesan = result
+        status, pesan = result
 
-        if sukses:
+        if status == VaultStatus.SUCCESS:
             self._paths.clear()
-            self.chk_hapus.blockSignals(True)
-            self.chk_hapus.setChecked(False)
-            self.chk_hapus.blockSignals(False)
+
+            self.chk_hapus._checked = False
+            self.chk_hapus.setProperty("checked", False)
+            self.chk_hapus.style().unpolish(self.chk_hapus)
+            self.chk_hapus.style().polish(self.chk_hapus)
+
+            self.chk_secure._checked = False
+            self.chk_secure.setProperty("checked", False)
+            self.chk_secure.style().unpolish(self.chk_secure)
+            self.chk_secure.style().polish(self.chk_secure)
+
+            # Collapse secure wipe panel juga
+            self.anim_secure.setStartValue(self.widget_secure_wipe.maximumHeight())
+            self.anim_secure.setEndValue(0)
+            self.anim_secure.start()
+
             self._render_list()
 
         self._set_busy(False)
 
-        if sukses:
+        if status == VaultStatus.SUCCESS:
             self.notif.show_msg("ok", f" {pesan}", 6000)
             logger.info(f"Enkripsi sukses: {pesan}")
             if HAS_PLYER and notification:
                 try:
                     notification.notify(
                         title="Digital Locker",
-                        message="Brankas berhasil dikunci dengan aman.",
-                        timeout=5,
-                    )
-                except Exception as e:
-                    logger.warning(f"OS Native Notification gagal: {e}")
-        else:
-            logger.error(f"Gagal mengunci brankas: {pesan}")
-            self.notif.show_msg("err", f" {pesan}", 6000)
-            if HAS_PLYER and notification:
-                try:
-                    notification.notify(
-                        title="Digital Locker - Error",
-                        message=f"Penguncian gagal: {pesan}",
+                        message="Brankas dikunci dengan aman.",
                         timeout=5,
                     )
                 except:
                     pass
+        elif status == VaultStatus.CANCELLED:
+            self.notif.show_msg("warn", "Operasi penguncian dibatalkan pengguna.", 4000)
+            logger.info("Enkripsi dibatalkan.")
+        else:
+            logger.error(f"Gagal mengunci: {pesan}")
+            self.notif.show_msg("err", f" {pesan}", 6000)
