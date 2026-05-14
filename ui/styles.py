@@ -2,7 +2,7 @@
 Modul: styles.py
 Deskripsi: Mendefinisikan palet warna konstan dan stylesheet (QSS) utama untuk aplikasi.
            Menggunakan tema "Solid Dark Mode" (Cyber Teal/Cyan).
-           FIX: Scrollbar dikustomisasi penuh dan tambahan class ListItem untuk separator.
+           Hanya berisi string dan konstanta, TANPA logika widget.
 """
 
 CLR_BG = "#0B101E"
@@ -17,7 +17,7 @@ CLR_TEXT_MUTED = "#8B95A5"
 
 def load_stylesheet() -> str:
     """
-    Menghasilkan string Qt Style Sheet (QSS) untuk di-apply ke Main Window.
+    Menghasilkan string Qt Style Sheet (QSS) untuk di-apply ke QApplication.
     """
     return f"""
     /* --- GLOBAL --- */
@@ -66,11 +66,11 @@ def load_stylesheet() -> str:
     QFrame#ListItem {{
         background-color: transparent;
         border: none;
-        border-bottom: 1px solid {CLR_BORDER}; /* Garis pemisah bawah */
+        border-bottom: 1px solid {CLR_BORDER};
         border-radius: 0px;
     }}
     QFrame#ListItem:hover {{
-        background-color: rgba(35, 43, 62, 0.5); /* Efek highlight saat mouse lewat */
+        background-color: rgba(35, 43, 62, 0.5);
     }}
     
     QFrame#TipsBox {{
@@ -180,19 +180,28 @@ def load_stylesheet() -> str:
         margin: 2px; 
     }}
     QScrollBar::handle:vertical {{ 
-        background: {CLR_ACCENT_DK}; /* Warna Cyan menyatu tema */
+        background: {CLR_ACCENT_DK}; 
         border-radius: 4px; 
         min-height: 30px; 
     }}
     QScrollBar::handle:vertical:hover {{ 
-        background: {CLR_ACCENT}; /* Cyan lebih cerah saat mouse hover */
+        background: {CLR_ACCENT}; 
     }}
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ 
         height: 0px; 
         background: none; 
     }}
-    /* Mematikan background trek putih bawakan Windows */
     QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ 
         background: transparent; 
+    }}
+
+    /* --- FIX BUG TOOLTIP --- */
+    QToolTip {{
+        background-color: {CLR_CARD};
+        color: {CLR_TEXT_MAIN};
+        border: 1px solid {CLR_BORDER};
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-size: 9pt;
     }}
     """

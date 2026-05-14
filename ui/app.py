@@ -29,7 +29,6 @@ from loguru import logger
 
 from .tab_kunci import TabKunci
 from .tab_buka import TabBuka
-from .styles import load_stylesheet
 from .widgets import CustomTitleBar
 
 
@@ -47,7 +46,6 @@ class AppBrankas(QMainWindow):
         # dapat digambar/di-render secara mulus tanpa latar hitam kotak di sudutnya.
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
-        self.setStyleSheet(load_stylesheet())
         self._init_ui()
         self._init_tray()
 
@@ -293,7 +291,7 @@ class AppBrankas(QMainWindow):
     def showEvent(self, event):
         super().showEvent(event)
         self._anim_window = QPropertyAnimation(self, b"windowOpacity")
-        self._anim_window.setDuration(300)
+        self._anim_window.setDuration(100)
         self._anim_window.setStartValue(0.0)
         self._anim_window.setEndValue(1.0)
         self._anim_window.start()

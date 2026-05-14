@@ -1,7 +1,7 @@
 """
 Modul: widgets.py
 Deskripsi: Kumpulan komponen UI (Widget) kustom.
-           Worker disederhanakan karena core vault sekarang me-return nilai secara elegan.
+           Diperbarui dengan penambahan CustomToolTip dengan Timer Delay ala Native.
 """
 
 import inspect
@@ -25,9 +25,10 @@ from PySide6.QtCore import (
     QSize,
     QPoint,
 )
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QCursor
 
 from .styles import CLR_INNER, CLR_BORDER
+from core.vault import VaultStatus
 
 
 def apply_shadow(widget, blur_radius=20, y_offset=6, opacity=60):
@@ -37,6 +38,67 @@ def apply_shadow(widget, blur_radius=20, y_offset=6, opacity=60):
     shadow.setYOffset(y_offset)
     shadow.setColor(QColor(0, 0, 0, opacity))
     widget.setGraphicsEffect(shadow)
+
+
+# ── CUSTOM TOOLTIP WIDGET DENGAN DELAY ──────────────────────────────
+class CustomToolTip(QLabel):
+    """
+    Label melayang khusus untuk merender tooltip yang cantik.
+    Dilengkapi dengan QTimer agar ada jeda waktu (delay) sebelum muncul.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+
+        self.setStyleSheet("""
+            QLabel {
+                background-color: #111625;
+                color: #FFFFFF;
+                border: 1px solid #232B3E;
+                border-radius: 6px;
+                padding: 6px 10px;
+                font-size: 9pt;
+            }
+        """)
+        self.hide()
+
+        # Siapkan Timer untuk efek delay
+        self._delay_timer = QTimer(self)
+        self._delay_timer.setSingleShot(True)
+        self._delay_timer.timeout.connect(self._do_show)
+
+        # Timer untuk Auto-Hide (hilang otomatis setelah 5 detik)
+        self._autohide_timer = QTimer(self)
+        self._autohide_timer.setSingleShot(True)
+        self._autohide_timer.timeout.connect(self.hide_tooltip)
+
+        self._pending_text = ""
+
+    def request_show(self, text):
+        """Meminta tooltip untuk tampil, tapi tunggu 1500ms dulu."""
+        self._pending_text = text
+        self._delay_timer.start(1500)  # Sesuai request, delay 1500 milidetik
+
+    def _do_show(self):
+        """Fungsi ini dieksekusi oleh timer kalau mouse betah diam > 1500ms."""
+        self.setText(self._pending_text)
+        self.adjustSize()
+        pos = QCursor.pos()  # Ambil posisi mouse saat ini
+        self.move(pos.x() + 15, pos.y() + 15)
+        self.show()
+
+        # Mulai timer auto-hide 5 detik setelah tooltip berhasil muncul
+        self._autohide_timer.start(5000)
+
+    def hide_tooltip(self):
+        """Sembunyikan tooltip dan batalkan timer jika sedang jalan."""
+        self._delay_timer.stop()
+        self._autohide_timer.stop()
+        self.hide()
+
+
+# ────────────────────────────────────────────────────────────────────
 
 
 class ModernMessageBox(QDialog):
@@ -100,6 +162,11 @@ class ModernMessageBox(QDialog):
         btn_lay.addWidget(self.btn_cancel)
         btn_lay.addWidget(self.btn_yes)
         layout.addLayout(btn_lay)
+
+        if parent:
+            self.adjustSize()
+            parent_center = parent.mapToGlobal(parent.rect().center())
+            self.move(parent_center - self.rect().center())
 
 
 class CustomTitleBar(QFrame):
@@ -247,12 +314,10 @@ class CryptoWorker(QThread):
         self._is_cancelled = False
 
     def cancel(self):
-        """Meminta worker untuk berhenti."""
         self._is_cancelled = True
 
     def run(self):
         try:
-            # Inject parameter pembatalan & progress secara dinamis
             sig = inspect.signature(self.func)
             if "is_cancelled" in sig.parameters:
                 self.kwargs["is_cancelled"] = lambda: self._is_cancelled
@@ -263,8 +328,7 @@ class CryptoWorker(QThread):
             self.finished.emit(result if isinstance(result, tuple) else (result,))
 
         except Exception as e:
-            # Menangani fungsi yang belum menangani VaultStatus sepenuhnya
-            self.finished.emit((None, str(e)))
+            self.finished.emit((VaultStatus.ERROR, str(e)))
 
 
 class AnimatedNotifBar(QFrame):
@@ -313,10 +377,12 @@ class AnimatedNotifBar(QFrame):
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.hide_msg)
 
+        self.hide()
+
+    def showEvent(self, event):
+        super().showEvent(event)
         if self.parentWidget():
             self.parentWidget().installEventFilter(self)
-
-        self.hide()
 
     def eventFilter(self, obj, event):
         if obj == self.parentWidget() and event.type() == event.Type.Resize:
@@ -362,7 +428,7 @@ class AnimatedNotifBar(QFrame):
             p_rect = self.parentWidget().rect()
             target_x = p_rect.width() - self.width() - 20
             target_y = 20
-            start_y = -self.height() - 20
+            start_y = -self.minimumHeight() - 20
         else:
             target_x = 20
             target_y = 20
@@ -386,7 +452,7 @@ class AnimatedNotifBar(QFrame):
 
         if self.parentWidget():
             target_x = self.pos().x()
-            target_y = -self.height() - 20
+            target_y = -self.minimumHeight() - 20
         else:
             target_x = 20
             target_y = -100

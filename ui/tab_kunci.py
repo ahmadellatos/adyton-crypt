@@ -2,13 +2,14 @@
 Modul: tab_kunci.py
 Deskripsi: Antarmuka untuk Tab "Kunci Folder"
            Ditambahkan fitur Advanced: Secure Wipe dengan peringatan UI.
-           Secure Wipe sekarang collapsible (muncul animasi saat Hapus Asli dicentang).
+           Ditambahkan ElidedLabel agar path panjang dipotong otomatis dengan ellipsis (...).
 """
 
 import os
 from loguru import logger
 import qtawesome as qta
 from zxcvbn import zxcvbn
+
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -21,8 +22,10 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QMenu,
     QDialog,
+    QSizePolicy,
 )
 from PySide6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve
+from PySide6.QtGui import QCursor
 
 from core.vault import kunci_brankas, VaultStatus
 from .widgets import (
@@ -31,6 +34,7 @@ from .widgets import (
     apply_shadow,
     BigActionBtn,
     ModernMessageBox,
+    CustomToolTip,
 )
 
 notification = None
@@ -52,6 +56,41 @@ def pw_strength(pw: str) -> int:
 
 STRENGTH_COLORS = ["#E74C3C", "#E67E22", "#00D2C8", "#00D2C8"]
 STRENGTH_LABELS = ["Lemah", "Cukup", "Kuat", "Sangat Kuat"]
+
+
+# ── LABEL KUSTOM UNTUK MEMOTONG TEKS PANJANG (ELLIPSIS) ───────────────
+class ElidedLabel(QLabel):
+    def __init__(self, text="", mode=Qt.TextElideMode.ElideMiddle, parent=None):
+        super().__init__(text, parent)
+        self._full_text = text
+        self._mode = mode
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(10)
+
+    def setText(self, text):
+        self._full_text = text
+        self._update_elided_text()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_elided_text()
+
+    def _update_elided_text(self):
+        metrics = self.fontMetrics()
+        elided = metrics.elidedText(
+            self._full_text, self._mode, max(10, self.width() - 5)
+        )
+        if self.text() != elided:
+            super().setText(elided)
+
+    def minimumSizeHint(self):
+        return QSize(10, super().minimumSizeHint().height())
+
+    def sizeHint(self):
+        return QSize(50, super().sizeHint().height())
+
+
+# ────────────────────────────────────────────────────────────────────
 
 
 class MultiDropFrame(QFrame):
@@ -91,6 +130,9 @@ class TabKunci(QWidget):
         super().__init__()
         self._paths = []
         self.worker: CryptoWorker | None = None
+
+        self._custom_tooltip = CustomToolTip(self)
+
         self._build_ui()
 
     def _build_ui(self):
@@ -171,6 +213,11 @@ class TabKunci(QWidget):
         self.list_layout.setContentsMargins(0, 0, 0, 0)
         self.scroll_area.setWidget(self.list_container)
 
+        # FIX BUG: Sembunyikan tooltip seketika saat user ngescroll!
+        self.scroll_area.verticalScrollBar().valueChanged.connect(
+            lambda _: self._custom_tooltip.hide_tooltip()
+        )
+
         inner_lay.addWidget(self.scroll_area)
         lay_target.addWidget(self.inner_frame, 1)
         v_left.addWidget(self.card_target, 1)
@@ -213,7 +260,7 @@ class TabKunci(QWidget):
 
         # 2. Secure Wipe — Collapsible Container
         self.widget_secure_wipe = QWidget()
-        self.widget_secure_wipe.setMaximumHeight(0)  # collapsed by default
+        self.widget_secure_wipe.setMaximumHeight(0)
         self.widget_secure_wipe.setMinimumHeight(0)
 
         lay_collapse = QVBoxLayout(self.widget_secure_wipe)
@@ -259,12 +306,10 @@ class TabKunci(QWidget):
             self.chk_hapus.style().polish(self.chk_hapus)
 
             if self.chk_hapus._checked:
-                # Expand Secure Wipe
                 self.anim_secure.setStartValue(0)
                 self.anim_secure.setEndValue(35)
                 self.anim_secure.start()
             else:
-                # Collapse Secure Wipe + reset
                 self.anim_secure.setStartValue(self.widget_secure_wipe.maximumHeight())
                 self.anim_secure.setEndValue(0)
                 self.anim_secure.start()
@@ -465,7 +510,7 @@ class TabKunci(QWidget):
         for p in new_paths:
             if p.lower().endswith(".locked"):
                 self.notif.show_msg(
-                    "warn", f"⚠ '{os.path.basename(p)}' sudah file brankas!", 4000
+                    "warn", f"⚠ '{os.path.basename(p)}' sudah jadi file brankas!", 4000
                 )
                 continue
             if p not in self._paths:
@@ -478,6 +523,9 @@ class TabKunci(QWidget):
             self._render_list()
 
     def _render_list(self):
+        if hasattr(self, "_custom_tooltip"):
+            self._custom_tooltip.hide_tooltip()
+
         while self.list_layout.count():
             item = self.list_layout.takeAt(0)
             if item.widget():
@@ -497,6 +545,10 @@ class TabKunci(QWidget):
             row = QFrame()
             row.setObjectName("ListItem")
             row.setFixedHeight(56)
+
+            row.enterEvent = lambda e, text=p: self._custom_tooltip.request_show(text)
+            row.leaveEvent = lambda e: self._custom_tooltip.hide_tooltip()
+
             r_lay = QHBoxLayout(row)
             r_lay.setContentsMargins(15, 0, 15, 0)
 
@@ -507,14 +559,19 @@ class TabKunci(QWidget):
             v_file = QVBoxLayout()
             v_file.setSpacing(2)
             v_file.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-            lbl_name = QLabel(os.path.basename(p))
+
+            lbl_name = ElidedLabel(
+                os.path.basename(p), mode=Qt.TextElideMode.ElideMiddle
+            )
             lbl_name.setStyleSheet(
                 "font-weight: 600; font-size: 10pt; background: transparent;"
             )
-            lbl_path = QLabel(p)
+
+            lbl_path = ElidedLabel(p, mode=Qt.TextElideMode.ElideMiddle)
             lbl_path.setStyleSheet(
                 "font-size: 8pt; color: #8B95A5; background: transparent;"
             )
+
             v_file.addWidget(lbl_name)
             v_file.addWidget(lbl_path)
 
@@ -615,7 +672,6 @@ class TabKunci(QWidget):
         self.btn_aksi.setEnabled(len(self._paths) > 0 and bool(pw1) and (pw1 == pw2))
 
     def _proses(self):
-        # Cancel Support
         if self.worker is not None and self.worker.isRunning():
             self.worker.cancel()
             self.btn_aksi.setTextLabels("MEMBATALKAN...", "Harap tunggu...")
@@ -635,7 +691,7 @@ class TabKunci(QWidget):
 
         default_name = os.path.basename(self._paths[0]) or "Brankas_Rahasia"
         path_simpan, _ = QFileDialog.getSaveFileName(
-            self, "Simpan Brankas", f"{default_name}.locked", "Locked Files (*.locked)"
+            self, "Simpan Brankas", f"{default_name}.locked", "File Terkunci (*.locked)"
         )
         if not path_simpan:
             return
@@ -664,8 +720,6 @@ class TabKunci(QWidget):
         self.lbl_match.setPixmap(
             qta.icon("mdi6.check-bold", color="transparent").pixmap(20, 20)
         )
-
-        del pw
 
         self.worker.progress.connect(
             lambda v: self.btn_aksi.setTextLabels(
@@ -706,7 +760,6 @@ class TabKunci(QWidget):
             self.chk_secure.style().unpolish(self.chk_secure)
             self.chk_secure.style().polish(self.chk_secure)
 
-            # Collapse secure wipe panel juga
             self.anim_secure.setStartValue(self.widget_secure_wipe.maximumHeight())
             self.anim_secure.setEndValue(0)
             self.anim_secure.start()
