@@ -3,7 +3,6 @@ Modul: app.py
 Deskripsi: Merupakan antarmuka jendela utama (Main Window) dari aplikasi Digital Locker.
 """
 
-import sys
 import qtawesome as qta
 from PySide6.QtWidgets import (
     QWidget,
@@ -16,9 +15,7 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QSizePolicy,
     QSystemTrayIcon,
-    QMenu,
     QApplication,
-    QGraphicsOpacityEffect,
 )
 from PySide6.QtCore import Qt, QSize, QPropertyAnimation
 from loguru import logger
@@ -31,6 +28,7 @@ from .widgets import (
     CustomTitleBar,
     CenteredMenuAction,
     AccessibleCenteredMenu,
+    ModernMessageBox,
 )
 
 
@@ -145,6 +143,32 @@ class AppBrankas(FramelessMainWindow):
             )
 
     def _quit_sepenuhnya(self):
+        # FIX 2B: Cek state dari worker sebelum mengizinkan quit
+        kunci_busy = (
+            self.tab_kunci.worker is not None and self.tab_kunci.worker.isRunning()
+        )
+        buka_busy = (
+            self.tab_buka.worker is not None and self.tab_buka.worker.isRunning()
+        )
+
+        if kunci_busy or buka_busy:
+            # Munculkan window utamanya dulu kalau lagi ngumpet di tray
+            self.showNormal()
+            self.activateWindow()
+
+            # Tampilkan dialog peringatan block
+            dialog = ModernMessageBox(
+                title="Proses Sedang Berjalan",
+                message="Aplikasi sedang memproses enkripsi/dekripsi file.\n\nMematikan aplikasi secara paksa sekarang dapat menyebabkan file korup atau data hilang. Silakan tunggu hingga proses selesai atau batalkan proses terlebih dahulu.",
+                icon_name="mdi6.alert-decagram",
+                icon_color="#E74C3C",
+                parent=self,
+            )
+            dialog.btn_yes.setText("Mengerti")
+            dialog.btn_cancel.hide()  # Cuma butuh 1 tombol acknowledgement
+            dialog.exec()
+            return  # Stop eksekusi quit
+
         self._quitting = True
         QApplication.instance().quit()
 

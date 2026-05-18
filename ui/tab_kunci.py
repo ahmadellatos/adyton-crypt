@@ -41,6 +41,8 @@ from .widgets import (
     HeroIconWidget,
     CenteredMenuAction,
     AccessibleCenteredMenu,
+    ClearButton,
+    TambahClearSplitButton,
 )
 
 notification = None
@@ -66,8 +68,8 @@ STRENGTH_LABELS = ["Lemah", "Cukup", "Kuat", "Sangat Kuat"]
 
 class KeyboardCheckbox(QFrame):
     """
-    FIX: Custom checkbox yang mendukung keyboard navigation (Tab + Space/Enter).
-    Menggantikan QFrame biasa yang tidak accessible via keyboard.
+    FIX: Custom checkbox yang mendukung keyboard navigation (Tab + Space/Enter)
+    serta memiliki indikator icon ceklis dinamis.
     """
 
     def __init__(self, size=22, parent=None):
@@ -77,6 +79,29 @@ class KeyboardCheckbox(QFrame):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._checked = False
         self._on_toggle = None
+
+        # --- TAMBAHAN UNTUK ICON CEKLIS ---
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.lbl_icon = QLabel()
+        self.lbl_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(self.lbl_icon)
+
+    def set_checked(self, state: bool):
+        """Helper method OOP: Mengatur state, trigger CSS dinamis, dan pasang ikon sekaligus."""
+        self._checked = state
+        self.setProperty("checked", state)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+        if state:
+            # Otomatis menyesuaikan ukuran ceklis berdasarkan ukuran kotak
+            icon_sz = self.width() - 4
+            self.lbl_icon.setPixmap(
+                qta.icon("mdi6.check-bold", color="white").pixmap(icon_sz, icon_sz)
+            )
+        else:
+            self.lbl_icon.clear()
 
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -106,6 +131,13 @@ class FileListRow(QFrame):
     def leaveEvent(self, event):
         self._tooltip_widget.hide_tooltip()
         super().leaveEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.click()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
 
 class MultiDropFrame(QFrame):
@@ -312,7 +344,9 @@ class TabKunci(QWidget):
         lay_list.setContentsMargins(23, 23, 23, 23)
         lay_list.setSpacing(15)
 
+        # --- BLOK HEADER LIST FILE ---
         row_hdr = QHBoxLayout()
+
         icon_folder = QLabel()
         icon_folder.setPixmap(
             qta.icon("mdi6.folder-open", color="#F1C40F").pixmap(32, 32)
@@ -328,19 +362,17 @@ class TabKunci(QWidget):
         v_hdr_text.addWidget(lbl_target)
         v_hdr_text.addWidget(lbl_target_sub)
 
-        self.btn_add = QPushButton(" Tambah")
-        self.btn_add.setIcon(qta.icon("mdi6.plus", color="#8B95A5"))
-        self.btn_add.setObjectName("BtnGhost")
-        self.btn_add.setFixedSize(100, 36)
-        self.btn_add.setStyleSheet(
-            "QPushButton#BtnGhost { font-size: 10pt; border: 1px solid #232B3E; } QPushButton::menu-indicator { image: none; width: 0px; }"
-        )
-        self.btn_add.setMenu(menu)
+        self.btn_split_add = TambahClearSplitButton(menu, self._clear_all_paths)
+        self.btn_add = (
+            self.btn_split_add.btn_add
+        )  # Referensi dummy biar a11y & tooltip gak error
 
         row_hdr.addWidget(icon_folder)
         row_hdr.addLayout(v_hdr_text)
         row_hdr.addStretch()
-        row_hdr.addWidget(self.btn_add, alignment=Qt.AlignmentFlag.AlignTop)
+        # Masukkan komponen split button
+        row_hdr.addWidget(self.btn_split_add, alignment=Qt.AlignmentFlag.AlignTop)
+
         lay_list.addLayout(row_hdr)
 
         self.inner_frame = QFrame()
@@ -593,8 +625,7 @@ class TabKunci(QWidget):
 
         self.chk_hapus = KeyboardCheckbox(size=22)
         self.chk_hapus.setObjectName("ChkHapus")
-        self.chk_hapus.setProperty("checked", False)
-        self.chk_hapus._checked = False
+        self.chk_hapus.set_checked(False)
 
         v_chk_txt1 = QVBoxLayout()
         v_chk_txt1.setSpacing(2)
@@ -630,8 +661,7 @@ class TabKunci(QWidget):
 
         self.chk_secure = KeyboardCheckbox(size=18)
         self.chk_secure.setObjectName("ChkSecure")
-        self.chk_secure.setProperty("checked", False)
-        self.chk_secure._checked = False
+        self.chk_secure.set_checked(False)
         self.chk_secure.hide()
 
         lbl_chk_title2 = QLabel("Advanced: Secure Wipe (Timpa data)")
@@ -651,10 +681,8 @@ class TabKunci(QWidget):
 
         # Toggle handlers
         def _toggle_hapus_asli():
-            self.chk_hapus._checked = not self.chk_hapus._checked
-            self.chk_hapus.setProperty("checked", self.chk_hapus._checked)
-            self.chk_hapus.style().unpolish(self.chk_hapus)
-            self.chk_hapus.style().polish(self.chk_hapus)
+            # Cukup panggil set_checked 1x, gak perlu unpolish/polish manual lagi
+            self.chk_hapus.set_checked(not self.chk_hapus._checked)
 
             if self.chk_hapus._checked:
                 self.widget_secure_wipe.show()
@@ -668,10 +696,7 @@ class TabKunci(QWidget):
                 self.anim_secure.start()
                 self.anim_secure.finished.connect(self._on_secure_collapsed)
                 if self.chk_secure._checked:
-                    self.chk_secure._checked = False
-                    self.chk_secure.setProperty("checked", False)
-                    self.chk_secure.style().unpolish(self.chk_secure)
-                    self.chk_secure.style().polish(self.chk_secure)
+                    self.chk_secure.set_checked(False)  # Reset simpel
 
             self._update_btn_label()
 
@@ -692,10 +717,9 @@ class TabKunci(QWidget):
                 )
                 if dialog.exec() != QDialog.DialogCode.Accepted:
                     return
-            self.chk_secure._checked = not self.chk_secure._checked
-            self.chk_secure.setProperty("checked", self.chk_secure._checked)
-            self.chk_secure.style().unpolish(self.chk_secure)
-            self.chk_secure.style().polish(self.chk_secure)
+
+            # Cukup 1 baris pengganti 4 baris kode lama
+            self.chk_secure.set_checked(not self.chk_secure._checked)
 
         self.chk_hapus._on_toggle = _toggle_hapus_asli
         self.chk_secure._on_toggle = _toggle_secure_wipe
@@ -704,19 +728,19 @@ class TabKunci(QWidget):
 
     def _setup_accessibility(self):
         """Memasang event filter, focus policy, dan tab order untuk keyboard navigation."""
-        # Event filter untuk animasi border focus & keyboard shortcut
         self.btn_gen.installEventFilter(self)
         self.entry_pw1.installEventFilter(self)
         self.btn_toggle_pw1.installEventFilter(self)
         self.entry_pw2.installEventFilter(self)
         self.btn_toggle_pw2.installEventFilter(self)
         self.btn_empty_browse.installEventFilter(self)
-        self.btn_add.installEventFilter(self)
+        self.btn_split_add.btn_add.installEventFilter(self)
+        self.btn_split_add.btn_clear.installEventFilter(self)
 
-        # Paksa tombol custom nerima fokus keyboard (Tab)
         self.btn_gen.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.btn_empty_browse.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.btn_add.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.btn_split_add.btn_add.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.btn_split_add.btn_clear.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         # Tab order yang masuk akal
@@ -744,7 +768,14 @@ class TabKunci(QWidget):
                 box.style().unpolish(box)
                 box.style().polish(box)
 
-        # 2. Fungsi tombol Enter untuk semua Ikon Mata
+        # --- FIX TOOLTIP NGOTOT: Matikan timer kalau kursor masuk ke tombol X ---
+        elif event.type() == event.Type.Enter:
+            if isinstance(obj, ClearButton):
+                self._custom_tooltip.hide_tooltip()
+                # Return False agar event hover bawaan (warna merah) tetap jalan
+                return False
+
+        # 2. Fungsi tombol Enter untuk semua Ikon Mata & Dropdown
         elif event.type() == event.Type.KeyPress:
             # Cegat tombol Enter atau Spasi
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
@@ -753,7 +784,7 @@ class TabKunci(QWidget):
                     if obj.objectName() == "BtnEye":
                         obj.click()
                         return True
-                    # 🔥 TAMBAHIN INI: Logic buat buka menu Dropdown
+                    # Logic buat buka menu Dropdown
                     elif obj in (
                         getattr(self, "btn_empty_browse", None),
                         getattr(self, "btn_add", None),
@@ -761,7 +792,12 @@ class TabKunci(QWidget):
                         if obj.menu():
                             obj.showMenu()  # Paksa menu terbuka
                         return True
-                    elif obj == self.btn_gen:  # TAMBAH BLOK INI
+                    elif obj == getattr(self, "btn_gen", None) or (
+                        isinstance(obj, QPushButton) and obj.objectName() == "BtnGhost"
+                    ):
+                        obj.click()
+                        return True
+                    elif isinstance(obj, ClearButton):
                         obj.click()
                         return True
 
@@ -813,6 +849,26 @@ class TabKunci(QWidget):
             self._paths.remove(path)
             self._render_list()
 
+    def _clear_all_paths(self):
+        if not self._paths:
+            return
+
+        # Konfirmasi pop-up jika menghapus lebih dari 1 target
+        if len(self._paths) > 1:
+            dialog = ModernMessageBox(
+                title="Bersihkan Daftar Target",
+                message=f"Apakah Anda yakin ingin menghapus semua {len(self._paths)} target dari daftar?",
+                icon_name="mdi6.trash-can-outline",
+                icon_color="#E74C3C",
+                parent=self,
+            )
+            dialog.btn_yes.setText("Bersihkan")
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+
+        self._paths.clear()
+        self._render_list()
+
     def _render_list(self):
         if hasattr(self, "_custom_tooltip"):
             self._custom_tooltip.hide_tooltip()
@@ -823,6 +879,7 @@ class TabKunci(QWidget):
                 item.widget().deleteLater()
 
         if not self._paths:
+            self.btn_split_add.set_clear_visible(False)  # <-- Tambahkan ini
             self.stack_target.setCurrentIndex(0)
             self._update_card_style(True)
             self._validate_state()
@@ -830,6 +887,9 @@ class TabKunci(QWidget):
 
         self.stack_target.setCurrentIndex(1)
         self._update_card_style(False)
+        self.btn_split_add.set_clear_visible(True)  # <-- Tambahkan ini
+
+        dynamic_rm_btns = []
 
         for p in self._paths:
             row = FileListRow(p, self._custom_tooltip)
@@ -873,18 +933,13 @@ class TabKunci(QWidget):
                 "font-size: 9pt; color: #8B95A5; background: transparent;"
             )
 
-            btn_rm = QPushButton()
-            btn_rm.setIcon(
-                qta.icon("mdi6.close", color="#8B95A5", color_active="white")
-            )
-            btn_rm.setIconSize(QSize(20, 20))
-            btn_rm.setObjectName("BtnGhost")
-            btn_rm.setFixedSize(32, 32)
-            btn_rm.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-            btn_rm.setToolTip(f"Hapus {os.path.basename(p)} dari daftar")
+            btn_rm = ClearButton()
             btn_rm.clicked.connect(
                 lambda checked=False, path=p: self._remove_path(path)
             )
+
+            self._make_btn_rm_accessible(btn_rm)
+            dynamic_rm_btns.append(btn_rm)
 
             r_lay.addWidget(ikon)
             r_lay.addSpacing(10)
@@ -897,6 +952,16 @@ class TabKunci(QWidget):
 
         self.list_layout.addStretch()
         self._validate_state()
+
+        prev_widget = self.btn_split_add.btn_add
+        if self.btn_split_add.btn_clear.isVisible():
+            QWidget.setTabOrder(prev_widget, self.btn_split_add.btn_clear)
+            prev_widget = self.btn_split_add.btn_clear
+
+        for btn in dynamic_rm_btns:
+            QWidget.setTabOrder(prev_widget, btn)
+            prev_widget = btn
+        QWidget.setTabOrder(prev_widget, self.chk_hapus)
 
     def _make_btn_rm_accessible(self, btn_rm):
         """Pasang event filter agar Enter/Space bisa trigger btn_rm."""
@@ -1096,12 +1161,16 @@ class TabKunci(QWidget):
         self.worker.start()
 
     def _set_busy(self, busy: bool):
-        self.btn_add.setEnabled(not busy)
+        self.btn_split_add.setEnabled(not busy)
         self.btn_empty_browse.setEnabled(not busy)
         self.btn_gen.setEnabled(not busy)
-        # FIX: Disable seluruh file list saat proses berjalan
-        # agar tombol X di tiap row tidak memberikan hover state yang menyesatkan
         self.inner_frame.setEnabled(not busy)
+        self.entry_pw1.setEnabled(not busy)
+        self.entry_pw2.setEnabled(not busy)
+        self.btn_toggle_pw1.setEnabled(not busy)
+        self.btn_toggle_pw2.setEnabled(not busy)
+        self.chk_hapus.setEnabled(not busy)
+        self.chk_secure.setEnabled(not busy)
         if busy:
             self.btn_aksi.setTextLabels(
                 "MENGUNCI BRANKAS...", "Harap tunggu, proses sedang berjalan"
@@ -1110,6 +1179,8 @@ class TabKunci(QWidget):
         else:
             self._update_btn_label()
             self._validate_state()
+        if self._paths:
+            self.entry_pw1.setFocus()
 
     def _update_btn_label(self):
         """FIX: Ubah label tombol aksi secara dinamis sesuai state hapus_asli."""
@@ -1133,16 +1204,9 @@ class TabKunci(QWidget):
         if status == VaultStatus.SUCCESS:
             self._paths.clear()
 
-            # Reset opsi UI hapus asli & secure wipe
-            self.chk_hapus._checked = False
-            self.chk_hapus.setProperty("checked", False)
-            self.chk_hapus.style().unpolish(self.chk_hapus)
-            self.chk_hapus.style().polish(self.chk_hapus)
-
-            self.chk_secure._checked = False
-            self.chk_secure.setProperty("checked", False)
-            self.chk_secure.style().unpolish(self.chk_secure)
-            self.chk_secure.style().polish(self.chk_secure)
+            # Reset opsi UI hapus asli & secure wipe jadi sangat elegan
+            self.chk_hapus.set_checked(False)
+            self.chk_secure.set_checked(False)
 
             self.anim_secure.setStartValue(self.widget_secure_wipe.maximumHeight())
             self.anim_secure.setEndValue(0)

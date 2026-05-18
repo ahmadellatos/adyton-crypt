@@ -3,28 +3,27 @@ title Nuitka Compiler - Digital Locker
 color 0B
 
 echo ===================================================
-echo   MEMULAI KOMPILASI DIGITAL LOCKER KE .EXE (NUITKA)
+echo   MEMULAI KOMPILASI DIGITAL LOCKER (STANDALONE)
 echo ===================================================
 echo.
-echo Pastikan koneksi internet aktif!
-echo Jika kamu belum punya C Compiler, Nuitka akan mendownload MinGW64 secara otomatis.
+echo Mengkompilasi dalam mode Folder (Bukan OneFile) untuk startup instan...
 echo.
-echo Proses ini akan memakan komputasi CPU 100%% dan butuh waktu 5-15 menit.
-echo Silakan tinggal ngopi dulu...
-echo.
+
+:: Catatan Senior: 
+:: Kita matikan onefile, gunakan standalone murni.
+:: Jangan lupa, kalau lu punya file icon.ico, tambahkan: --windows-icon-from-ico=app_icon.ico
 
 python -m nuitka ^
     --standalone ^
-    --onefile ^
     --windows-console-mode=disable ^
     --enable-plugin=pyside6 ^
+    --enable-plugin=anti-bloat ^
     --include-package=core ^
     --include-package=ui ^
     --include-package=cryptography ^
     --noinclude-pytest-mode=nofollow ^
     --nofollow-import-to=tests ^
     --assume-yes-for-downloads ^
-    --output-filename="Digital Locker.exe" ^
     --output-dir=release_build ^
     main.py
 
@@ -34,7 +33,10 @@ if %ERRORLEVEL% == 0 (
     echo ===================================================
     echo   KOMPILASI BERHASIL!
     echo ===================================================
-    echo File siap di: release_build\Digital Locker.exe
+    echo Hasil build ada di: release_build\main.dist\
+    echo.
+    echo Langkah selanjutnya: Bundle folder main.dist menjadi installer
+    echo menggunakan Inno Setup Compiler.
 ) else (
     color 0C
     echo ===================================================

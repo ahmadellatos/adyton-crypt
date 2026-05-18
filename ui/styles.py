@@ -206,4 +206,81 @@ def load_stylesheet() -> str:
     QFrame#ChkSecure:focus {{ 
         border: 2px solid #FFFFFF; 
     }}
+
+    /* --- CENTRALIZED REFACTOR FROM INLINE STYLES --- */
+    
+    /* 1. Card DropArea (State Kosong vs Berisi) */
+    QFrame#DropArea[empty="true"] {{
+        border: 2px dashed #232B3E;
+        background-color: #0B101E;
+        border-radius: 12px;
+    }}
+    QFrame#DropArea[empty="true"][dragActive="true"] {{
+        border: 2px dashed #00D2C8;
+        background-color: #181F32;
+    }}
+    QFrame#DropArea[empty="false"] {{
+        border: 1px solid #232B3E;
+        background-color: #111625;
+        border-radius: 12px;
+    }}
+    QFrame#DropArea[empty="false"][dragActive="true"] {{
+        border: 2px dashed #00D2C8;
+        background-color: #181F32;
+    }}
+
+    /* 2. Custom ToolTip Label */
+    QLabel#CustomToolTip {{
+        background-color: #111625;
+        color: #FFFFFF;
+        border: 1px solid #232B3E;
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-size: 9pt;
+    }}
+
+    /* 3. ModernMessageBox Button Lanjutkan */
+    QPushButton#BtnAlertConfirm {{
+        background-color: #E74C3C;
+        color: white;
+        border: 2px solid transparent;
+        border-radius: 8px;
+        font-weight: bold;
+    }}
+    QPushButton#BtnAlertConfirm:hover {{
+        background-color: #C0392B;
+    }}
+    QPushButton#BtnAlertConfirm:focus {{
+        border: 2px solid #FFFFFF;
+        background-color: #C0392B;
+    }}
+
+    /* 4. TitleBar Buttons Custom */
+    QPushButton#TitleMinBtn, QPushButton#TitleMaxBtn, QPushButton#TitleCloseBtn {{
+        background-color: transparent;
+        border: none;
+        border-radius: 0;
+    }}
+    QPushButton#TitleMinBtn:hover, QPushButton#TitleMaxBtn:hover {{
+        background-color: #232B3E;
+    }}
+    QPushButton#TitleCloseBtn:hover {{
+        background-color: #E74C3C;
+    }}
+
+    /* 5. Animated Notification Bar (Dynamic States) */
+    QFrame#NotifBar[kind="ok"] {{ background-color: #0D2B1E; border-radius: 8px; border: none; }}
+    QFrame#NotifBar[kind="ok"] QLabel {{ border: none; background: transparent; color: #00D2C8; font-weight: bold; font-size: 10pt; }}
+
+    QFrame#NotifBar[kind="err"] {{ background-color: #2B0D0D; border-radius: 8px; border: none; }}
+    QFrame#NotifBar[kind="err"] QLabel {{ border: none; background: transparent; color: #E74C3C; font-weight: bold; font-size: 10pt; }}
+
+    QFrame#NotifBar[kind="warn"] {{ background-color: #2B1E0D; border-radius: 8px; border: none; }}
+    QFrame#NotifBar[kind="warn"] QLabel {{ border: none; background: transparent; color: #F39C12; font-weight: bold; font-size: 10pt; }}
+
+    /* --- TOMBOL TAMBAH (Dengan Border Default) --- */
+    QPushButton#BtnAdd {{background-color: transparent; border: 1px solid {CLR_BORDER}; border-radius: 8px; color: {CLR_TEXT_MUTED}; font-size: 10pt;}}
+    QPushButton#BtnAdd:hover {{background-color: {CLR_BORDER}; color: {CLR_TEXT_MAIN};}}
+    QPushButton#BtnAdd:focus {{border: 2px solid {CLR_ACCENT}; background-color: {CLR_BORDER};}}
+    QPushButton#BtnAdd::menu-indicator {{image: none; width: 0px;}}
     """

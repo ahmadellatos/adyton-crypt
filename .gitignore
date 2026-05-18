@@ -14,6 +14,7 @@ dist/
 release_build/
 *.exe
 *.spec
+*.iss
 *.bin
 
 # File Aplikasi (Jangan sampai file rahasia/test ter-upload)

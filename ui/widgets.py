@@ -107,31 +107,61 @@ class CustomToolTip(QLabel):
         """)
         self.hide()
 
-        self._delay_timer = QTimer(self)
-        self._delay_timer.setSingleShot(True)
-        self._delay_timer.timeout.connect(self._do_show)
-
-        self._autohide_timer = QTimer(self)
-        self._autohide_timer.setSingleShot(True)
-        self._autohide_timer.timeout.connect(self.hide_tooltip)
+        # Timer tunggal untuk polling pergerakan mouse setiap 50ms
+        self._monitor_timer = QTimer(self)
+        self._monitor_timer.setInterval(50)
+        self._monitor_timer.timeout.connect(self._check_mouse_state)
 
         self._pending_text = ""
+        self._last_cursor_pos = QPoint()
+        self._time_hovered = 0
+
+        # Standar durasi UX OS Native
+        self._show_delay_ms = 1000  # Nongol setelah mouse diam 1 detik
+        self._hide_delay_ms = 5000  # Hilang otomatis setelah 5 detik (jika tidak gerak)
 
     def request_show(self, text):
         self._pending_text = text
-        self._delay_timer.start(1500)
+        self._last_cursor_pos = QCursor.pos()
+        self._time_hovered = 0
+        self._monitor_timer.start()
+
+    def _check_mouse_state(self):
+        current_pos = QCursor.pos()
+
+        # Hitung jarak pergerakan mouse dari posisi terakhir (Toleransi 5 pixel/anti-jitter)
+        diff = current_pos - self._last_cursor_pos
+        distance_sq = diff.x() ** 2 + diff.y() ** 2
+
+        if distance_sq > 25:  # Jika mouse bergerak lebih dari ~5 px
+            self._last_cursor_pos = current_pos
+            self._time_hovered = 0  # Reset timer!
+            if self.isVisible():
+                self.hide()  # Langsung sembunyikan jika user gerak
+        else:
+            # Jika mouse terpantau diam, teruskan hitungan
+            self._time_hovered += 50
+
+            # Waktunya tampilkan
+            if self._time_hovered == self._show_delay_ms and not self.isVisible():
+                self._do_show()
+            # Waktunya autohide (expired)
+            elif (
+                self._time_hovered >= (self._show_delay_ms + self._hide_delay_ms)
+                and self.isVisible()
+            ):
+                self.hide_tooltip()
 
     def _do_show(self):
         self.setText(self._pending_text)
         self.adjustSize()
         pos = QCursor.pos()
+        # Offset biar gak nutupin kursor
         self.move(pos.x() + 15, pos.y() + 15)
         self.show()
-        self._autohide_timer.start(5000)
 
     def hide_tooltip(self):
-        self._delay_timer.stop()
-        self._autohide_timer.stop()
+        self._monitor_timer.stop()
         self.hide()
 
 
@@ -221,8 +251,20 @@ class ModernMessageBox(QDialog):
         self.btn_yes.setFixedSize(110, 36)
         self.btn_yes.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_yes.setStyleSheet("""
-            QPushButton { background-color: #E74C3C; color: white; border: none; border-radius: 8px; font-weight: bold; }
-            QPushButton:hover { background-color: #C0392B; }
+            QPushButton { 
+                background-color: #E74C3C; 
+                color: white; 
+                border: 2px solid transparent; 
+                border-radius: 8px; 
+                font-weight: bold; 
+            }
+            QPushButton:hover { 
+                background-color: #C0392B; 
+            }
+            QPushButton:focus { 
+                border: 2px solid #FFFFFF; 
+                background-color: #C0392B; 
+            }
         """)
         self.btn_yes.clicked.connect(self.accept)
 
@@ -231,7 +273,8 @@ class ModernMessageBox(QDialog):
         layout.addLayout(btn_lay)
 
         self.btn_yes.setDefault(True)
-        self.btn_cancel.setAutoDefault(False)
+        self.btn_yes.setAutoDefault(True)
+        self.btn_cancel.setAutoDefault(True)
 
         if parent:
             self.adjustSize()
@@ -252,7 +295,7 @@ class TitleBarButton(QPushButton):
         self.icon_name = icon_name
         self.hover_bg = hover_bg_color
         self.setFixedSize(40, 32)
-
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setIcon(qta.icon(self.icon_name, color="#8B95A5"))
         self.setStyleSheet(f"""
             QPushButton {{
@@ -398,6 +441,13 @@ class BigActionBtn(QPushButton):
     def setTextLabels(self, title, subtitle=""):
         self.lbl_title.setText(title)
         self.lbl_sub.setText(subtitle)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.click()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
 
 class AnimatedNotifBar(QFrame):
@@ -659,3 +709,159 @@ class CenteredMenuAction(QWidgetAction):
             self.w.setStyleSheet(
                 "QWidget#CenteredMenuItem { background-color: transparent; border-radius: 4px; }"
             )
+
+
+class ClearButton(QPushButton):
+    """
+    Tombol silang (X) destruktif dengan efek hover.
+    Otomatis mengubah background jadi merah dan ikon jadi putih saat di-hover.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(32, 32)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setIcon(qta.icon("mdi6.close", color="#8B95A5"))
+        self.setIconSize(QSize(20, 20))
+
+        self.setStyleSheet("""
+            QPushButton { background: transparent; border: none; }
+            QPushButton:hover { background: #E74C3C; border-radius: 4px; }
+            QPushButton:focus { border: 2px solid #00D2C8; background: #232B3E; border-radius: 4px; }
+        """)
+
+    def enterEvent(self, event):
+        # Ubah ikon jadi putih saat mouse masuk (hover)
+        self.setIcon(qta.icon("mdi6.close", color="#FFFFFF"))
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        # Kembalikan ikon jadi abu-abu saat mouse keluar
+        self.setIcon(qta.icon("mdi6.close", color="#8B95A5"))
+        super().leaveEvent(event)
+
+
+# ── INTEGRATED TAMBAH & CLEAR SPLIT BUTTON ───────────────────────────
+class TambahClearSplitButton(QFrame):
+    """
+    Custom Split Button terintegrasi: "[+] Tambah | [Trashcan]"
+    Otomatis dapet focus ring cyan terpadu dan hover efek destruktif merah di area trashcan.
+    """
+
+    def __init__(self, menu, clear_callback, parent=None):
+        super().__init__(parent)
+        self.setObjectName("SplitActionFrame")
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Fokus diatur oleh tombol anak
+
+        self.setStyleSheet("""
+            QFrame#SplitActionFrame {
+                background-color: transparent;
+                border: 1px solid #232B3E;
+                border-radius: 8px;
+            }
+            QFrame#SplitActionFrame[focused="true"] {
+                border: 2px solid #00D2C8;
+            }
+        """)
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+
+        # 1. Bagian Kiri: Tombol Tambah
+        self.btn_add = QPushButton()
+        self.btn_add.setText(" Tambah")
+        self.btn_add.setIcon(qta.icon("mdi6.plus", color="#8B95A5"))
+        self.btn_add.setMenu(menu)
+        self.btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_add.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.btn_add.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                border: none;
+                color: #8B95A5;
+                font-size: 10pt;
+                font-weight: 600;
+                padding-left: 12px;
+                padding-right: 12px;
+                height: 34px;
+            }
+            QPushButton:hover { color: white; }
+            QPushButton::menu-indicator { image: none; width: 0px; }
+        """)
+
+        # 2. Bagian Tengah: Garis Pembatas Pemisah (Separator |)
+        self.sep = QFrame()
+        self.sep.setFixedWidth(1)
+        self.sep.setStyleSheet("background-color: #232B3E;")
+
+        # 3. Bagian Kanan: Tombol Trashcan (Clear All)
+        self.btn_clear = QPushButton()
+        self.btn_clear.setIcon(qta.icon("mdi6.trash-can-outline", color="#8B95A5"))
+        self.btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_clear.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.btn_clear.setFixedWidth(38)
+        self.btn_clear.clicked.connect(clear_callback)
+        self.btn_clear.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                border: none;
+                height: 34px;
+                border-top-left-radius: 0px;
+                border-bottom-left-radius: 0px;
+                border-top-right-radius: 7px;
+                border-bottom-right-radius: 7px;
+            }
+            QPushButton:hover {
+                background-color: #E74C3C;
+            }
+        """)
+
+        lay.addWidget(self.btn_add, 1)
+        lay.addWidget(self.sep)
+        lay.addWidget(self.btn_clear)
+
+        # Daftarkan ke filter internal untuk mengontrol efek focus ring dan ikon
+        self.btn_add.installEventFilter(self)
+        self.btn_clear.installEventFilter(self)
+
+    def set_clear_visible(self, visible: bool):
+        """Mengatur tampilan tombol secara dinamis berdasarkan isi file list"""
+        self.sep.setVisible(visible)
+        self.btn_clear.setVisible(visible)
+        if visible:
+            self.setFixedSize(145, 36)
+        else:
+            self.setFixedSize(100, 36)
+
+    def eventFilter(self, obj, event):
+        # Kelola focus ring terpadu pada parent border (QFrame)
+        if event.type() in (event.Type.FocusIn, event.Type.FocusOut):
+            has_focus = self.btn_add.hasFocus() or (
+                self.btn_clear.isVisible() and self.btn_clear.hasFocus()
+            )
+            self.setProperty("focused", has_focus)
+            self.style().unpolish(self)
+            self.style().polish(self)
+
+        # Efek ikon menyala putih saat disorot khusus area trashcan
+        elif event.type() == event.Type.Enter:
+            if obj == self.btn_clear:
+                self.btn_clear.setIcon(
+                    qta.icon("mdi6.trash-can-outline", color="#FFFFFF")
+                )
+        elif event.type() == event.Type.Leave:
+            if obj == self.btn_clear:
+                self.btn_clear.setIcon(
+                    qta.icon("mdi6.trash-can-outline", color="#8B95A5")
+                )
+
+        # Dukungan a11y keyboard khusus tombol trashcan
+        elif event.type() == event.Type.KeyPress:
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+                if obj == self.btn_clear:
+                    self.btn_clear.click()
+                    return True
+
+        return super().eventFilter(obj, event)

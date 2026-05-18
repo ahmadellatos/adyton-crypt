@@ -31,6 +31,8 @@ from .widgets import (
     ElidedLabel,
     HeroIconWidget,
     ModernMessageBox,
+    CustomToolTip,
+    ClearButton,
 )
 
 notification = None
@@ -82,6 +84,7 @@ class TabBuka(QWidget):
         self._path_file = None
         self._konfirmasi_timpa = False
         self.worker: CryptoWorker | None = None
+        self._custom_tooltip = CustomToolTip(self)
         self._build_ui()
 
     def resizeEvent(self, event):
@@ -274,17 +277,8 @@ class TabBuka(QWidget):
         v_fname.addWidget(self.lbl_path_filled)
         v_fname.addWidget(lbl_path_desc)
 
-        self.btn_clear = QPushButton()
-        self.btn_clear.setIcon(
-            qta.icon("mdi6.close", color="#8B95A5", color_active="white")
-        )
-        self.btn_clear.setFixedSize(32, 32)
-        self.btn_clear.setStyleSheet(
-            "QPushButton { background: transparent; border: none; } "
-            "QPushButton:hover { background: #E74C3C; border-radius: 4px; }"
-            "QPushButton:focus { border: 2px solid #00D2C8; background: #232B3E; }"
-        )
-        self.btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
+        # -- GANTI BLOK self.btn_clear LAMA DENGAN INI --
+        self.btn_clear = ClearButton()
         self.btn_clear.clicked.connect(self._clear_file)
 
         lay_fbox.addWidget(icon_locked)
@@ -405,6 +399,9 @@ class TabBuka(QWidget):
         self.btn_browse_center.installEventFilter(self)
         self.entry_pw.installEventFilter(self)
         self.btn_toggle_pw.installEventFilter(self)
+        self.lbl_path_filled.installEventFilter(self)
+        self.btn_ganti.installEventFilter(self)
+        self.btn_clear.installEventFilter(self)
 
         self.btn_browse_center.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.btn_ganti.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -432,13 +429,24 @@ class TabBuka(QWidget):
                 box.style().unpolish(box)
                 box.style().polish(box)
 
+        # --- FIX HOVER TOOLTIP: Tampilkan CustomToolTip yang mewah ---
+        elif event.type() == event.Type.Enter:
+            if obj == self.lbl_path_filled and self._path_file:
+                self._custom_tooltip.request_show(self._path_file)
+                return True
+
+        elif event.type() == event.Type.Leave:
+            if obj == self.lbl_path_filled:
+                self._custom_tooltip.hide_tooltip()
+                return True
+
         elif event.type() == event.Type.KeyPress:
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
                 if isinstance(obj, QPushButton):
                     if obj.objectName() == "BtnEye":
                         obj.click()
                         return True
-                    elif obj == self.btn_browse_center:  # TAMBAH BLOK INI
+                    elif obj == self.btn_browse_center:
                         obj.click()
                         return True
 
@@ -478,8 +486,6 @@ class TabBuka(QWidget):
     def _set_file(self, path: str):
         self._path_file = path
         self.lbl_path_filled.setText(os.path.basename(path))
-        self.lbl_path_filled.setToolTip(path)
-
         self.stack_file.setCurrentIndex(1)
         self._update_card_style(False)
         self._reset_timpa()
@@ -489,6 +495,7 @@ class TabBuka(QWidget):
 
     def _clear_file(self):
         self._path_file = None
+        self._custom_tooltip.hide_tooltip()
         self.stack_file.setCurrentIndex(0)
         self._update_card_style(True)
         self._reset_timpa()
@@ -554,14 +561,19 @@ class TabBuka(QWidget):
         self.btn_browse_center.setEnabled(not busy)
         self.btn_ganti.setEnabled(not busy)
         self.btn_clear.setEnabled(not busy)
+        self.entry_pw.setEnabled(not busy)
+        self.btn_toggle_pw.setEnabled(not busy)
         if busy:
             self.btn_aksi.setTextLabels("MEMBUKA BRANKAS...", "Harap tunggu...")
             self.btn_aksi.setEnabled(True)
+            self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         else:
             self.btn_aksi.setTextLabels(
                 "BUKA BRANKAS", "Masukkan password untuk membuka"
             )
             self._validate_state()
+        if self._path_file:
+            self.entry_pw.setFocus()
 
     def _on_selesai(self, result):
         self.worker = None

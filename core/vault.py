@@ -6,6 +6,7 @@ Dilengkapi mode opsi Secure Wipe untuk HDD tradisional.
 """
 
 import os
+import sys
 import shutil
 import uuid
 import tarfile
@@ -49,7 +50,7 @@ def hapus_permanen(path: Path, secure_wipe: bool = False):
                 size = path.stat().st_size
                 with path.open("r+b") as f:
                     written = 0
-                    kosong = b"\x00" * CHUNK_SIZE
+                    kosong = os.urandom(CHUNK_SIZE)
                     while written < size:
                         chunk = min(CHUNK_SIZE, size - written)
                         f.write(kosong[:chunk])
@@ -492,9 +493,11 @@ def buka_brankas(
             temp_ext_dir.mkdir(parents=True, exist_ok=True)
 
             try:
-                # Menggunakan temp_ext_dir (Path object) secara native
                 with tarfile.open(fileobj=in_stream, mode="r|") as tar:
-                    tar.extractall(path=temp_ext_dir, filter="data")
+                    if sys.version_info >= (3, 12):
+                        tar.extractall(path=temp_ext_dir, filter="data")
+                    else:
+                        tar.extractall(path=temp_ext_dir)
 
                 in_stream.read()
 
@@ -505,7 +508,6 @@ def buka_brankas(
                 if path_tujuan.exists():
                     hapus_permanen(path_tujuan)
 
-                # FIX: Menghilangkan str() casting yang redundan pada shutil
                 shutil.move(src, path_tujuan)
 
             except InvalidTag:
@@ -517,7 +519,10 @@ def buka_brankas(
         return VaultStatus.SUCCESS, nama_folder
 
     except Exception as exc:
-        return VaultStatus.ERROR, str(exc)
+        logger.exception(
+            "Gagal membuka brankas karena error internal saat proses dekripsi/ekstraksi."
+        )
+        return VaultStatus.ERROR, f"Terjadi kesalahan internal: {str(exc)}"
     finally:
         if temp_ext_dir and temp_ext_dir.exists():
             hapus_permanen(temp_ext_dir)
