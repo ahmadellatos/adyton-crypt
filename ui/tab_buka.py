@@ -1,7 +1,8 @@
 """
 Modul: tab_buka.py
 Deskripsi: Antarmuka untuk Tab "Buka Brankas".
-           Diperbarui: Fix layout overlap dengan mengatur ulang spacing dinamis.
+           Diperbarui: Fix layout overlap dengan mengatur ulang spacing dinamis,
+           dan Fix Indentasi metode _on_selesai.
 """
 
 import os
@@ -20,11 +21,10 @@ from PySide6.QtWidgets import (
     QDialog,
 )
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QFontMetrics
 
 from core.vault import buka_brankas, VaultStatus
+from core.worker import CryptoWorker
 from .widgets import (
-    CryptoWorker,
     AnimatedNotifBar,
     apply_shadow,
     BigActionBtn,
@@ -84,6 +84,37 @@ class TabBuka(QWidget):
         self.worker: CryptoWorker | None = None
         self._build_ui()
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_dnd_density()
+
+    def _update_dnd_density(self):
+        if not hasattr(self, "icon_empty"):
+            return
+
+        win = self.window()
+        win_h = win.height() if win else self.height()
+        card_h = self.card_file.height()
+
+        compact = win_h <= 690 or card_h < 300
+
+        if compact:
+            self.icon_empty.setMaximumHeight(52)
+            self.lbl_main_empty.setStyleSheet(
+                "font-size: 10pt; font-weight: bold; color: white;"
+            )
+            self.lbl_sub_empty.setStyleSheet("font-size: 8pt; color: #8B95A5;")
+            self.btn_browse_center.setFixedSize(180, 34)
+            self.lbl_footer_empty.hide()
+        else:
+            self.icon_empty.setMaximumHeight(85)
+            self.lbl_main_empty.setStyleSheet(
+                "font-size: 13pt; font-weight: bold; color: white;"
+            )
+            self.lbl_sub_empty.setStyleSheet("font-size: 10pt; color: #8B95A5;")
+            self.btn_browse_center.setFixedSize(220, 42)
+            self.lbl_footer_empty.show()
+
     def _update_card_style(self, is_empty: bool):
         if is_empty:
             self.card_file.setStyleSheet("""
@@ -110,15 +141,35 @@ class TabBuka(QWidget):
                 }
             """)
 
+    # ── BUILD UI ─────────────────────────────────────────────────────────────
+
     def _build_ui(self):
+        """Orchestrator utama — merakit semua panel jadi satu layout."""
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(20)
 
         h_container = QHBoxLayout()
         h_container.setSpacing(20)
+        h_container.addWidget(self._build_file_panel(), 1)
+        h_container.addLayout(self._build_password_panel(), 1)
+        main_layout.addLayout(h_container)
 
-        # KIRI (File Brankas - Stacked Dropzone)
+        self.btn_aksi = BigActionBtn(
+            "BUKA BRANKAS",
+            "Masukkan password untuk membuka",
+            icon_name="mdi6.lock-open-variant",
+        )
+        self.btn_aksi.setEnabled(False)
+        self.btn_aksi.clicked.connect(self._proses)
+        apply_shadow(self.btn_aksi, blur_radius=20, y_offset=4, opacity=80)
+        main_layout.addWidget(self.btn_aksi)
+
+        self.notif = AnimatedNotifBar(self)
+        self._setup_accessibility()
+
+    def _build_file_panel(self) -> QFrame:
+        """Panel kiri: drop zone dengan empty state & filled state."""
         self.card_file = DropTargetFrame()
         apply_shadow(self.card_file, blur_radius=30, opacity=40)
         self.card_file.on_file_dropped = self._set_file
@@ -129,69 +180,66 @@ class TabBuka(QWidget):
         self.stack_file = QStackedWidget()
         layout_card.addWidget(self.stack_file)
 
-        # --- PAGE 0: DASHED EMPTY STATE DENGAN HERO ICON ---
+        self.stack_file.addWidget(self._build_empty_state())
+        self.stack_file.addWidget(self._build_filled_state())
+
+        self._update_card_style(True)
+        return self.card_file
+
+    def _build_empty_state(self) -> QWidget:
+        """Page 0 stack: drop zone kosong dengan hero icon."""
         page_empty = QWidget()
         lay_empty = QVBoxLayout(page_empty)
         lay_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        # FIX OVERLAP: Spacing nol, kita atur manual via addSpacing
         lay_empty.setSpacing(0)
 
-        icon_empty = HeroIconWidget(mode="buka")
+        self.icon_empty = HeroIconWidget(mode="buka")
+        self.icon_empty.setMaximumHeight(85)
 
-        lbl_main_empty = QLabel("Drag & drop file .locked ke sini")
-        lbl_main_empty.setStyleSheet(
+        self.lbl_main_empty = QLabel("Drag & drop file .locked ke sini")
+        self.lbl_main_empty.setStyleSheet(
             "font-size: 13pt; font-weight: bold; color: white;"
         )
-        lbl_main_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_main_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_main_empty.setWordWrap(True)
 
-        lbl_sub_empty = QLabel("atau klik tombol di bawah untuk memilih file")
-        lbl_sub_empty.setStyleSheet("font-size: 10pt; color: #8B95A5;")
-        lbl_sub_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_sub_empty = QLabel("atau klik tombol di bawah untuk memilih file")
+        self.lbl_sub_empty.setStyleSheet("font-size: 10pt; color: #8B95A5;")
+        self.lbl_sub_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_sub_empty.setWordWrap(True)
 
         self.btn_browse_center = QPushButton(" Pilih File Brankas")
         self.btn_browse_center.setIcon(qta.icon("mdi6.folder-search", color="white"))
         self.btn_browse_center.setFixedSize(220, 42)
-        self.btn_browse_center.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(24, 31, 50, 0.5);
-                border: 1px solid #232B3E;
-                border-radius: 8px;
-                color: white;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #181F32;
-                border: 1px solid #00D2C8;
-            }
-        """)
+        self.btn_browse_center.setObjectName("BtnBrowseLg")
         self.btn_browse_center.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_browse_center.clicked.connect(self._pilih_file)
 
-        lbl_footer_empty = QLabel(
+        self.lbl_footer_empty = QLabel(
             "Hanya file dengan ekstensi .locked yang dapat dibuka"
         )
-        lbl_footer_empty.setStyleSheet("font-size: 9pt; color: #5B6575;")
-        lbl_footer_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_footer_empty.setStyleSheet("font-size: 9pt; color: #8B95A5;")
+        self.lbl_footer_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_footer_empty.setWordWrap(True)
 
-        # Spacing dinamis yang bisa mengecil saat window di resize ke minimum
         lay_empty.addStretch(1)
-        lay_empty.addWidget(icon_empty, alignment=Qt.AlignmentFlag.AlignHCenter)
-        lay_empty.addSpacing(15)
-        lay_empty.addWidget(lbl_main_empty)
-        lay_empty.addSpacing(5)
-        lay_empty.addWidget(lbl_sub_empty)
-        lay_empty.addSpacing(20)
+        lay_empty.addWidget(self.icon_empty, alignment=Qt.AlignmentFlag.AlignHCenter)
+        lay_empty.addStretch(1)
+        lay_empty.addWidget(self.lbl_main_empty)
+        lay_empty.addSpacing(2)
+        lay_empty.addWidget(self.lbl_sub_empty)
+        lay_empty.addStretch(1)
         lay_empty.addWidget(
             self.btn_browse_center, alignment=Qt.AlignmentFlag.AlignHCenter
         )
-        lay_empty.addSpacing(25)
-        lay_empty.addWidget(lbl_footer_empty)
+        lay_empty.addStretch(1)
+        lay_empty.addWidget(self.lbl_footer_empty)
         lay_empty.addStretch(1)
 
-        self.stack_file.addWidget(page_empty)
+        return page_empty
 
-        # --- PAGE 1: FILLED STATE ---
+    def _build_filled_state(self) -> QWidget:
+        """Page 1 stack: info file yang sudah dipilih + tombol ganti."""
         page_filled = QWidget()
         lay_filled = QVBoxLayout(page_filled)
         lay_filled.setContentsMargins(23, 23, 23, 23)
@@ -201,7 +249,6 @@ class TabBuka(QWidget):
         lbl_title_file.setObjectName("CardTitle")
         lay_filled.addWidget(lbl_title_file)
 
-        # Inner Box target terpilih
         file_box = QFrame()
         file_box.setStyleSheet(
             "background-color: #181F32; border: 1px solid #232B3E; border-radius: 8px;"
@@ -233,7 +280,9 @@ class TabBuka(QWidget):
         )
         self.btn_clear.setFixedSize(32, 32)
         self.btn_clear.setStyleSheet(
-            "QPushButton { background: transparent; border: none; } QPushButton:hover { background: #E74C3C; border-radius: 4px; }"
+            "QPushButton { background: transparent; border: none; } "
+            "QPushButton:hover { background: #E74C3C; border-radius: 4px; }"
+            "QPushButton:focus { border: 2px solid #00D2C8; background: #232B3E; }"
         )
         self.btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_clear.clicked.connect(self._clear_file)
@@ -251,14 +300,12 @@ class TabBuka(QWidget):
         lay_filled.addWidget(self.btn_ganti)
 
         lay_filled.addStretch()
-        self.stack_file.addWidget(page_filled)
+        return page_filled
 
-        # Set default state ke Empty
-        self._update_card_style(True)
-        h_container.addWidget(self.card_file, 1)
-
-        # KANAN (Password Form)
+    def _build_password_panel(self) -> QVBoxLayout:
+        """Panel kanan: input password + info box tips keamanan."""
         col_right = QVBoxLayout()
+
         card_pw = QFrame()
         card_pw.setObjectName("Card")
         apply_shadow(card_pw, blur_radius=30, opacity=40)
@@ -272,9 +319,10 @@ class TabBuka(QWidget):
         v_pw.addWidget(lbl_title_pw)
         v_pw.addSpacing(10)
 
-        box_pw = QFrame()
-        box_pw.setObjectName("InputBox")
-        lay_box = QHBoxLayout(box_pw)
+        # Input password
+        self.box_pw = QFrame()
+        self.box_pw.setObjectName("InputBox")
+        lay_box = QHBoxLayout(self.box_pw)
         lay_box.setContentsMargins(10, 0, 5, 0)
         lay_box.setSpacing(0)
 
@@ -295,25 +343,106 @@ class TabBuka(QWidget):
         self.btn_toggle_pw.clicked.connect(self._toggle_pw)
         lay_box.addWidget(self.btn_toggle_pw)
 
-        v_pw.addWidget(box_pw)
+        v_pw.addWidget(self.box_pw)
         v_pw.addStretch()
+        v_pw.addWidget(self._build_info_box())
+
         col_right.addWidget(card_pw, 1)
-        h_container.addLayout(col_right, 1)
+        return col_right
 
-        main_layout.addLayout(h_container)
+    def _build_info_box(self) -> QFrame:
+        """Info box tips keamanan di bawah form password."""
+        info_box = QFrame()
+        info_box.setStyleSheet("""
+            QFrame {
+                background-color: #0E1A24;
+                border: 1px solid #142E3B;
+                border-radius: 8px;
+            }
+        """)
+        lay_info = QVBoxLayout(info_box)
+        lay_info.setContentsMargins(14, 12, 14, 12)
+        lay_info.setSpacing(10)
 
-        # BOTTOM ACTION BAR
-        self.btn_aksi = BigActionBtn(
-            "BUKA BRANKAS",
-            "Masukkan password untuk membuka",
-            icon_name="mdi6.lock-open-variant",
-        )
-        self.btn_aksi.setEnabled(False)
-        self.btn_aksi.clicked.connect(self._proses)
-        apply_shadow(self.btn_aksi, blur_radius=20, y_offset=4, opacity=80)
-        main_layout.addWidget(self.btn_aksi)
+        tips = [
+            (
+                "mdi6.shield-key-outline",
+                "#00D2C8",
+                "Password tidak dapat dipulihkan. Simpan di tempat yang aman.",
+            ),
+            (
+                "mdi6.lock-alert-outline",
+                "#F39C12",
+                "Pastikan password sama persis dengan yang digunakan saat mengunci.",
+            ),
+            (
+                "mdi6.file-lock-outline",
+                "#8B95A5",
+                "Hanya file .locked yang dibuat oleh Digital Locker yang dapat dibuka.",
+            ),
+        ]
 
-        self.notif = AnimatedNotifBar(self)
+        for icon_name, color, text in tips:
+            row = QHBoxLayout()
+            row.setSpacing(10)
+            lbl_ic = QLabel()
+            lbl_ic.setPixmap(qta.icon(icon_name, color=color).pixmap(18, 18))
+            lbl_ic.setFixedSize(18, 18)
+            lbl_ic.setAlignment(Qt.AlignmentFlag.AlignTop)
+            lbl_tx = QLabel(text)
+            lbl_tx.setWordWrap(True)
+            lbl_tx.setStyleSheet(
+                "font-size: 9pt; color: #8B95A5; background: transparent; border: none;"
+            )
+            row.addWidget(lbl_ic, alignment=Qt.AlignmentFlag.AlignTop)
+            row.addWidget(lbl_tx, 1)
+            lay_info.addLayout(row)
+
+        return info_box
+
+    def _setup_accessibility(self):
+        """Setup focus policy, event filter, dan tab order."""
+        self.btn_browse_center.installEventFilter(self)
+        self.entry_pw.installEventFilter(self)
+        self.btn_toggle_pw.installEventFilter(self)
+
+        self.btn_browse_center.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.btn_ganti.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_clear.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+        self.setTabOrder(self.btn_browse_center, self.btn_ganti)
+        self.setTabOrder(self.btn_ganti, self.btn_clear)
+        self.setTabOrder(self.btn_clear, self.entry_pw)
+        self.setTabOrder(self.entry_pw, self.btn_toggle_pw)
+        self.setTabOrder(self.btn_toggle_pw, self.btn_aksi)
+
+    # ── EVENT HANDLING ───────────────────────────────────────────────────────
+
+    def eventFilter(self, obj, event):
+        if event.type() in (event.Type.FocusIn, event.Type.FocusOut):
+            if (
+                isinstance(obj, QLineEdit)
+                and obj.parent()
+                and obj.parent().objectName() == "InputBox"
+            ):
+                is_focus = event.type() == event.Type.FocusIn
+                box = obj.parent()
+                box.setProperty("focused", is_focus)
+                box.style().unpolish(box)
+                box.style().polish(box)
+
+        elif event.type() == event.Type.KeyPress:
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+                if isinstance(obj, QPushButton):
+                    if obj.objectName() == "BtnEye":
+                        obj.click()
+                        return True
+                    elif obj == self.btn_browse_center:  # TAMBAH BLOK INI
+                        obj.click()
+                        return True
+
+        return super().eventFilter(obj, event)
 
     def _toggle_pw(self):
         mode = (
@@ -330,14 +459,20 @@ class TabBuka(QWidget):
         )
         self.btn_toggle_pw.setIcon(qta.icon(icon_name, color=color))
 
+    # ── STATE & VALIDATION ───────────────────────────────────────────────────
+
     def _on_pw_change(self):
         self.notif.hide_msg()
         self._validate_state()
 
     def _validate_state(self):
+        if self.worker is not None:
+            return
         if not self._konfirmasi_timpa:
-            self.btn_aksi.setEnabled(
-                self._path_file is not None and bool(self.entry_pw.text())
+            enabled = self._path_file is not None and bool(self.entry_pw.text())
+            self.btn_aksi.setEnabled(enabled)
+            self.btn_aksi.setFocusPolicy(
+                Qt.FocusPolicy.StrongFocus if enabled else Qt.FocusPolicy.NoFocus
             )
 
     def _set_file(self, path: str):
@@ -348,6 +483,8 @@ class TabBuka(QWidget):
         self.stack_file.setCurrentIndex(1)
         self._update_card_style(False)
         self._reset_timpa()
+        self.btn_ganti.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.btn_clear.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._validate_state()
 
     def _clear_file(self):
@@ -355,6 +492,8 @@ class TabBuka(QWidget):
         self.stack_file.setCurrentIndex(0)
         self._update_card_style(True)
         self._reset_timpa()
+        self.btn_ganti.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_clear.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._validate_state()
 
     def _pilih_file(self):
@@ -370,6 +509,8 @@ class TabBuka(QWidget):
             "BUKA BRANKAS", "Masukkan password untuk membuka kunci"
         )
 
+    # ── PROSES DEKRIPSI ──────────────────────────────────────────────────────
+
     def _proses(self):
         if self.worker is not None and self.worker.isRunning():
             self.worker.cancel()
@@ -378,15 +519,28 @@ class TabBuka(QWidget):
             return
 
         force = self._konfirmasi_timpa
+
+        if force and getattr(self, "_cached_pw", None):
+            pw = self._cached_pw
+        else:
+            pw = self.entry_pw.text()
+            self._cached_pw = pw
+
         if force:
             self._reset_timpa()
 
-        pw = self.entry_pw.text()
         if not self._path_file or not pw:
             return
 
         self._set_busy(True)
         self.worker = CryptoWorker(buka_brankas, self._path_file, pw, force)
+
+        self.entry_pw.blockSignals(True)
+        self.entry_pw.clear()
+        self.entry_pw.setEchoMode(QLineEdit.EchoMode.Password)
+        self.btn_toggle_pw.setIcon(qta.icon("mdi6.eye-outline", color="#8B95A5"))
+        self.entry_pw.blockSignals(False)
+
         self.worker.progress.connect(
             lambda v: self.btn_aksi.setTextLabels(
                 "MEMBUKA...", f"Progress: {int(v*100)}% (Klik untuk Batal)"
@@ -409,58 +563,64 @@ class TabBuka(QWidget):
             )
             self._validate_state()
 
+    def _on_selesai(self, result):
+        self.worker = None
+        status, msg = result
 
-def _on_selesai(self, result):
-    self.worker = None
-    status, msg = result
+        if status == VaultStatus.SUCCESS:
+            self._cached_pw = None
+            self._clear_file()
 
-    if status == VaultStatus.SUCCESS:
-        self.entry_pw.blockSignals(True)
-        self.entry_pw.clear()
-        self.entry_pw.blockSignals(False)
-        self._clear_file()
+        self._set_busy(False)
 
-    self._set_busy(False)
-
-    if status == VaultStatus.SUCCESS:
-        self.notif.show_msg("ok", f"Folder/File '{msg}' berhasil dikembalikan!", 6000)
-        if HAS_PLYER and notification:
-            try:
-                notification.notify(
-                    title="Digital Locker",
-                    message=f"Brankas '{msg}' berhasil dibuka.",
-                    timeout=5,
-                )
-            except Exception as e:
-                logger.warning(f"Notifikasi sistem gagal: {e}")
-
-    elif status == VaultStatus.CANCELLED:
-        self.notif.show_msg("warn", "Dekripsi dibatalkan pengguna.", 4000)
-
-    elif status == VaultStatus.WRONG_PASSWORD:
-        self.notif.show_msg("err", "Password salah atau file corrupted! Coba lagi.")
-
-    # 🔥 FIX: Diubah jadi Pop Up Confirmation yang jauh lebih elegan! 🔥
-    elif status == VaultStatus.OVERWRITE_NEEDED:
-        dialog = ModernMessageBox(
-            title="Konfirmasi Timpa File",
-            message=f"Folder/File bernama '{msg}' sudah ada di lokasi tujuan.\n\nApakah Anda yakin ingin menimpanya? Data lama akan hilang secara permanen.",
-            icon_name="mdi6.alert-decagram",
-            icon_color="#E67E22",
-            parent=self,
-        )
-        dialog.btn_yes.setText("Timpa Data")
-
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            # Kalo setuju, langsung gas jalanin _proses ulang secara paksa!
-            self._konfirmasi_timpa = True
-            self._proses()
-        else:
-            self._reset_timpa()
-            self._validate_state()
+        if status == VaultStatus.SUCCESS:
+            logger.info(f"Dekripsi sukses: {msg}")
             self.notif.show_msg(
-                "warn", "Dekripsi dibatalkan untuk melindungi file asli Anda.", 4000
+                "ok", f"Folder/File '{msg}' berhasil dikembalikan!", 6000
             )
+            if HAS_PLYER and notification:
+                try:
+                    notification.notify(
+                        title="Digital Locker",
+                        message=f"Brankas '{msg}' berhasil dibuka.",
+                        timeout=5,
+                    )
+                except Exception as e:
+                    logger.warning(f"Notifikasi sistem gagal: {e}")
 
-    else:
-        self.notif.show_msg("err", f"Error: {msg}", 8000)
+        elif status == VaultStatus.CANCELLED:
+            self._cached_pw = None
+            logger.info("Dekripsi dibatalkan pengguna.")
+            self.notif.show_msg("warn", "Dekripsi dibatalkan pengguna.", 4000)
+
+        elif status == VaultStatus.WRONG_PASSWORD:
+            self._cached_pw = None
+            logger.warning("Dekripsi gagal: Password salah.")
+            self.notif.show_msg("err", "Password salah atau file corrupted! Coba lagi.")
+
+        elif status == VaultStatus.OVERWRITE_NEEDED:
+            dialog = ModernMessageBox(
+                title="Konfirmasi Timpa File",
+                message=f"Folder/File bernama '{msg}' sudah ada di lokasi tujuan.\n\nApakah Anda yakin ingin menimpanya? Data lama akan hilang secara permanen.",
+                icon_name="mdi6.alert-decagram",
+                icon_color="#E67E22",
+                parent=self,
+            )
+            dialog.btn_yes.setText("Timpa Data")
+
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self._konfirmasi_timpa = True
+                self._proses()
+            else:
+                self._cached_pw = None
+                self._reset_timpa()
+                self._validate_state()
+                logger.info("Dekripsi dibatalkan: User menolak overwrite file asli.")
+                self.notif.show_msg(
+                    "warn", "Dekripsi dibatalkan untuk melindungi file asli Anda.", 4000
+                )
+
+        else:
+            self._cached_pw = None
+            logger.error(f"Dekripsi gagal: {msg}")
+            self.notif.show_msg("err", f"Error: {msg}", 8000)

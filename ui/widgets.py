@@ -1,11 +1,12 @@
 """
 Modul: widgets.py
 Deskripsi: Kumpulan komponen UI (Widget) kustom.
-           Diperbarui: Fix CustomTitleBar ke qframelesswindow.TitleBar agar
-           Aero Snap via Mouse Drag berfungsi sempurna.
+           Diperbarui: Fix efek Hover dan Click pada CenteredMenuAction.
+
+Catatan: CryptoWorker telah dipindah ke core/worker.py karena merupakan
+         business logic threading, bukan UI component.
 """
 
-import inspect
 import qtawesome as qta
 from PySide6.QtWidgets import (
     QWidget,
@@ -16,12 +17,14 @@ from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect,
     QPushButton,
     QDialog,
+    QProxyStyle,
+    QStyle,
     QSizePolicy,
+    QWidgetAction,
+    QMenu,
 )
 from PySide6.QtCore import (
     Qt,
-    QThread,
-    Signal,
     QPropertyAnimation,
     QEasingCurve,
     QTimer,
@@ -30,11 +33,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QColor, QCursor
 
-# FIX PENTING: Import TitleBar dari library qframelesswindow
-from qframelesswindow import TitleBar
-
 from .styles import CLR_INNER, CLR_BORDER
-from core.vault import VaultStatus
 
 
 def apply_shadow(widget, blur_radius=20, y_offset=6, opacity=60):
@@ -48,21 +47,15 @@ def apply_shadow(widget, blur_radius=20, y_offset=6, opacity=60):
 
 # ── HERO ICON WIDGET (FOLDER GLOWING) ───────────────────────────────
 class HeroIconWidget(QWidget):
-    """
-    Ikon kustom komposit yang menumpuk beberapa ikon QTAwesome
-    untuk menciptakan efek 3D dan Glowing persis seperti mock-up desain.
-    """
-
     def __init__(self, mode="kunci", parent=None):
         super().__init__(parent)
         self.setFixedSize(160, 110)
 
-        # 1. Bintang-bintang / Sparkles (x, y, size, color)
         sparkles = [
-            (30, 15, 14, "#4A90E2"),  # Kiri atas besar
-            (10, 40, 10, "#4A90E2"),  # Kiri tengah kecil
-            (125, 35, 14, "#4A90E2"),  # Kanan atas
-            (140, 65, 10, "#4A90E2"),  # Kanan bawah
+            (30, 15, 14, "#4A90E2"),
+            (10, 40, 10, "#4A90E2"),
+            (125, 35, 14, "#4A90E2"),
+            (140, 65, 10, "#4A90E2"),
         ]
 
         for x, y, sz, col in sparkles:
@@ -76,24 +69,18 @@ class HeroIconWidget(QWidget):
             glow.setYOffset(0)
             lbl.setGraphicsEffect(glow)
 
-        # 2. Folder Base (Warna Navy Gelap)
         lbl_folder = QLabel(self)
         lbl_folder.setPixmap(qta.icon("mdi6.folder", color="#2A344A").pixmap(90, 90))
         lbl_folder.setGeometry(35, 10, 90, 90)
         lbl_folder.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # 3. Overlay Icon (Tameng Glowing)
         lbl_overlay = QLabel(self)
-        if mode == "kunci":
-            icon_name = "mdi6.shield-lock"  # Tameng + Gembok
-        else:
-            icon_name = "mdi6.shield-key"  # Tameng + Kunci
+        icon_name = "mdi6.shield-lock" if mode == "kunci" else "mdi6.shield-key"
 
         lbl_overlay.setPixmap(qta.icon(icon_name, color="#00D2C8").pixmap(36, 36))
         lbl_overlay.setGeometry(62, 42, 36, 36)
         lbl_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Efek Cahaya / Glow pada Tameng
         glow_overlay = QGraphicsDropShadowEffect(self)
         glow_overlay.setBlurRadius(25)
         glow_overlay.setColor(QColor("#00D2C8"))
@@ -243,15 +230,57 @@ class ModernMessageBox(QDialog):
         btn_lay.addWidget(self.btn_yes)
         layout.addLayout(btn_lay)
 
+        self.btn_yes.setDefault(True)
+        self.btn_cancel.setAutoDefault(False)
+
         if parent:
             self.adjustSize()
             parent_center = parent.mapToGlobal(parent.rect().center())
             self.move(parent_center - self.rect().center())
 
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.reject()
+        else:
+            super().keyPressEvent(event)
+
+
+# ── TITLE BAR BUTTON (DINAMIS & HOVER EFEK) ─────────────────────────
+class TitleBarButton(QPushButton):
+    def __init__(self, icon_name: str, hover_bg_color: str, parent=None):
+        super().__init__(parent)
+        self.icon_name = icon_name
+        self.hover_bg = hover_bg_color
+        self.setFixedSize(40, 32)
+
+        self.setIcon(qta.icon(self.icon_name, color="#8B95A5"))
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                border: none;
+                border-radius: 0;
+            }}
+            QPushButton:hover {{
+                background-color: {self.hover_bg};
+            }}
+        """)
+
+    def enterEvent(self, event):
+        self.setIcon(qta.icon(self.icon_name, color="#FFFFFF"))
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.setIcon(qta.icon(self.icon_name, color="#8B95A5"))
+        super().leaveEvent(event)
+
+    def change_icon(self, new_icon_name: str):
+        self.icon_name = new_icon_name
+        current_color = "#FFFFFF" if self.underMouse() else "#8B95A5"
+        self.setIcon(qta.icon(self.icon_name, color=current_color))
+
 
 # ── TITLE BAR CUSTOM ────────────────────────────────────────────────
-# FIX: Harus mewarisi TitleBar dari qframelesswindow, bukan QFrame
-class CustomTitleBar(TitleBar):
+class CustomTitleBar(QFrame):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent_window = parent
@@ -272,43 +301,40 @@ class CustomTitleBar(TitleBar):
         lay.addWidget(lbl_title)
         lay.addStretch()
 
-        self.btn_min = QPushButton()
-        self.btn_min.setIcon(qta.icon("mdi6.minus", color="#8B95A5"))
-        self.btn_min.setObjectName("BtnGhost")
-        self.btn_min.setFixedSize(40, 32)
+        control_lay = QHBoxLayout()
+        control_lay.setContentsMargins(0, 0, 0, 0)
+        control_lay.setSpacing(0)
+
+        self.btn_min = TitleBarButton("mdi6.minus", "#232B3E", self)
         self.btn_min.clicked.connect(self.parent_window.showMinimized)
 
-        self.btn_max = QPushButton()
-        self.btn_max.setIcon(qta.icon("mdi6.window-maximize", color="#8B95A5"))
-        self.btn_max.setObjectName("BtnGhost")
-        self.btn_max.setFixedSize(40, 32)
+        self.btn_max = TitleBarButton("mdi6.window-maximize", "#232B3E", self)
         self.btn_max.clicked.connect(self._toggle_maximize)
 
-        self.btn_close = QPushButton()
-        self.btn_close.setIcon(
-            qta.icon("mdi6.close", color="#8B95A5", color_active="white")
-        )
-        self.btn_close.setObjectName("BtnGhost")
-        self.btn_close.setFixedSize(40, 32)
-        self.btn_close.setStyleSheet(
-            "QPushButton#BtnGhost:hover { background-color: #E74C3C; border-radius: 0; }"
-        )
+        self.btn_close = TitleBarButton("mdi6.close", "#E74C3C", self)
         self.btn_close.clicked.connect(self.parent_window.close)
 
-        lay.addWidget(self.btn_min)
-        lay.addWidget(self.btn_max)
-        lay.addWidget(self.btn_close)
+        control_lay.addWidget(self.btn_min)
+        control_lay.addWidget(self.btn_max)
+        control_lay.addWidget(self.btn_close)
 
-        # FUNGSI mousePressEvent & mouseMoveEvent MANUAL TELAH DIHAPUS
-        # Agar drag diserahkan sepenuhnya ke Windows Aero Snap.
+        lay.addLayout(control_lay)
 
     def _toggle_maximize(self):
         if self.parent_window.isMaximized():
             self.parent_window.showNormal()
-            self.btn_max.setIcon(qta.icon("mdi6.window-maximize", color="#8B95A5"))
+            self.btn_max.change_icon("mdi6.window-maximize")
         else:
             self.parent_window.showMaximized()
-            self.btn_max.setIcon(qta.icon("mdi6.window-restore", color="#8B95A5"))
+            self.btn_max.change_icon("mdi6.window-restore")
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.parent_window.windowHandle().startSystemMove()
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._toggle_maximize()
 
 
 # ── WIDGET LAINNYA ──────────────────────────────────────────────────
@@ -372,35 +398,6 @@ class BigActionBtn(QPushButton):
     def setTextLabels(self, title, subtitle=""):
         self.lbl_title.setText(title)
         self.lbl_sub.setText(subtitle)
-
-
-class CryptoWorker(QThread):
-    progress = Signal(float)
-    finished = Signal(tuple)
-
-    def __init__(self, func, *args, **kwargs):
-        super().__init__()
-        self.func = func
-        self.args = args
-        self.kwargs = kwargs
-        self._is_cancelled = False
-
-    def cancel(self):
-        self._is_cancelled = True
-
-    def run(self):
-        try:
-            sig = inspect.signature(self.func)
-            if "is_cancelled" in sig.parameters:
-                self.kwargs["is_cancelled"] = lambda: self._is_cancelled
-
-            self.kwargs["progress_cb"] = lambda val: self.progress.emit(val)
-
-            result = self.func(*self.args, **self.kwargs)
-            self.finished.emit(result if isinstance(result, tuple) else (result,))
-
-        except Exception as e:
-            self.finished.emit((VaultStatus.ERROR, str(e)))
 
 
 class AnimatedNotifBar(QFrame):
@@ -537,3 +534,128 @@ class AnimatedNotifBar(QFrame):
         self.anim.setStartValue(self.pos())
         self.anim.setEndValue(QPoint(target_x, target_y))
         self.anim.start()
+
+
+class CenteredMenuStyle(QProxyStyle):
+    def drawControl(self, element, option, painter, widget=None):
+        if element == QStyle.ControlElement.CE_MenuItem:
+            option.displayAlignment = Qt.AlignmentFlag.AlignCenter
+            # Gambar background highlight manual saat item selected/fokus
+            if option.state & QStyle.StateFlag.State_Selected:
+                painter.fillRect(option.rect, QColor("#181F32"))
+        super().drawControl(element, option, painter, widget)
+
+
+class HoverMenuWidget(QWidget):
+    def __init__(
+        self, text, icon_name, icon_color, text_color, action_ref, parent=None
+    ):
+        super().__init__(parent)
+        self.action_ref = action_ref
+        self._highlighted = False
+        self.setObjectName("CenteredMenuItem")
+        self.setStyleSheet(
+            "QWidget#CenteredMenuItem { background-color: transparent; border-radius: 4px; }"
+        )
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(15, 8, 15, 8)
+        lay.setSpacing(10)
+
+        lay.addStretch()
+        self.lbl_icon = QLabel()
+        self.lbl_icon.setPixmap(qta.icon(icon_name, color=icon_color).pixmap(16, 16))
+        self.lbl_icon.setStyleSheet("background: transparent; border: none;")
+        lay.addWidget(self.lbl_icon)
+
+        self.lbl_text = QLabel(text)
+        self.lbl_text.setStyleSheet(
+            f"color: {text_color}; font-size: 10pt; font-weight: 500; background: transparent; border: none;"
+        )
+        lay.addWidget(self.lbl_text)
+        lay.addStretch()
+
+    def _apply_style(self):
+        if self._highlighted:
+            self.setStyleSheet(
+                "QWidget#CenteredMenuItem { background-color: #181F32; border-radius: 4px; }"
+            )
+        else:
+            self.setStyleSheet(
+                "QWidget#CenteredMenuItem { background-color: transparent; border-radius: 4px; }"
+            )
+
+    def set_highlighted(self, highlighted: bool):
+        # TAMBAH METHOD INI
+        self._highlighted = highlighted
+        self._apply_style()
+
+    def enterEvent(self, event):
+        self._highlighted = True  # UBAH: pakai flag, bukan langsung setStyleSheet
+        self._apply_style()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._highlighted = False  # UBAH: pakai flag
+        self._apply_style()
+        super().leaveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Trigger langsung dari custom widget saat diklik
+            self.action_ref.trigger()
+
+            # Jika punya parent menu (seperti tray_menu), segera tutup setelah klik!
+            if hasattr(self.action_ref, "parent_menu") and self.action_ref.parent_menu:
+                self.action_ref.parent_menu.close()
+        super().mouseReleaseEvent(event)
+
+
+class AccessibleCenteredMenu(QMenu):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.hovered.connect(self._on_action_hovered)
+        self.aboutToHide.connect(self._reset_highlights)
+
+    def _on_action_hovered(self, action):
+        for act in self.actions():
+            if isinstance(act, CenteredMenuAction):
+                act.set_highlighted(act == action)
+
+    def _reset_highlights(self):
+        for act in self.actions():
+            if isinstance(act, CenteredMenuAction):
+                act.set_highlighted(False)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+            active = self.activeAction()
+            if active:
+                active.trigger()
+                self.close()
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
+
+class CenteredMenuAction(QWidgetAction):
+    def __init__(
+        self, text, icon_name, icon_color="white", text_color="white", parent=None
+    ):
+        super().__init__(parent)
+        self.parent_menu = parent
+        self.w = HoverMenuWidget(text, icon_name, icon_color, text_color, self, parent)
+        self.setDefaultWidget(self.w)
+
+    def set_highlighted(self, highlighted: bool):
+        self.w.set_highlighted(highlighted)
+        if highlighted:
+            self.w.setStyleSheet(
+                "QWidget#CenteredMenuItem { background-color: #181F32; border-radius: 4px; }"
+            )
+        else:
+            self.w.setStyleSheet(
+                "QWidget#CenteredMenuItem { background-color: transparent; border-radius: 4px; }"
+            )

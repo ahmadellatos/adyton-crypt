@@ -1,9 +1,6 @@
 """
 Modul: app.py
 Deskripsi: Merupakan antarmuka jendela utama (Main Window) dari aplikasi Digital Locker.
-           Menangani tata letak (layout) kerangka aplikasi, instalasi System Tray untuk
-           tugas latar belakang, pengikatan (binding) tab kontrol antara fitur Kunci
-           dan Buka Brankas, serta implementasi kustom Title Bar (Frameless Window).
 """
 
 import sys
@@ -26,25 +23,24 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QSize, QPropertyAnimation
 from loguru import logger
 
-# Import FramelessMainWindow untuk dukungan Native Resize & Aero Snap
 from qframelesswindow import FramelessMainWindow
 
 from .tab_kunci import TabKunci
 from .tab_buka import TabBuka
-from .widgets import CustomTitleBar
+from .widgets import (
+    CustomTitleBar,
+    CenteredMenuAction,
+    AccessibleCenteredMenu,
+)
 
 
 class AppBrankas(FramelessMainWindow):
-    """
-    Kelas Induk Jendela Aplikasi Digital Locker.
-    """
-
     def __init__(self):
         super().__init__()
 
-        # FIX: Turunin minimum size biar Aero Snap di setengah layar 1080p (960px)
-        # nggak bikin UI kepotong.
-        self.setMinimumSize(900, 600)
+        self._quitting = False
+
+        self.setMinimumSize(960, 680)
         self.setObjectName("MainWindow")
 
         self._init_ui()
@@ -52,8 +48,6 @@ class AppBrankas(FramelessMainWindow):
         self._center_window()
 
     def _center_window(self):
-        """Memposisikan jendela aplikasi tepat di tengah layar secara otomatis."""
-        # Biar pas pertama buka tetap berukuran ideal (lega)
         self.resize(1100, 700)
         center_point = QApplication.primaryScreen().availableGeometry().center()
         frame_geo = self.frameGeometry()
@@ -61,17 +55,14 @@ class AppBrankas(FramelessMainWindow):
         self.move(frame_geo.topLeft())
 
     def _init_ui(self):
-        """Membangun arsitektur User Interface utama aplikasi."""
         central_widget = QWidget()
         central_widget.setObjectName("CentralWidget")
         self.setCentralWidget(central_widget)
 
         main_layout = QVBoxLayout(central_widget)
-        # Berikan margin atas 32px (sebesar tinggi title bar).
         main_layout.setContentsMargins(0, 32, 0, 0)
         main_layout.setSpacing(0)
 
-        # Pasang Custom Title Bar via mekanisme bawaan library
         self.title_bar = CustomTitleBar(self)
         self.setTitleBar(self.title_bar)
 
@@ -87,25 +78,33 @@ class AppBrankas(FramelessMainWindow):
         self.tab_buka = TabBuka()
         self.stacked_tabs.addWidget(self.tab_kunci)
         self.stacked_tabs.addWidget(self.tab_buka)
+
+        # FIX: Sambungkan progress worker ke tray tooltip agar user tahu
+        # ada proses aktif meski window disembunyikan ke system tray
+        self.tab_kunci.btn_aksi.clicked.connect(self._update_tray_on_busy)
+        self.tab_buka.btn_aksi.clicked.connect(self._update_tray_on_busy)
         content_lay.addWidget(self.stacked_tabs, 1)
 
         self._build_footer(content_lay)
         main_layout.addWidget(content_container, 1)
 
     def _init_tray(self):
-        """Menginisialisasi modul System Tray Icon agar bisa berjalan di background."""
         self.tray = QSystemTrayIcon(self)
         self.tray.setIcon(qta.icon("mdi6.shield-lock", color="#00D2C8"))
 
-        tray_menu = QMenu()
+        tray_menu = AccessibleCenteredMenu()
 
-        act_show = tray_menu.addAction(" Buka Digital Locker")
-        act_show.setIcon(qta.icon("mdi6.window-maximize", color="white"))
+        act_show = CenteredMenuAction(
+            "Buka Digital Locker", "mdi6.window-maximize", parent=tray_menu
+        )
         act_show.triggered.connect(self.showNormal)
+        tray_menu.addAction(act_show)
 
-        act_quit = tray_menu.addAction(" Keluar Sepenuhnya")
-        act_quit.setIcon(qta.icon("mdi6.power", color="#E74C3C"))
-        act_quit.triggered.connect(QApplication.instance().quit)
+        act_quit = CenteredMenuAction(
+            "Keluar Sepenuhnya", "mdi6.power", icon_color="#E74C3C", parent=tray_menu
+        )
+        act_quit.triggered.connect(self._quit_sepenuhnya)
+        tray_menu.addAction(act_quit)
 
         self.tray.setContextMenu(tray_menu)
         self.tray.show()
@@ -113,15 +112,47 @@ class AppBrankas(FramelessMainWindow):
         self.tray.activated.connect(self._on_tray_click)
 
     def _on_tray_click(self, reason):
-        """Merespon event klik pada ikon System Tray."""
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self.showNormal()
 
+    def _update_tray_on_busy(self):
+        """FIX: Update tooltip tray saat proses enkripsi/dekripsi berjalan."""
+        kunci_busy = (
+            self.tab_kunci.worker is not None and self.tab_kunci.worker.isRunning()
+        )
+        buka_busy = (
+            self.tab_buka.worker is not None and self.tab_buka.worker.isRunning()
+        )
+        if kunci_busy:
+            self.tray.setToolTip("Digital Locker — Sedang mengenkripsi...")
+            self.tab_kunci.worker.progress.connect(
+                lambda v: self.tray.setToolTip(
+                    f"Digital Locker — Mengenkripsi {int(v*100)}%"
+                )
+            )
+            self.tab_kunci.worker.finished.connect(
+                lambda: self.tray.setToolTip("Digital Locker — Siap")
+            )
+        elif buka_busy:
+            self.tray.setToolTip("Digital Locker — Sedang mendekripsi...")
+            self.tab_buka.worker.progress.connect(
+                lambda v: self.tray.setToolTip(
+                    f"Digital Locker — Mendekripsi {int(v*100)}%"
+                )
+            )
+            self.tab_buka.worker.finished.connect(
+                lambda: self.tray.setToolTip("Digital Locker — Siap")
+            )
+
+    def _quit_sepenuhnya(self):
+        self._quitting = True
+        QApplication.instance().quit()
+
     def closeEvent(self, event):
-        """
-        Pencegatan event ketika pengguna menekan tombol X (Close).
-        Alih-alih membunuh proses, aplikasi disembunyikan dan dioper ke latar belakang.
-        """
+        if getattr(self, "_quitting", False):
+            event.accept()
+            return
+
         event.ignore()
         self.hide()
         self.tray.showMessage(
@@ -133,7 +164,6 @@ class AppBrankas(FramelessMainWindow):
         logger.info("Window di-minimize ke System Tray.")
 
     def _build_header(self, parent_layout):
-        """Membangun komponen header atas (Logo, Teks, dan Tombol Navigasi Tab)."""
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -227,7 +257,6 @@ class AppBrankas(FramelessMainWindow):
         parent_layout.addLayout(header_layout)
 
     def _build_footer(self, parent_layout):
-        """Membangun komponen footer penutup di dasar aplikasi."""
         lay_footer = QHBoxLayout()
 
         lay_safe = QHBoxLayout()
@@ -261,9 +290,6 @@ class AppBrankas(FramelessMainWindow):
         new_idx = self.tab_group.id(button)
         if new_idx == self.stacked_tabs.currentIndex():
             return
-
-        # FIX: Hapus animasi OpacityEffect yang menyebabkan QPainter collision.
-        # Transisi langsung pindah tab agar terhindar dari bentrok dengan DropShadowEffect.
         self.stacked_tabs.setCurrentIndex(new_idx)
 
     def showEvent(self, event):
