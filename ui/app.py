@@ -1,6 +1,6 @@
 """
 Modul: app.py
-Deskripsi: Merupakan antarmuka jendela utama (Main Window) dari aplikasi Digital Locker.
+Deskripsi: Merupakan antarmuka jendela utama (Main Window) dari aplikasi Adyton Crypt.
 """
 
 import qtawesome as qta
@@ -18,10 +18,9 @@ from PySide6.QtWidgets import (
     QApplication,
 )
 from PySide6.QtCore import Qt, QSize, QPropertyAnimation
+from PySide6.QtGui import QPixmap, QIcon
 from loguru import logger
-
 from qframelesswindow import FramelessMainWindow
-
 from .tab_kunci import TabKunci
 from .tab_buka import TabBuka
 from .widgets import (
@@ -44,6 +43,15 @@ class AppBrankas(FramelessMainWindow):
         self._init_ui()
         self._init_tray()
         self._center_window()
+
+        # Di dalem method __init__ lu (di deket kode tray lu yang ASLI)
+        app_icon = QIcon("assets/icon_adyton.ico")
+
+        # Ganti icon window utama
+        self.setWindowIcon(app_icon)
+
+        # Terus di kode self.tray lu yang ASLI, tinggal panggil ini:
+        self.tray.setIcon(app_icon)
 
     def _center_window(self):
         self.resize(1100, 700)
@@ -93,7 +101,7 @@ class AppBrankas(FramelessMainWindow):
         tray_menu = AccessibleCenteredMenu()
 
         act_show = CenteredMenuAction(
-            "Buka Digital Locker", "mdi6.window-maximize", parent=tray_menu
+            "Buka Adyton Crypt", "mdi6.window-maximize", parent=tray_menu
         )
         act_show.triggered.connect(self.showNormal)
         tray_menu.addAction(act_show)
@@ -122,24 +130,24 @@ class AppBrankas(FramelessMainWindow):
             self.tab_buka.worker is not None and self.tab_buka.worker.isRunning()
         )
         if kunci_busy:
-            self.tray.setToolTip("Digital Locker — Sedang mengenkripsi...")
+            self.tray.setToolTip("Adyton Crypt — Sedang mengenkripsi...")
             self.tab_kunci.worker.progress.connect(
                 lambda v: self.tray.setToolTip(
-                    f"Digital Locker — Mengenkripsi {int(v*100)}%"
+                    f"Adyton Crypt — Mengenkripsi {int(v*100)}%"
                 )
             )
             self.tab_kunci.worker.finished.connect(
-                lambda: self.tray.setToolTip("Digital Locker — Siap")
+                lambda: self.tray.setToolTip("Adyton Crypt")
             )
         elif buka_busy:
-            self.tray.setToolTip("Digital Locker — Sedang mendekripsi...")
+            self.tray.setToolTip("Adyton Crypt — Sedang mendekripsi...")
             self.tab_buka.worker.progress.connect(
                 lambda v: self.tray.setToolTip(
-                    f"Digital Locker — Mendekripsi {int(v*100)}%"
+                    f"Adyton Crypt — Mendekripsi {int(v*100)}%"
                 )
             )
             self.tab_buka.worker.finished.connect(
-                lambda: self.tray.setToolTip("Digital Locker — Siap")
+                lambda: self.tray.setToolTip("Adyton Crypt")
             )
 
     def _quit_sepenuhnya(self):
@@ -180,7 +188,7 @@ class AppBrankas(FramelessMainWindow):
         event.ignore()
         self.hide()
         self.tray.showMessage(
-            "Digital Locker Berjalan",
+            "Adyton Crypt Berjalan",
             "Aplikasi di-minimize ke System Tray untuk memproses di latar belakang.",
             QSystemTrayIcon.MessageIcon.Information,
             3000,
@@ -194,23 +202,22 @@ class AppBrankas(FramelessMainWindow):
         lay_kiri = QHBoxLayout()
         lay_kiri.setSpacing(15)
 
-        lbl_logo = QLabel()
-        lbl_logo.setPixmap(qta.icon("mdi6.lock", color="#00D2C8").pixmap(48, 48))
+        lbl_custom_logo = QLabel()
 
-        lay_title = QVBoxLayout()
-        lay_title.setSpacing(0)
-        lay_title.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        lbl_title = QLabel("Digital Locker")
-        lbl_title.setObjectName("AppTitle")
-        lbl_sub = QLabel("Secure AES-256 Encryption")
-        lbl_sub.setObjectName("AppSubtitle")
-        lay_title.addWidget(lbl_title)
-        lay_title.addWidget(lbl_sub)
+        pixmap = QPixmap("assets/logo_adyton2.png")
 
-        lay_kiri.addWidget(lbl_logo)
-        lay_kiri.addLayout(lay_title)
+        if not pixmap.isNull():
+            scaled_pixmap = pixmap.scaledToHeight(
+                45, Qt.TransformationMode.SmoothTransformation
+            )
+            lbl_custom_logo.setPixmap(scaled_pixmap)
+        else:
+            lbl_custom_logo.setText("LOGO NOT FOUND")
+            lbl_custom_logo.setStyleSheet("color: red; font-weight: bold;")
+
+        lay_kiri.addWidget(lbl_custom_logo)
+
         header_layout.addLayout(lay_kiri)
-
         header_layout.addStretch()
 
         tab_container = QFrame()

@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QWidgetAction,
     QMenu,
+    QLayout,
 )
 from PySide6.QtCore import (
     Qt,
@@ -31,7 +32,7 @@ from PySide6.QtCore import (
     QSize,
     QPoint,
 )
-from PySide6.QtGui import QColor, QCursor
+from PySide6.QtGui import QColor, QCursor, QPixmap
 
 from .styles import CLR_INNER, CLR_BORDER
 
@@ -205,14 +206,18 @@ class ModernMessageBox(QDialog):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setFixedWidth(420)
+
+        self.parent_widget = parent
 
         container = QFrame(self)
         container.setObjectName("Card")
+        container.setFixedWidth(460)
         apply_shadow(container, blur_radius=30, y_offset=8, opacity=60)
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
+
         main_layout.addWidget(container)
 
         layout = QVBoxLayout(container)
@@ -220,7 +225,7 @@ class ModernMessageBox(QDialog):
         layout.setSpacing(15)
 
         lbl_title = QLabel(title)
-        lbl_title.setStyleSheet("font-weight: 800; font-size: 12pt; color: white;")
+        lbl_title.setStyleSheet("font-weight: 700; font-size: 12pt; color: white;")
         layout.addWidget(lbl_title)
 
         content_lay = QHBoxLayout()
@@ -232,7 +237,11 @@ class ModernMessageBox(QDialog):
 
         lbl_msg = QLabel(message)
         lbl_msg.setWordWrap(True)
-        lbl_msg.setStyleSheet("color: #8B95A5; font-size: 10pt; line-height: 1.4;")
+        lbl_msg.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding
+        )
+        lbl_msg.setStyleSheet("color: #8B95A5; font-size: 10pt;")
+
         content_lay.addWidget(lbl_msg, 1)
 
         layout.addLayout(content_lay)
@@ -250,22 +259,7 @@ class ModernMessageBox(QDialog):
         self.btn_yes = QPushButton("Lanjutkan")
         self.btn_yes.setFixedSize(110, 36)
         self.btn_yes.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_yes.setStyleSheet("""
-            QPushButton { 
-                background-color: #E74C3C; 
-                color: white; 
-                border: 2px solid transparent; 
-                border-radius: 8px; 
-                font-weight: bold; 
-            }
-            QPushButton:hover { 
-                background-color: #C0392B; 
-            }
-            QPushButton:focus { 
-                border: 2px solid #FFFFFF; 
-                background-color: #C0392B; 
-            }
-        """)
+        self.btn_yes.setObjectName("BtnAlertConfirm")  # Pakai style CSS dari styles.py
         self.btn_yes.clicked.connect(self.accept)
 
         btn_lay.addWidget(self.btn_cancel)
@@ -276,9 +270,13 @@ class ModernMessageBox(QDialog):
         self.btn_yes.setAutoDefault(True)
         self.btn_cancel.setAutoDefault(True)
 
-        if parent:
-            self.adjustSize()
-            parent_center = parent.mapToGlobal(parent.rect().center())
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Hitung posisi tengah SETELAH widget selesai dirender & ukurannya valid
+        if self.parent_widget:
+            parent_center = self.parent_widget.mapToGlobal(
+                self.parent_widget.rect().center()
+            )
             self.move(parent_center - self.rect().center())
 
     def keyPressEvent(self, event):
@@ -335,9 +333,18 @@ class CustomTitleBar(QFrame):
         lay.setSpacing(10)
 
         self.lbl_icon = QLabel()
-        self.lbl_icon.setPixmap(qta.icon("mdi6.lock", color="#00D2C8").pixmap(14, 14))
+        pixmap = QPixmap("assets/icon_adyton.png")
+        self.lbl_icon.setPixmap(
+            pixmap.scaled(
+                16,
+                16,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
 
-        lbl_title = QLabel("Digital Locker — Professional")
+        # Judul bersih
+        lbl_title = QLabel("Adyton Crypt")
         lbl_title.setStyleSheet("color: #8B95A5; font-size: 9pt;")
 
         lay.addWidget(self.lbl_icon)
@@ -727,8 +734,10 @@ class ClearButton(QPushButton):
 
         self.setStyleSheet("""
             QPushButton { background: transparent; border: none; }
+            /* HOVER: Background merah untuk penanda destruktif */
             QPushButton:hover { background: #E74C3C; border-radius: 4px; }
-            QPushButton:focus { border: 2px solid #00D2C8; background: #232B3E; border-radius: 4px; }
+            /* FOCUS: Outline Cyan, background transparan (jangan merah) */
+            QPushButton:focus { border: 2px solid #00D2C8; background: transparent; border-radius: 4px; }
         """)
 
     def enterEvent(self, event):
@@ -743,25 +752,24 @@ class ClearButton(QPushButton):
 
 
 # ── INTEGRATED TAMBAH & CLEAR SPLIT BUTTON ───────────────────────────
+# ── INTEGRATED TAMBAH & CLEAR SPLIT BUTTON ───────────────────────────
 class TambahClearSplitButton(QFrame):
     """
     Custom Split Button terintegrasi: "[+] Tambah | [Trashcan]"
-    Otomatis dapet focus ring cyan terpadu dan hover efek destruktif merah di area trashcan.
+    Cincin fokus (focus ring) dan hover dipisah secara independen untuk tiap tombol.
     """
 
     def __init__(self, menu, clear_callback, parent=None):
         super().__init__(parent)
         self.setObjectName("SplitActionFrame")
-        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Fokus diatur oleh tombol anak
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
+        # Border induk statis
         self.setStyleSheet("""
             QFrame#SplitActionFrame {
                 background-color: transparent;
                 border: 1px solid #232B3E;
                 border-radius: 8px;
-            }
-            QFrame#SplitActionFrame[focused="true"] {
-                border: 2px solid #00D2C8;
             }
         """)
 
@@ -769,14 +777,16 @@ class TambahClearSplitButton(QFrame):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
 
-        # 1. Bagian Kiri: Tombol Tambah
+        # --- 1. Bagian Kiri: Tombol Tambah ---
         self.btn_add = QPushButton()
         self.btn_add.setText(" Tambah")
         self.btn_add.setIcon(qta.icon("mdi6.plus", color="#8B95A5"))
         self.btn_add.setMenu(menu)
         self.btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_add.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.btn_add.setStyleSheet("""
+
+        # Style saat mode split (ada tombol clear di kanan) -> siku kanan tegak
+        self._style_add_split = """
             QPushButton {
                 background: transparent;
                 border: none;
@@ -786,17 +796,40 @@ class TambahClearSplitButton(QFrame):
                 padding-left: 12px;
                 padding-right: 12px;
                 height: 34px;
+                border-top-left-radius: 7px;
+                border-bottom-left-radius: 7px;
+                border-top-right-radius: 0px;
+                border-bottom-right-radius: 0px;
             }
-            QPushButton:hover { color: white; }
+            QPushButton:hover { color: white; background-color: #181F32; }
+            QPushButton:focus { border: 2px solid #00D2C8; background-color: #181F32; }
             QPushButton::menu-indicator { image: none; width: 0px; }
-        """)
+        """
+        # Style saat mode full (tombol clear sembunyi) -> membulat semua
+        self._style_add_full = """
+            QPushButton {
+                background: transparent;
+                border: none;
+                color: #8B95A5;
+                font-size: 10pt;
+                font-weight: 600;
+                padding-left: 12px;
+                padding-right: 12px;
+                height: 34px;
+                border-radius: 7px;
+            }
+            QPushButton:hover { color: white; background-color: #181F32; }
+            QPushButton:focus { border: 2px solid #00D2C8; background-color: #181F32; }
+            QPushButton::menu-indicator { image: none; width: 0px; }
+        """
+        self.btn_add.setStyleSheet(self._style_add_split)
 
-        # 2. Bagian Tengah: Garis Pembatas Pemisah (Separator |)
+        # --- 2. Bagian Tengah: Garis Pemisah (Separator) ---
         self.sep = QFrame()
         self.sep.setFixedWidth(1)
         self.sep.setStyleSheet("background-color: #232B3E;")
 
-        # 3. Bagian Kanan: Tombol Trashcan (Clear All)
+        # --- 3. Bagian Kanan: Tombol Trashcan (Clear All) ---
         self.btn_clear = QPushButton()
         self.btn_clear.setIcon(qta.icon("mdi6.trash-can-outline", color="#8B95A5"))
         self.btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -816,37 +849,33 @@ class TambahClearSplitButton(QFrame):
             QPushButton:hover {
                 background-color: #E74C3C;
             }
+            QPushButton:focus {
+                border: 2px solid #00D2C8;
+                background-color: #232B3E;
+            }
         """)
 
         lay.addWidget(self.btn_add, 1)
         lay.addWidget(self.sep)
         lay.addWidget(self.btn_clear)
 
-        # Daftarkan ke filter internal untuk mengontrol efek focus ring dan ikon
         self.btn_add.installEventFilter(self)
         self.btn_clear.installEventFilter(self)
 
     def set_clear_visible(self, visible: bool):
-        """Mengatur tampilan tombol secara dinamis berdasarkan isi file list"""
+        """Ubah tampilan dinamis & ganti radius tombol 'Tambah' jika sendirian"""
         self.sep.setVisible(visible)
         self.btn_clear.setVisible(visible)
         if visible:
             self.setFixedSize(145, 36)
+            self.btn_add.setStyleSheet(self._style_add_split)
         else:
             self.setFixedSize(100, 36)
+            self.btn_add.setStyleSheet(self._style_add_full)
 
     def eventFilter(self, obj, event):
-        # Kelola focus ring terpadu pada parent border (QFrame)
-        if event.type() in (event.Type.FocusIn, event.Type.FocusOut):
-            has_focus = self.btn_add.hasFocus() or (
-                self.btn_clear.isVisible() and self.btn_clear.hasFocus()
-            )
-            self.setProperty("focused", has_focus)
-            self.style().unpolish(self)
-            self.style().polish(self)
-
-        # Efek ikon menyala putih saat disorot khusus area trashcan
-        elif event.type() == event.Type.Enter:
+        # Efek ikon Trashcan jadi putih saat kursor masuk
+        if event.type() == event.Type.Enter:
             if obj == self.btn_clear:
                 self.btn_clear.setIcon(
                     qta.icon("mdi6.trash-can-outline", color="#FFFFFF")
@@ -857,7 +886,7 @@ class TambahClearSplitButton(QFrame):
                     qta.icon("mdi6.trash-can-outline", color="#8B95A5")
                 )
 
-        # Dukungan a11y keyboard khusus tombol trashcan
+        # Trigger hapus pakai keyboard (Enter/Spasi)
         elif event.type() == event.Type.KeyPress:
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
                 if obj == self.btn_clear:

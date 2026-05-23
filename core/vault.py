@@ -256,7 +256,7 @@ def kunci_brankas(
         return VaultStatus.ERROR, "Tidak ada file/folder valid untuk dikunci."
 
     target_path = Path(path_simpan)
-    backup_path = target_path.with_suffix(".locked.bak")
+    backup_path = target_path.with_suffix(".adtn.bak")
     backup_dibuat = False
 
     try:

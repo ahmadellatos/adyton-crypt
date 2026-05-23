@@ -835,7 +835,7 @@ class TabKunci(QWidget):
 
     def _add_paths(self, new_paths):
         for p in new_paths:
-            if p.lower().endswith(".locked"):
+            if p.lower().endswith(".adtn"):
                 self.notif.show_msg(
                     "warn", f"⚠ '{os.path.basename(p)}' sudah jadi file brankas!", 4000
                 )
@@ -1109,8 +1109,11 @@ class TabKunci(QWidget):
                 return
 
         default_name = os.path.basename(self._paths[0]) or "Brankas_Rahasia"
+
+        self.btn_aksi.clearFocus()
+
         path_simpan, _ = QFileDialog.getSaveFileName(
-            self, "Simpan Brankas", f"{default_name}.locked", "File Terkunci (*.locked)"
+            self, "Simpan Brankas", f"{default_name}.adtn", "File Terkunci (*.adtn)"
         )
         if not path_simpan:
             return
@@ -1171,15 +1174,19 @@ class TabKunci(QWidget):
         self.btn_toggle_pw2.setEnabled(not busy)
         self.chk_hapus.setEnabled(not busy)
         self.chk_secure.setEnabled(not busy)
+
         if busy:
             self.btn_aksi.setTextLabels(
                 "MENGUNCI BRANKAS...", "Harap tunggu, proses sedang berjalan"
             )
             self.btn_aksi.setEnabled(True)
+            # Pastikan tombol aksi bisa menerima keyboard (opsional, tapi best practice)
+            self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         else:
             self._update_btn_label()
             self._validate_state()
-        if self._paths:
+
+        if not busy and self._paths:
             self.entry_pw1.setFocus()
 
     def _update_btn_label(self):
@@ -1222,7 +1229,7 @@ class TabKunci(QWidget):
             if HAS_PLYER and notification:
                 try:
                     notification.notify(
-                        title="Digital Locker",
+                        title="Adyton Crypt",
                         message="Brankas dikunci dengan aman.",
                         timeout=5,
                     )

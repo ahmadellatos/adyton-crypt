@@ -8,17 +8,16 @@ venv/
 env/
 .env
 
-# Build & Packaging (Untuk PyInstaller/Nuitka nanti)
+# Build & Packaging
 build/
 dist/
 release_build/
 *.exe
 *.spec
-*.iss
 *.bin
 
-# File Aplikasi (Jangan sampai file rahasia/test ter-upload)
-*.locked
+# File Aplikasi 
+*.adtn
 *.zip
 *.log
 *.rar

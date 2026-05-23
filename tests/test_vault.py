@@ -16,7 +16,7 @@ PASSWORD_SALAH = "password_salah_banget"
 
 def kunci_dan_dapat_path(folder, password=PASSWORD_BENAR, hapus=False, cb=None):
     base_dir = os.path.dirname(folder)
-    path_simpan = os.path.join(base_dir, f"{os.path.basename(folder)}.locked")
+    path_simpan = os.path.join(base_dir, f"{os.path.basename(folder)}.adtn")
 
     status, pesan = kunci_brankas(
         [folder], path_simpan, password, hapus_asli=hapus, progress_cb=cb
@@ -29,7 +29,7 @@ def kunci_dan_dapat_path(folder, password=PASSWORD_BENAR, hapus=False, cb=None):
 class TestHappyPath:
     def test_kunci_menghasilkan_file_locked(self, sample_folder):
         base_dir = os.path.dirname(sample_folder)
-        path_simpan = os.path.join(base_dir, "test_file.locked")
+        path_simpan = os.path.join(base_dir, "test_file.adtn")
 
         status, pesan = kunci_brankas([sample_folder], path_simpan, PASSWORD_BENAR)
         assert status == VaultStatus.SUCCESS
@@ -37,7 +37,7 @@ class TestHappyPath:
 
     def test_kunci_pesan_sukses(self, sample_folder):
         base_dir = os.path.dirname(sample_folder)
-        path_simpan = os.path.join(base_dir, "test_file.locked")
+        path_simpan = os.path.join(base_dir, "test_file.adtn")
 
         _, pesan = kunci_brankas([sample_folder], path_simpan, PASSWORD_BENAR)
         assert "Brankas berhasil dikunci" in pesan
@@ -76,19 +76,19 @@ class TestWrongPassword:
         buka_brankas(locked_path, PASSWORD_SALAH)
         folder_after = set(os.listdir(tmp_dir))
         new_items = folder_after - folder_before
-        assert all(item.endswith(".locked") for item in new_items)
+        assert all(item.endswith(".adtn") for item in new_items)
 
 
 class TestFileCorrupt:
     def test_file_terlalu_kecil(self, tmp_dir):
-        path = os.path.join(tmp_dir, "kecil.locked")
+        path = os.path.join(tmp_dir, "kecil.adtn")
         with open(path, "wb") as f:
             f.write(b"x" * 10)
         status, msg = buka_brankas(path, PASSWORD_BENAR)
         assert status == VaultStatus.ERROR
 
     def test_file_kosong(self, tmp_dir):
-        path = os.path.join(tmp_dir, "kosong.locked")
+        path = os.path.join(tmp_dir, "kosong.adtn")
         open(path, "wb").close()
         status, msg = buka_brankas(path, PASSWORD_BENAR)
         assert status == VaultStatus.ERROR
@@ -111,7 +111,7 @@ class TestOverwrite:
 class TestHapusAsli:
     def test_hapus_asli_true_menghapus_folder(self, sample_folder):
         base_dir = os.path.dirname(sample_folder)
-        path_simpan = os.path.join(base_dir, "hapus_asli.locked")
+        path_simpan = os.path.join(base_dir, "hapus_asli.adtn")
         status, _ = kunci_brankas(
             [sample_folder], path_simpan, PASSWORD_BENAR, hapus_asli=True
         )
@@ -134,6 +134,6 @@ class TestEdgeCases:
 
     def test_folder_path_tidak_ada(self, tmp_dir):
         path_fiktif = os.path.join(tmp_dir, "tidak_ada")
-        path_simpan = os.path.join(tmp_dir, "out.locked")
+        path_simpan = os.path.join(tmp_dir, "out.adtn")
         status, pesan = kunci_brankas([path_fiktif], path_simpan, PASSWORD_BENAR)
         assert status == VaultStatus.ERROR

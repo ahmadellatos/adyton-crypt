@@ -59,7 +59,7 @@ class DropTargetFrame(QFrame):
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             for url in event.mimeData().urls():
-                if url.toLocalFile().lower().endswith(".locked"):
+                if url.toLocalFile().lower().endswith(".adtn"):
                     self._set_drag_state(True)
                     event.acceptProposedAction()
                     return
@@ -72,7 +72,7 @@ class DropTargetFrame(QFrame):
         self._set_drag_state(False)
         for url in event.mimeData().urls():
             path = url.toLocalFile()
-            if path.lower().endswith(".locked"):
+            if path.lower().endswith(".adtn"):
                 if self.on_file_dropped:
                     self.on_file_dropped(path)
                 break
@@ -199,7 +199,7 @@ class TabBuka(QWidget):
         self.icon_empty = HeroIconWidget(mode="buka")
         self.icon_empty.setMaximumHeight(85)
 
-        self.lbl_main_empty = QLabel("Drag & drop file .locked ke sini")
+        self.lbl_main_empty = QLabel("Drag & drop file .adtn ke sini")
         self.lbl_main_empty.setStyleSheet(
             "font-size: 13pt; font-weight: bold; color: white;"
         )
@@ -219,7 +219,7 @@ class TabBuka(QWidget):
         self.btn_browse_center.clicked.connect(self._pilih_file)
 
         self.lbl_footer_empty = QLabel(
-            "Hanya file dengan ekstensi .locked yang dapat dibuka"
+            "Hanya file dengan ekstensi .adtn yang dapat dibuka"
         )
         self.lbl_footer_empty.setStyleSheet("font-size: 9pt; color: #8B95A5;")
         self.lbl_footer_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -248,7 +248,7 @@ class TabBuka(QWidget):
         lay_filled.setContentsMargins(23, 23, 23, 23)
         lay_filled.setSpacing(15)
 
-        lbl_title_file = QLabel("FILE BRANKAS (.locked)")
+        lbl_title_file = QLabel("FILE BRANKAS (.adtn)")
         lbl_title_file.setObjectName("CardTitle")
         lay_filled.addWidget(lbl_title_file)
 
@@ -372,7 +372,7 @@ class TabBuka(QWidget):
             (
                 "mdi6.file-lock-outline",
                 "#8B95A5",
-                "Hanya file .locked yang dibuat oleh Digital Locker yang dapat dibuka.",
+                "Hanya file .adtn yang dibuat oleh Adyton Crypt yang dapat dibuka.",
             ),
         ]
 
@@ -505,7 +505,7 @@ class TabBuka(QWidget):
 
     def _pilih_file(self):
         f, _ = QFileDialog.getOpenFileName(
-            self, "Pilih File Brankas", "", "Locked Files (*.locked)"
+            self, "Pilih File Brankas", "", "Adyton Crypt Files (*.adtn)"
         )
         if f:
             self._set_file(f)
@@ -563,6 +563,7 @@ class TabBuka(QWidget):
         self.btn_clear.setEnabled(not busy)
         self.entry_pw.setEnabled(not busy)
         self.btn_toggle_pw.setEnabled(not busy)
+
         if busy:
             self.btn_aksi.setTextLabels("MEMBUKA BRANKAS...", "Harap tunggu...")
             self.btn_aksi.setEnabled(True)
@@ -572,7 +573,8 @@ class TabBuka(QWidget):
                 "BUKA BRANKAS", "Masukkan password untuk membuka"
             )
             self._validate_state()
-        if self._path_file:
+
+        if not busy and self._path_file:
             self.entry_pw.setFocus()
 
     def _on_selesai(self, result):
@@ -593,7 +595,7 @@ class TabBuka(QWidget):
             if HAS_PLYER and notification:
                 try:
                     notification.notify(
-                        title="Digital Locker",
+                        title="Adyton Crypt",
                         message=f"Brankas '{msg}' berhasil dibuka.",
                         timeout=5,
                     )
@@ -628,9 +630,6 @@ class TabBuka(QWidget):
                 self._reset_timpa()
                 self._validate_state()
                 logger.info("Dekripsi dibatalkan: User menolak overwrite file asli.")
-                self.notif.show_msg(
-                    "warn", "Dekripsi dibatalkan untuk melindungi file asli Anda.", 4000
-                )
 
         else:
             self._cached_pw = None

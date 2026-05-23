@@ -1,26 +1,26 @@
 @echo off
-title Nuitka Compiler - Digital Locker
+title Nuitka Compiler - Adyton Crypt
 color 0B
 
 echo ===================================================
-echo   MEMULAI KOMPILASI DIGITAL LOCKER (STANDALONE)
+echo   MEMULAI KOMPILASI ADYTON CRYPT (STANDALONE)
 echo ===================================================
 echo.
 echo Mengkompilasi dalam mode Folder (Bukan OneFile) untuk startup instan...
 echo.
 
-:: Catatan Senior: 
-:: Kita matikan onefile, gunakan standalone murni.
-:: Jangan lupa, kalau lu punya file icon.ico, tambahkan: --windows-icon-from-ico=app_icon.ico
-
+:: Menggunakan Nuitka untuk meng-compile main.py menjadi native C
+:: Ikon aplikasi akan langsung ditanamkan (embedded) ke dalam file .exe
 python -m nuitka ^
     --standalone ^
     --windows-console-mode=disable ^
+    --windows-icon-from-ico=assets\icon_adyton.ico ^
     --enable-plugin=pyside6 ^
     --enable-plugin=anti-bloat ^
     --include-package=core ^
     --include-package=ui ^
     --include-package=cryptography ^
+    --include-data-dir=assets=assets ^
     --noinclude-pytest-mode=nofollow ^
     --nofollow-import-to=tests ^
     --assume-yes-for-downloads ^
