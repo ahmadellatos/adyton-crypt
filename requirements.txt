@@ -1,7 +1,7 @@
 PySide6>=6.6.0
-PySideSix-Frameless-Window>=0.4.4
-cryptography>=41.0.0
+qframelesswindow>=0.4.4
+cryptography>=41.0.0,<44.0.0
 QtAwesome>=1.3.0
 loguru>=0.7.0
-plyer>=2.1.0
+winotify>=1.1.0
 zxcvbn>=4.4.28

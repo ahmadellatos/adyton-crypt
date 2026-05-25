@@ -2,7 +2,7 @@
 core/vault.py
 Logika utama: kunci folder/file (enkripsi) dan buka brankas (dekripsi).
 Dioptimasi dengan Single-Pass I/O Streaming, pathlib, dan Cancellation Support.
-Dilengkapi mode opsi Secure Wipe untuk HDD tradisional.
+Telah ditambal dari celah keamanan Path Traversal (TarSlip) dan rapuhnya deteksi password.
 """
 
 import os
@@ -238,6 +238,44 @@ def _hitung_total_size(paths: list[str]) -> int:
     return total or 1
 
 
+def _verify_vault_integrity(path: Path, password: str) -> bool:
+    """
+    Verifikasi PENUH integritas vault menggunakan AES-GCM Auth Tag.
+    """
+    try:
+        total_size = path.stat().st_size
+        if total_size < OVERHEAD:
+            return False
+
+        cipher_len = total_size - OVERHEAD
+
+        with path.open("rb") as fk:
+            salt = fk.read(16)
+            nonce = fk.read(12)
+            fk.seek(-TAG_SIZE, os.SEEK_END)
+            tag = fk.read(TAG_SIZE)
+            fk.seek(HEADER_SIZE)
+
+            key = derive_key(password, salt)
+            decryptor = make_decryptor(key, nonce, tag)
+
+            bytes_remaining = cipher_len
+            while bytes_remaining > 0:
+                chunk_sz = min(CHUNK_SIZE, bytes_remaining)
+                chunk = fk.read(chunk_sz)
+                if not chunk:
+                    break
+                decryptor.update(chunk)
+                bytes_remaining -= len(chunk)
+
+            decryptor.finalize()
+
+        return True
+    except Exception as e:
+        logger.error(f"Verifikasi integritas gagal: {e}")
+        return False
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
@@ -260,7 +298,6 @@ def kunci_brankas(
     backup_dibuat = False
 
     try:
-        # FIX: Cek free space saat mengunci (Safety buffer 50MB)
         free_space = shutil.disk_usage(target_path.parent).free
         total_size = _hitung_total_size(valid_paths)
         required_space = total_size + (50 * 1024 * 1024)
@@ -314,9 +351,7 @@ def kunci_brankas(
                         if target_dir
                         else path_item.name
                     )
-                    tar.add(
-                        path_item, arcname=arcname
-                    )  # Menggunakan path_item secara native
+                    tar.add(path_item, arcname=arcname)
 
             out_stream.flush()
             fk.write(encryptor.finalize())
@@ -329,8 +364,6 @@ def kunci_brankas(
 
         if hapus_asli:
             safe_cb(progress_cb, 0.95)
-            # Verifikasi vault bisa dibaca sebelum hapus file asli.
-            # Mencegah data loss jika vault corrupt akibat I/O error saat tulis.
             if not _verify_vault_integrity(target_path, password):
                 return (
                     VaultStatus.ERROR,
@@ -361,50 +394,6 @@ def kunci_brankas(
         return VaultStatus.ERROR, str(exc)
 
 
-def _verify_vault_integrity(path: Path, password: str) -> bool:
-    """
-    Verifikasi PENUH integritas vault menggunakan AES-GCM Auth Tag.
-    Wajib dilakukan sebelum menghapus file asli untuk mencegah data loss
-    akibat file corrupt di tengah jalan (misal: disk penuh / I/O error).
-    """
-    try:
-        total_size = path.stat().st_size
-        if total_size < OVERHEAD:
-            return False
-
-        cipher_len = total_size - OVERHEAD
-
-        with path.open("rb") as fk:
-            salt = fk.read(16)
-            nonce = fk.read(12)
-            fk.seek(-TAG_SIZE, os.SEEK_END)
-            tag = fk.read(TAG_SIZE)
-
-            # Kembali ke awal ciphertext
-            fk.seek(HEADER_SIZE)
-
-            key = derive_key(password, salt)
-            decryptor = make_decryptor(key, nonce, tag)
-
-            # Baca seluruh ciphertext dalam mode chunking
-            bytes_remaining = cipher_len
-            while bytes_remaining > 0:
-                chunk_sz = min(CHUNK_SIZE, bytes_remaining)
-                chunk = fk.read(chunk_sz)
-                if not chunk:
-                    break
-                decryptor.update(chunk)
-                bytes_remaining -= len(chunk)
-
-            # Ini yang memicu validasi MAC dari seluruh file!
-            decryptor.finalize()
-
-        return True
-    except Exception as e:
-        logger.error(f"Verifikasi integritas gagal: {e}")
-        return False
-
-
 def buka_brankas(
     locked_path: str,
     password: str,
@@ -423,7 +412,6 @@ def buka_brankas(
         cipher_len = total_size - OVERHEAD
         base_dir = target_path.parent
 
-        # FIX: Cek free space saat mengekstrak (Safety buffer 50MB)
         free_space = shutil.disk_usage(base_dir).free
         required_space = cipher_len + (50 * 1024 * 1024)
 
@@ -435,12 +423,12 @@ def buka_brankas(
                 f"Ruang penyimpanan tidak cukup!\nSisa disk: {free_mb:.1f} MB. Butuh minimal {req_mb:.1f} MB.",
             )
 
-        # Race condition cleanup — hapus temp folder yang umurnya > 5 menit (stale)
+        # Hapus temp folder yang umurnya > 5 menit
         for old_temp in base_dir.glob("._dec_*"):
             if old_temp.is_dir():
                 try:
                     age = time.time() - old_temp.stat().st_mtime
-                    if age > 300:  # 300 detik = 5 menit
+                    if age > 300:
                         shutil.rmtree(old_temp, ignore_errors=True)
                 except Exception:
                     pass
@@ -461,15 +449,22 @@ def buka_brankas(
 
             decrypted_first = decryptor.update(first_chunk)
 
+            # =========================================================================
+            # FIX MASALAH #1: Hapus Heuristik Rapuh
+            # =========================================================================
             try:
                 panjang_nama = int.from_bytes(decrypted_first[:2], byteorder="big")
-                if panjang_nama > 512:
-                    return VaultStatus.WRONG_PASSWORD, None
                 if len(decrypted_first) < 2 + panjang_nama:
                     return VaultStatus.ERROR, "File brankas rusak atau terpotong."
+
+                # Jika password salah, probabilitasnya akan gagal decode UTF-8 di baris ini
                 nama_folder = decrypted_first[2 : 2 + panjang_nama].decode("utf-8")
-            except Exception:
+            except UnicodeDecodeError:
+                # Menangkap password salah dengan validasi string alami
                 return VaultStatus.WRONG_PASSWORD, None
+            except Exception:
+                return VaultStatus.ERROR, "Format brankas rusak."
+            # =========================================================================
 
             path_tujuan = base_dir / nama_folder
 
@@ -497,7 +492,32 @@ def buka_brankas(
                     if sys.version_info >= (3, 12):
                         tar.extractall(path=temp_ext_dir, filter="data")
                     else:
-                        tar.extractall(path=temp_ext_dir)
+                        # =============================================================
+                        # FIX MASALAH #2: Mencegah Path Traversal untuk Python < 3.12
+                        # =============================================================
+                        target_dir_resolved = temp_ext_dir.resolve()
+                        for member in tar:
+                            member_path = (target_dir_resolved / member.name).resolve()
+
+                            # Cek keamanan direktori relatif
+                            if hasattr(member_path, "is_relative_to"):
+                                is_safe = member_path.is_relative_to(
+                                    target_dir_resolved
+                                )
+                            else:
+                                is_safe = str(member_path) == str(
+                                    target_dir_resolved
+                                ) or str(member_path).startswith(
+                                    str(target_dir_resolved) + os.sep
+                                )
+
+                            if not is_safe:
+                                raise Exception(
+                                    "Anomali Keamanan: Terdeteksi Path Traversal (TarSlip)."
+                                )
+
+                            tar.extract(member, path=temp_ext_dir)
+                        # =============================================================
 
                 in_stream.read()
 
@@ -510,6 +530,9 @@ def buka_brankas(
 
                 shutil.move(src, path_tujuan)
 
+            # Jika lolos UTF-8 decode, tarfile akan nge-crash di baris ini karena headernya garbage
+            except tarfile.ReadError:
+                return VaultStatus.WRONG_PASSWORD, None
             except InvalidTag:
                 return VaultStatus.WRONG_PASSWORD, None
             except InterruptedError:

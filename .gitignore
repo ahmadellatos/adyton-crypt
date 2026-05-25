@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
 
 # Virtual Environments
 venv/
@@ -16,15 +17,26 @@ release_build/
 *.spec
 *.bin
 
-# File Aplikasi 
+# PyInstaller
+*.spec
+
+# File Aplikasi
 *.adtn
+*.adtn.bak
 *.zip
-*.log
 *.rar
+*.log
+
+# Installer Output (Inno Setup)
+Output/
 
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# IDE
+.vscode/
+.idea/
 
 # Testing & Coverage
 .pytest_cache/

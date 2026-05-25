@@ -1,8 +1,12 @@
 """
 Modul: app.py
 Deskripsi: Merupakan antarmuka jendela utama (Main Window) dari aplikasi Adyton Crypt.
+           Mengelola routing tab, System Tray dengan Robust Asset Path, dan kontrol jendela frameless.
+           Dilengkapi Modern UWP Toast Notification menggunakan Winotify.
 """
 
+import os
+import sys
 import qtawesome as qta
 from PySide6.QtWidgets import (
     QWidget,
@@ -21,6 +25,15 @@ from PySide6.QtCore import Qt, QSize, QPropertyAnimation
 from PySide6.QtGui import QPixmap, QIcon
 from loguru import logger
 from qframelesswindow import FramelessMainWindow
+
+# Coba import winotify dan komponen audionya
+try:
+    from winotify import Notification, audio
+
+    HAS_WINOTIFY = True
+except ImportError:
+    HAS_WINOTIFY = False
+
 from .tab_kunci import TabKunci
 from .tab_buka import TabBuka
 from .widgets import (
@@ -31,27 +44,35 @@ from .widgets import (
 )
 
 
+def get_asset_path(relative_path: str) -> str:
+    """Mendapatkan path absolut untuk aset, mendukung mode script maupun PyInstaller .exe"""
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, relative_path)
+    base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_path, relative_path)
+
+
 class AppBrankas(FramelessMainWindow):
     def __init__(self):
         super().__init__()
 
         self._quitting = False
-
         self.setMinimumSize(960, 680)
         self.setObjectName("MainWindow")
 
-        self._init_ui()
-        self._init_tray()
-        self._center_window()
+        # Load Icon
+        icon_path = get_asset_path("assets/icon_adyton.ico")
+        app_icon = QIcon(icon_path)
 
-        # Di dalem method __init__ lu (di deket kode tray lu yang ASLI)
-        app_icon = QIcon("assets/icon_adyton.ico")
+        if app_icon.isNull():
+            logger.warning("File .ico gagal dimuat. Menggunakan PNG fallback lain.")
+            app_icon = QIcon(get_asset_path("assets/logo_adyton2.png"))
 
-        # Ganti icon window utama
         self.setWindowIcon(app_icon)
 
-        # Terus di kode self.tray lu yang ASLI, tinggal panggil ini:
-        self.tray.setIcon(app_icon)
+        self._init_ui()
+        self._init_tray(app_icon)
+        self._center_window()
 
     def _center_window(self):
         self.resize(1100, 700)
@@ -85,21 +106,27 @@ class AppBrankas(FramelessMainWindow):
         self.stacked_tabs.addWidget(self.tab_kunci)
         self.stacked_tabs.addWidget(self.tab_buka)
 
-        # FIX: Sambungkan progress worker ke tray tooltip agar user tahu
-        # ada proses aktif meski window disembunyikan ke system tray
         self.tab_kunci.btn_aksi.clicked.connect(self._update_tray_on_busy)
         self.tab_buka.btn_aksi.clicked.connect(self._update_tray_on_busy)
+
+        # --- TANGKAP SINYAL DARI TAB UNTUK MUNCULIN NOTIFIKASI NATIVE MODERN ---
+        self.tab_kunci.system_notification.connect(self._show_system_notif)
+        self.tab_buka.system_notification.connect(self._show_system_notif)
+
         content_lay.addWidget(self.stacked_tabs, 1)
 
         self._build_footer(content_lay)
         main_layout.addWidget(content_container, 1)
 
-    def _init_tray(self):
+    def _init_tray(self, app_icon: QIcon):
         self.tray = QSystemTrayIcon(self)
-        self.tray.setIcon(qta.icon("mdi6.shield-lock", color="#00D2C8"))
+
+        if not app_icon.isNull():
+            self.tray.setIcon(app_icon)
+        else:
+            self.tray.setIcon(qta.icon("mdi6.shield-lock", color="white"))
 
         tray_menu = AccessibleCenteredMenu()
-
         act_show = CenteredMenuAction(
             "Buka Adyton Crypt", "mdi6.window-maximize", parent=tray_menu
         )
@@ -114,7 +141,6 @@ class AppBrankas(FramelessMainWindow):
 
         self.tray.setContextMenu(tray_menu)
         self.tray.show()
-
         self.tray.activated.connect(self._on_tray_click)
 
     def _on_tray_click(self, reason):
@@ -122,13 +148,13 @@ class AppBrankas(FramelessMainWindow):
             self.showNormal()
 
     def _update_tray_on_busy(self):
-        """FIX: Update tooltip tray saat proses enkripsi/dekripsi berjalan."""
         kunci_busy = (
             self.tab_kunci.worker is not None and self.tab_kunci.worker.isRunning()
         )
         buka_busy = (
             self.tab_buka.worker is not None and self.tab_buka.worker.isRunning()
         )
+
         if kunci_busy:
             self.tray.setToolTip("Adyton Crypt — Sedang mengenkripsi...")
             self.tab_kunci.worker.progress.connect(
@@ -150,8 +176,40 @@ class AppBrankas(FramelessMainWindow):
                 lambda: self.tray.setToolTip("Adyton Crypt")
             )
 
+    # =========================================================================
+    # IMPLEMENTASI WINOTIFY (UWP TOAST DENGAN LOGO PNG & SUARA)
+    # =========================================================================
+    def _show_system_notif(self, title: str, message: str):
+        """Menampilkan UWP Toast dengan winotify."""
+        if HAS_WINOTIFY:
+            try:
+                # Gunakan logo_adyton2.png agar transparan dan modern
+                icon_path = os.path.abspath(get_asset_path("assets/logo_adyton2.png"))
+
+                toast = Notification(
+                    app_id="Adyton Crypt",
+                    title=title,
+                    msg=message,
+                    icon=icon_path,
+                    duration="short",
+                )
+
+                # Menambahkan suara notifikasi default Windows
+                toast.set_audio(audio.Default, loop=False)
+
+                toast.show()
+                return
+            except Exception as e:
+                logger.warning(f"Winotify gagal memunculkan notif: {e}")
+
+        # Fallback kalau library winotify gagal diload
+        logger.warning("Menggunakan notifikasi fallback Qt.")
+        custom_icon = QIcon(get_asset_path("assets/logo_adyton2.png"))
+        self.tray.showMessage(title, message, custom_icon, 5000)
+
+    # =========================================================================
+
     def _quit_sepenuhnya(self):
-        # FIX 2B: Cek state dari worker sebelum mengizinkan quit
         kunci_busy = (
             self.tab_kunci.worker is not None and self.tab_kunci.worker.isRunning()
         )
@@ -160,11 +218,8 @@ class AppBrankas(FramelessMainWindow):
         )
 
         if kunci_busy or buka_busy:
-            # Munculkan window utamanya dulu kalau lagi ngumpet di tray
             self.showNormal()
             self.activateWindow()
-
-            # Tampilkan dialog peringatan block
             dialog = ModernMessageBox(
                 title="Proses Sedang Berjalan",
                 message="Aplikasi sedang memproses enkripsi/dekripsi file.\n\nMematikan aplikasi secara paksa sekarang dapat menyebabkan file korup atau data hilang. Silakan tunggu hingga proses selesai atau batalkan proses terlebih dahulu.",
@@ -173,9 +228,9 @@ class AppBrankas(FramelessMainWindow):
                 parent=self,
             )
             dialog.btn_yes.setText("Mengerti")
-            dialog.btn_cancel.hide()  # Cuma butuh 1 tombol acknowledgement
+            dialog.btn_cancel.hide()
             dialog.exec()
-            return  # Stop eksekusi quit
+            return
 
         self._quitting = True
         QApplication.instance().quit()
@@ -187,11 +242,11 @@ class AppBrankas(FramelessMainWindow):
 
         event.ignore()
         self.hide()
-        self.tray.showMessage(
+
+        # Panggil fungsi notifikasi modern winotify kita!
+        self._show_system_notif(
             "Adyton Crypt Berjalan",
             "Aplikasi di-minimize ke System Tray untuk memproses di latar belakang.",
-            QSystemTrayIcon.MessageIcon.Information,
-            3000,
         )
         logger.info("Window di-minimize ke System Tray.")
 
@@ -203,8 +258,7 @@ class AppBrankas(FramelessMainWindow):
         lay_kiri.setSpacing(15)
 
         lbl_custom_logo = QLabel()
-
-        pixmap = QPixmap("assets/logo_adyton2.png")
+        pixmap = QPixmap(get_asset_path("assets/logo_adyton2.png"))
 
         if not pixmap.isNull():
             scaled_pixmap = pixmap.scaledToHeight(
@@ -216,7 +270,6 @@ class AppBrankas(FramelessMainWindow):
             lbl_custom_logo.setStyleSheet("color: red; font-weight: bold;")
 
         lay_kiri.addWidget(lbl_custom_logo)
-
         header_layout.addLayout(lay_kiri)
         header_layout.addStretch()
 
@@ -258,7 +311,6 @@ class AppBrankas(FramelessMainWindow):
         lay_tabs.addWidget(self.btn_nav_kunci)
         lay_tabs.addWidget(self.btn_nav_buka)
         header_layout.addWidget(tab_container)
-
         header_layout.addStretch()
 
         lay_kanan = QHBoxLayout()
@@ -272,18 +324,19 @@ class AppBrankas(FramelessMainWindow):
         lay_status = QVBoxLayout()
         lay_status.setSpacing(0)
         lay_status.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+
         lbl_stat_title = QLabel("AES-256 • GCM")
         lbl_stat_title.setStyleSheet(
             "font-size: 9pt; font-weight: bold; color: #8B95A5;"
         )
         lbl_stat_sub = QLabel("Data Anda aman")
         lbl_stat_sub.setStyleSheet("font-size: 9pt; color: #00D2C8; font-weight: 600;")
+
         lay_status.addWidget(lbl_stat_title)
         lay_status.addWidget(lbl_stat_sub)
 
         lay_kanan.addWidget(lbl_shield)
         lay_kanan.addLayout(lay_status)
-
         header_layout.addLayout(lay_kanan)
         parent_layout.addLayout(header_layout)
 
@@ -330,3 +383,11 @@ class AppBrankas(FramelessMainWindow):
         self._anim_window.setStartValue(0.0)
         self._anim_window.setEndValue(1.0)
         self._anim_window.start()
+
+    def buka_file_dari_luar(self, path: str) -> None:
+        logger.info(f"File Association dipicu untuk file: {path}")
+        self.btn_nav_buka.setChecked(True)
+        self.btn_nav_kunci.setChecked(False)
+        self.stacked_tabs.setCurrentIndex(1)
+        if hasattr(self, "tab_buka"):
+            self.tab_buka.auto_load_file(path)

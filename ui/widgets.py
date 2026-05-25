@@ -407,7 +407,7 @@ class BigActionBtn(QPushButton):
         v_lay.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         self.lbl_title = QLabel(title)
-        self.lbl_title.setStyleSheet("font-size: 13pt; font-weight: 800; color: white;")
+        self.lbl_title.setStyleSheet("font-size: 13pt; font-weight: 700; color: white;")
 
         self.lbl_sub = QLabel(subtitle)
         self.lbl_sub.setStyleSheet("font-size: 9pt; color: rgba(255, 255, 255, 0.75);")
@@ -439,7 +439,7 @@ class BigActionBtn(QPushButton):
         )
 
         self.lbl_title.setStyleSheet(
-            f"font-size: 13pt; font-weight: 800; color: rgba(255,255,255,{opacity});"
+            f"font-size: 13pt; font-weight: 700; color: rgba(255,255,255,{opacity});"
         )
         self.lbl_sub.setStyleSheet(
             f"font-size: 9pt; color: rgba(255,255,255,{float(opacity)*0.75});"
