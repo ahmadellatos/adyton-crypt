@@ -171,7 +171,7 @@ class TabKunci(QWidget):
 
     def _on_selesai(self, result):
         self.worker = None
-        status, pesan = result
+        status, msg = result
 
         if status == VaultStatus.SUCCESS:
             self.drop_zone.clear_paths()
@@ -180,17 +180,17 @@ class TabKunci(QWidget):
         self._set_busy(False)
 
         if status == VaultStatus.SUCCESS:
-            logger.info(f"Enkripsi sukses: {pesan}")
-            self.notif.show_msg("ok", f" {pesan}", 6000)
+            logger.info(f"Enkripsi sukses: {msg}")
+            self.notif.show_msg("ok", f" {msg}", 6000)
 
             # PANCARKAN SINYAL KE APP.PY UNTUK WINOTIFY
             self.system_notification.emit(
-                "Adyton Crypt", "Brankas dikunci dengan aman."
+                "Enkripsi Sukses", "Brankas dikunci dengan aman."
             )
 
         elif status == VaultStatus.CANCELLED:
             logger.info("Enkripsi dibatalkan oleh pengguna.")
             self.notif.show_msg("warn", "Proses penguncian dibatalkan.", 4000)
         else:
-            logger.error(f"Gagal mengunci: {pesan}")
-            self.notif.show_msg("err", f" {pesan}", 6000)
+            logger.error(f"Gagal mengunci: {msg}")
+            self.notif.show_msg("err", f" {msg}", 6000)

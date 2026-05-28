@@ -6,6 +6,7 @@ Dipisah dari ui/widgets.py karena ini business logic, bukan UI component.
 
 import inspect
 from PySide6.QtCore import QThread, Signal
+from loguru import logger
 
 from core.vault import VaultStatus
 
@@ -36,4 +37,5 @@ class CryptoWorker(QThread):
             self.finished.emit(result if isinstance(result, tuple) else (result,))
 
         except Exception as e:
+            logger.exception("CryptoWorker gagal menjalankan operasi")
             self.finished.emit((VaultStatus.ERROR, str(e)))

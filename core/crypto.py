@@ -7,8 +7,9 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
+from loguru import logger
 
-CHUNK_SIZE = 16 * 1024 * 1024  # 16 MB — sweet spot performa vs memory
+from .constants import CHUNK_SIZE
 
 
 def derive_key(password: str, salt: bytes) -> bytes:
@@ -47,4 +48,4 @@ def safe_cb(progress_cb, val: float):
         try:
             progress_cb(max(0.0, min(1.0, val)))
         except Exception:
-            pass
+            logger.debug("Progress callback gagal (diabaikan)", exc_info=True)

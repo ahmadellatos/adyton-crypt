@@ -1,0 +1,34 @@
+[tool.ruff]
+# Ruff configuration for Adyton Crypt
+# Very fast linter + formatter
+
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+# Enable a good set of rules
+select = [
+    "E",      # pycodestyle errors
+    "F",      # Pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "S",      # flake8-bandit (security)
+    "C4",     # flake8-comprehensions
+    "SIM",    # flake8-simplify
+]
+
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "S101",   # assert used (we use it in tests)
+    "S105",   # possible hardcoded password (false positives in crypto code sometimes)
+    "S311",   # random is not cryptographically secure (we use os.urandom where it matters)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Allow assert in tests
+"tests/**" = ["S101"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

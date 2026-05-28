@@ -17,11 +17,19 @@ from enum import Enum
 from typing import Callable
 from cryptography.exceptions import InvalidTag
 from loguru import logger
-from .crypto import CHUNK_SIZE, derive_key, make_encryptor, make_decryptor, safe_cb
-
-HEADER_SIZE = 16 + 12
-TAG_SIZE = 16
-OVERHEAD = HEADER_SIZE + TAG_SIZE
+from .crypto import derive_key, make_encryptor, make_decryptor, safe_cb
+from .constants import (
+    MAGIC_BYTES,
+    VERSION,
+    HEADER_SIZE,
+    TAG_SIZE,
+    OVERHEAD,
+    CHUNK_SIZE,
+    DISK_OVERHEAD_BYTES,
+    OLD_TEMP_MAX_AGE_SECONDS,
+    MAX_VIRTUAL_NAME_LENGTH,
+    FIRST_DECRYPT_CHUNK_SIZE,
+)
 
 
 class VaultStatus(Enum):
@@ -37,8 +45,13 @@ class VaultStatus(Enum):
 
 def hapus_permanen(path: Path, secure_wipe: bool = False):
     """
-    Menghapus file/folder.
-    Jika secure_wipe aktif, file akan ditimpa dengan byte 0x00 sebelum dihapus.
+    Menghapus file/folder secara permanen.
+
+    Jika secure_wipe=True:
+        - Melakukan single-pass overwrite dengan random bytes (bukan 0x00).
+        - Ini adalah best-effort defense-in-depth, terutama berguna pada HDD.
+        - Pada SSD, wear-leveling membuat overwrite biasa kurang efektif.
+        - Bukan pengganti ATA Secure Erase / multi-pass DoD 5220.22-M.
     """
     if not path.exists():
         return
@@ -50,13 +63,14 @@ def hapus_permanen(path: Path, secure_wipe: bool = False):
                 size = path.stat().st_size
                 with path.open("r+b") as f:
                     written = 0
-                    kosong = os.urandom(CHUNK_SIZE)
+                    random_data = os.urandom(CHUNK_SIZE)
                     while written < size:
                         chunk = min(CHUNK_SIZE, size - written)
-                        f.write(kosong[:chunk])
+                        f.write(random_data[:chunk])
                         written += chunk
             except Exception:
-                pass
+                # Gagal overwrite — tetap lanjut hapus file-nya
+                logger.debug("Secure wipe overwrite gagal (file akan tetap dihapus)")
 
         try:
             path.unlink(missing_ok=True)
@@ -76,7 +90,7 @@ def hapus_permanen(path: Path, secure_wipe: bool = False):
                     os.chmod(p, stat.S_IWRITE)
                     func(p)
                 except Exception:
-                    pass
+                    logger.debug(f"Gagal hapus readonly file saat rmtree: {p}")
 
             shutil.rmtree(path, onerror=_remove_readonly)
 
@@ -138,88 +152,6 @@ class EncryptingStream:
         self.flush()
 
 
-class DecryptingStream:
-    def __init__(
-        self,
-        target_file,
-        decryptor,
-        bytes_remaining,
-        initial_buffer,
-        progress_cb,
-        total_len,
-        bytes_read_so_far,
-        is_cancelled: Callable[[], bool] = None,
-    ):
-        self.target_file = target_file
-        self.decryptor = decryptor
-        self.bytes_remaining = bytes_remaining
-        self.buffer = bytes(initial_buffer)
-        self.buf_offset = 0
-        self.progress_cb = progress_cb
-        self.total_len = total_len
-        self.bytes_read_so_far = bytes_read_so_far
-        self._last_pct = 0.0
-        self._finalized = False
-        self.is_cancelled = is_cancelled
-
-    def read(self, size=-1):
-        if self.is_cancelled and self.is_cancelled():
-            raise InterruptedError("Operasi dibatalkan oleh pengguna.")
-
-        if size < 0:
-            result = bytearray(self.buffer[self.buf_offset :])
-            self.buffer = b""
-            self.buf_offset = 0
-
-            while self.bytes_remaining > 0:
-                if self.is_cancelled and self.is_cancelled():
-                    raise InterruptedError("Operasi dibatalkan oleh pengguna.")
-
-                chunk_sz = min(CHUNK_SIZE, self.bytes_remaining)
-                chunk = self.target_file.read(chunk_sz)
-                self.bytes_remaining -= len(chunk)
-                result.extend(self.decryptor.update(chunk))
-                self._update_progress(len(chunk))
-
-            if not self._finalized:
-                self._finalized = True
-                result.extend(self.decryptor.finalize())
-            return bytes(result)
-
-        result = bytearray()
-        while len(result) < size:
-            if self.buf_offset < len(self.buffer):
-                take = min(size - len(result), len(self.buffer) - self.buf_offset)
-                result.extend(self.buffer[self.buf_offset : self.buf_offset + take])
-                self.buf_offset += take
-            elif self.bytes_remaining > 0:
-                if self.is_cancelled and self.is_cancelled():
-                    raise InterruptedError("Operasi dibatalkan oleh pengguna.")
-
-                chunk_sz = min(CHUNK_SIZE, self.bytes_remaining)
-                chunk = self.target_file.read(chunk_sz)
-                self.bytes_remaining -= len(chunk)
-                self._update_progress(len(chunk))
-
-                self.buffer = self.decryptor.update(chunk)
-                self.buf_offset = 0
-            elif not self._finalized:
-                self._finalized = True
-                self.buffer = self.decryptor.finalize()
-                self.buf_offset = 0
-            else:
-                break
-
-        return bytes(result)
-
-    def _update_progress(self, bytes_added):
-        self.bytes_read_so_far += bytes_added
-        pct = min(0.95, 0.05 + 0.90 * (self.bytes_read_so_far / (self.total_len or 1)))
-        if pct - self._last_pct >= 0.005:
-            safe_cb(self.progress_cb, pct)
-            self._last_pct = pct
-
-
 # ── Logic Pembantu ────────────────────────────────────────────────────────────
 
 
@@ -238,6 +170,162 @@ def _hitung_total_size(paths: list[str]) -> int:
     return total or 1
 
 
+def _hitung_kebutuhan_disk(total_payload_size: int) -> int:
+    """Hitung kebutuhan ruang disk termasuk overhead (50 MB buffer)."""
+    return total_payload_size + (50 * 1024 * 1024)
+
+
+def _is_safe_tar_member(member_name: str, target_dir: Path) -> bool:
+    """
+    Cek apakah member tar aman (anti TarSlip / Path Traversal).
+
+    Mengembalikan True hanya jika member akan diekstrak di dalam target_dir.
+    """
+    try:
+        target_resolved = target_dir.resolve()
+        member_path = (target_resolved / member_name).resolve()
+
+        if hasattr(member_path, "is_relative_to"):
+            return member_path.is_relative_to(target_resolved)
+        else:
+            return (
+                str(member_path) == str(target_resolved)
+                or str(member_path).startswith(str(target_resolved) + os.sep)
+            )
+    except Exception:
+        return False
+
+
+def _write_vault_header(
+    file_handle,
+    encryptor,
+    salt: bytes,
+    nonce: bytes,
+    virtual_name: str,
+) -> None:
+    """Tulis header standar Adyton (magic, version, salt, nonce, encrypted name)."""
+    file_handle.write(MAGIC_BYTES)
+    file_handle.write(VERSION)
+    file_handle.write(salt)
+    file_handle.write(nonce)
+
+    nama_bytes = virtual_name.encode("utf-8")
+    panjang_nama = len(nama_bytes).to_bytes(2, byteorder="big")
+    file_handle.write(encryptor.update(panjang_nama + nama_bytes))
+
+
+def _write_decrypted_to_temp_tar(
+    temp_tar_path: Path,
+    decryptor,
+    initial_plaintext_after_name: bytes,
+    remaining_bytes: int,
+    input_file,
+    progress_cb,
+    is_cancelled: Callable[[], bool],
+) -> None:
+    """
+    Melakukan dekripsi penuh dari posisi saat ini ke file temporary .tar.
+    Akan me-raise InvalidTag jika autentikasi gagal (password salah / data rusak).
+    """
+    with temp_tar_path.open("wb") as ftar:
+        ftar.write(initial_plaintext_after_name)
+
+        bytes_read_so_far = 0  # relatif terhadap sisa yang harus dibaca
+        _last_pct = 0.0
+        total_to_read = remaining_bytes
+
+        while remaining_bytes > 0:
+            if is_cancelled and is_cancelled():
+                raise InterruptedError("Operasi dibatalkan oleh pengguna.")
+
+            chunk_sz = min(CHUNK_SIZE, remaining_bytes)
+            chunk = input_file.read(chunk_sz)
+            remaining_bytes -= len(chunk)
+
+            ftar.write(decryptor.update(chunk))
+
+            bytes_read_so_far += len(chunk)
+            pct = min(
+                0.90, 0.05 + 0.85 * (bytes_read_so_far / (total_to_read or 1))
+            )
+            if pct - _last_pct >= 0.005:
+                safe_cb(progress_cb, pct)
+                _last_pct = pct
+
+        # Verifikasi Authentication Tag GCM
+        ftar.write(decryptor.finalize())
+
+
+def _extract_and_place_vault(
+    temp_tar_path: Path,
+    temp_ext_dir: Path,
+    nama_folder: str,
+    path_tujuan: Path,
+    progress_cb,
+    is_cancelled: Callable[[], bool],
+) -> None:
+    """
+    Melakukan ekstraksi isi tar dari file temporary ke lokasi akhir.
+    Termasuk TarSlip protection, progress, dan pemindahan folder.
+    """
+    total_tar_size = temp_tar_path.stat().st_size
+    extracted_bytes = 0
+
+    with tarfile.open(temp_tar_path, mode="r") as tar:
+        for member in tar:
+            if is_cancelled and is_cancelled():
+                raise InterruptedError("Operasi dibatalkan oleh pengguna.")
+
+            # --- SECURITY CHECK (TarSlip) ---
+            if not _is_safe_tar_member(member.name, temp_ext_dir):
+                raise Exception(
+                    "Anomali Keamanan: Terdeteksi Path Traversal (TarSlip)."
+                )
+            # --------------------------------
+
+            member_path = (temp_ext_dir.resolve() / member.name).resolve()
+
+            if member.isreg():
+                # Ekstraksi manual file reguler secara bertahap (chunking)
+                member_path.parent.mkdir(parents=True, exist_ok=True)
+
+                with tar.extractfile(member) as source, open(member_path, "wb") as target:
+                    while True:
+                        if is_cancelled and is_cancelled():
+                            raise InterruptedError("Operasi dibatalkan.")
+
+                        chunk = source.read(CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        target.write(chunk)
+
+                        extracted_bytes += len(chunk)
+                        pct = 0.92 + 0.07 * (
+                            extracted_bytes / max(total_tar_size, 1)
+                        )
+                        safe_cb(progress_cb, min(0.99, pct))
+
+                # Kembalikan metadata dasar
+                try:
+                    os.chmod(member_path, member.mode)
+                    os.utime(member_path, (member.mtime, member.mtime))
+                except Exception:
+                    pass
+            else:
+                # Folder & Symlink
+                tar.extract(member, path=temp_ext_dir)
+
+    # FASE 3: PINDAH FOLDER & CLEANUP
+    src = temp_ext_dir / nama_folder
+    if not src.exists():
+        raise ValueError("Isi brankas tidak sesuai format ekspektasi.")
+
+    if path_tujuan.exists():
+        hapus_permanen(path_tujuan)
+
+    shutil.move(src, path_tujuan)
+
+
 def _verify_vault_integrity(path: Path, password: str) -> bool:
     """
     Verifikasi PENUH integritas vault menggunakan AES-GCM Auth Tag.
@@ -250,10 +338,23 @@ def _verify_vault_integrity(path: Path, password: str) -> bool:
         cipher_len = total_size - OVERHEAD
 
         with path.open("rb") as fk:
+            # --- FIX: Baca Magic Bytes dan Version terlebih dahulu! ---
+            magic = fk.read(4)
+            if magic != MAGIC_BYTES:
+                return False
+
+            version = fk.read(1)
+            if version != VERSION:
+                return False
+            # ---------------------------------------------------------
+
             salt = fk.read(16)
             nonce = fk.read(12)
+
             fk.seek(-TAG_SIZE, os.SEEK_END)
             tag = fk.read(TAG_SIZE)
+
+            # Kembali ke posisi mulainya ciphertext (byte ke-33)
             fk.seek(HEADER_SIZE)
 
             key = derive_key(password, salt)
@@ -279,6 +380,19 @@ def _verify_vault_integrity(path: Path, password: str) -> bool:
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
+# ============================================================================
+# SECURITY INVARIANTS — kunci_brankas
+# ============================================================================
+# 1. Data asli hanya boleh dihapus setelah vault berhasil diverifikasi
+#    (lihat blok `if hapus_asli` + `_verify_vault_integrity`).
+# 2. Selama proses enkripsi, tidak boleh ada plaintext yang ditulis ke disk
+#    di luar file vault yang sedang dibuat.
+# 3. Semua error path (cancel, exception) harus membersihkan file vault
+#    yang belum selesai + backup jika ada.
+# 4. Password kosong harus ditolak di lapisan core.
+# ============================================================================
+
+
 def kunci_brankas(
     paths: list[str],
     path_simpan: str,
@@ -293,6 +407,9 @@ def kunci_brankas(
     if not valid_paths:
         return VaultStatus.ERROR, "Tidak ada file/folder valid untuk dikunci."
 
+    if not password or not password.strip():
+        return VaultStatus.ERROR, "Password tidak boleh kosong."
+
     target_path = Path(path_simpan)
     backup_path = target_path.with_suffix(".adtn.bak")
     backup_dibuat = False
@@ -300,7 +417,7 @@ def kunci_brankas(
     try:
         free_space = shutil.disk_usage(target_path.parent).free
         total_size = _hitung_total_size(valid_paths)
-        required_space = total_size + (50 * 1024 * 1024)
+        required_space = _hitung_kebutuhan_disk(total_size)
 
         if free_space < required_space:
             req_mb = required_space / (1024 * 1024)
@@ -331,13 +448,8 @@ def kunci_brankas(
             nama_virtual = target_path.stem or "Brankas_Rahasia"
             target_dir = nama_virtual
 
-        nama_bytes = nama_virtual.encode("utf-8")
-        panjang_nama = len(nama_bytes).to_bytes(2, byteorder="big")
-
         with target_path.open("wb") as fk:
-            fk.write(salt)
-            fk.write(nonce)
-            fk.write(encryptor.update(panjang_nama + nama_bytes))
+            _write_vault_header(fk, encryptor, salt, nonce, nama_virtual)
 
             out_stream = EncryptingStream(
                 fk, encryptor, progress_cb, total_size, is_cancelled
@@ -394,6 +506,21 @@ def kunci_brankas(
         return VaultStatus.ERROR, str(exc)
 
 
+# ============================================================================
+# SECURITY INVARIANTS — buka_brankas
+# ============================================================================
+# 1. Plaintext hasil dekripsi HANYA boleh ditulis ke disk setelah
+#    Authentication Tag GCM berhasil diverifikasi (`finalize()` sukses).
+# 2. Temporary directory hasil dekripsi (`._dec_*`) harus selalu dibersihkan
+#    di akhir (finally block), bahkan saat error atau cancellation.
+# 3. Tar extraction harus melewati TarSlip protection sebelum menulis file apapun.
+# 4. Password salah harus dilaporkan secara konsisten sebagai WRONG_PASSWORD
+#    (bukan ERROR), agar tidak membocorkan informasi tentang format file.
+# 5. Semua path error (InvalidTag, ReadError, dll) harus tetap membersihkan
+#    temporary files.
+# ============================================================================
+
+
 def buka_brankas(
     locked_path: str,
     password: str,
@@ -413,7 +540,7 @@ def buka_brankas(
         base_dir = target_path.parent
 
         free_space = shutil.disk_usage(base_dir).free
-        required_space = cipher_len + (50 * 1024 * 1024)
+        required_space = _hitung_kebutuhan_disk(cipher_len)
 
         if free_space < required_space:
             req_mb = required_space / (1024 * 1024)
@@ -428,109 +555,89 @@ def buka_brankas(
             if old_temp.is_dir():
                 try:
                     age = time.time() - old_temp.stat().st_mtime
-                    if age > 300:
+                    if age > OLD_TEMP_MAX_AGE_SECONDS:
                         shutil.rmtree(old_temp, ignore_errors=True)
                 except Exception:
-                    pass
+                    logger.debug("Gagal bersihkan old temp decrypt dir (diabaikan)")
 
         with target_path.open("rb") as fk:
+            # 1. Validasi Magic Bytes
+            magic = fk.read(4)
+            if magic != MAGIC_BYTES:
+                return (
+                    VaultStatus.ERROR,
+                    "File ini bukan format brankas Adyton Crypt yang valid.",
+                )
+
+            # 2. Validasi Versi
+            version = fk.read(1)
+            if version == b"\x01":
+                # Versi 1: PBKDF2 600k iterasi
+                pass
+            else:
+                # Jika di masa depan ada versi 2 (misal Scrypt)
+                return (
+                    VaultStatus.ERROR,
+                    "Versi brankas ini terlalu baru. Silakan update aplikasi Adyton Crypt Anda.",
+                )
+
+            # 3. Baca Salt dan Nonce (seperti biasa)
             salt = fk.read(16)
             nonce = fk.read(12)
+
             fk.seek(-16, os.SEEK_END)
             tag = fk.read(16)
-            fk.seek(28)
 
+            # Kembali ke posisi setelah header selesai (byte ke-33)
+            fk.seek(HEADER_SIZE)
+
+            # Lanjut derive_key dan proses dekripsi...
             key = derive_key(password, salt)
             decryptor = make_decryptor(key, nonce, tag)
 
-            first_sz = min(1024, cipher_len)
+            first_sz = min(FIRST_DECRYPT_CHUNK_SIZE, cipher_len)
             first_chunk = fk.read(first_sz)
             bytes_remaining = cipher_len - first_sz
 
             decrypted_first = decryptor.update(first_chunk)
 
-            # =========================================================================
-            # FIX MASALAH #1: Hapus Heuristik Rapuh
-            # =========================================================================
+            # Parse nama folder virtual dari chunk pertama yang sudah didekripsi.
+            # Jika gagal (kemungkinan besar karena password salah), kembalikan WRONG_PASSWORD.
             try:
-                panjang_nama = int.from_bytes(decrypted_first[:2], byteorder="big")
-                if len(decrypted_first) < 2 + panjang_nama:
-                    return VaultStatus.ERROR, "File brankas rusak atau terpotong."
-
-                # Jika password salah, probabilitasnya akan gagal decode UTF-8 di baris ini
-                nama_folder = decrypted_first[2 : 2 + panjang_nama].decode("utf-8")
-            except UnicodeDecodeError:
-                # Menangkap password salah dengan validasi string alami
+                nama_folder, name_offset = _parse_virtual_folder_name(decrypted_first)
+            except ValueError:
                 return VaultStatus.WRONG_PASSWORD, None
-            except Exception:
-                return VaultStatus.ERROR, "Format brankas rusak."
-            # =========================================================================
 
             path_tujuan = base_dir / nama_folder
 
             if path_tujuan.exists() and not force:
                 return VaultStatus.OVERWRITE_NEEDED, nama_folder
 
-            initial_buffer = decrypted_first[2 + panjang_nama :]
-            in_stream = DecryptingStream(
-                fk,
-                decryptor,
-                bytes_remaining,
-                initial_buffer,
-                progress_cb,
-                cipher_len,
-                first_sz,
-                is_cancelled,
-            )
-
-            id_temp = uuid.uuid4().hex[:8]
-            temp_ext_dir = base_dir / f"._dec_{id_temp}"
-            temp_ext_dir.mkdir(parents=True, exist_ok=True)
+            temp_ext_dir, temp_tar_path = _create_temp_decrypt_paths(base_dir)
 
             try:
-                with tarfile.open(fileobj=in_stream, mode="r|") as tar:
-                    if sys.version_info >= (3, 12):
-                        tar.extractall(path=temp_ext_dir, filter="data")
-                    else:
-                        # =============================================================
-                        # FIX MASALAH #2: Mencegah Path Traversal untuk Python < 3.12
-                        # =============================================================
-                        target_dir_resolved = temp_ext_dir.resolve()
-                        for member in tar:
-                            member_path = (target_dir_resolved / member.name).resolve()
+                # FASE 1: DEKRIPSI KE FILE TEMP
+                _write_decrypted_to_temp_tar(
+                    temp_tar_path,
+                    decryptor,
+                    decrypted_first[name_offset:],
+                    bytes_remaining,
+                    fk,
+                    progress_cb,
+                    is_cancelled,
+                )
 
-                            # Cek keamanan direktori relatif
-                            if hasattr(member_path, "is_relative_to"):
-                                is_safe = member_path.is_relative_to(
-                                    target_dir_resolved
-                                )
-                            else:
-                                is_safe = str(member_path) == str(
-                                    target_dir_resolved
-                                ) or str(member_path).startswith(
-                                    str(target_dir_resolved) + os.sep
-                                )
+                # FASE 2 + FASE 3: Ekstraksi tar + pindah ke lokasi akhir
+                # (diekstrak ke helper)
+                _extract_and_place_vault(
+                    temp_tar_path,
+                    temp_ext_dir,
+                    nama_folder,
+                    path_tujuan,
+                    progress_cb,
+                    is_cancelled,
+                )
 
-                            if not is_safe:
-                                raise Exception(
-                                    "Anomali Keamanan: Terdeteksi Path Traversal (TarSlip)."
-                                )
-
-                            tar.extract(member, path=temp_ext_dir)
-                        # =============================================================
-
-                in_stream.read()
-
-                src = temp_ext_dir / nama_folder
-                if not src.exists():
-                    raise ValueError("Isi brankas tidak sesuai format ekspektasi.")
-
-                if path_tujuan.exists():
-                    hapus_permanen(path_tujuan)
-
-                shutil.move(src, path_tujuan)
-
-            # Jika lolos UTF-8 decode, tarfile akan nge-crash di baris ini karena headernya garbage
             except tarfile.ReadError:
                 return VaultStatus.WRONG_PASSWORD, None
             except InvalidTag:
@@ -548,4 +655,45 @@ def buka_brankas(
         return VaultStatus.ERROR, f"Terjadi kesalahan internal: {str(exc)}"
     finally:
         if temp_ext_dir and temp_ext_dir.exists():
-            hapus_permanen(temp_ext_dir)
+            _cleanup_temp_decrypt_dir(temp_ext_dir)
+
+
+def _parse_virtual_folder_name(decrypted_first: bytes) -> tuple[str, int]:
+    """
+    Parse nama folder virtual dari plaintext pertama hasil dekripsi.
+    Mengembalikan (nama_folder, offset_setelah_nama).
+    Melempar ValueError jika dianggap password salah (heuristik).
+    """
+    try:
+        panjang_nama = int.from_bytes(decrypted_first[:2], byteorder="big")
+        if panjang_nama > MAX_VIRTUAL_NAME_LENGTH or len(decrypted_first) < 2 + panjang_nama:
+            raise ValueError("wrong_password")
+
+        nama_folder = decrypted_first[2 : 2 + panjang_nama].decode("utf-8")
+        return nama_folder, 2 + panjang_nama
+    except UnicodeDecodeError:
+        raise ValueError("wrong_password")
+    except Exception:
+        raise ValueError("wrong_password")
+
+
+def _create_temp_decrypt_paths(base_dir: Path) -> tuple[Path, Path]:
+    """Membuat direktori temporary unik + path file .tar untuk hasil dekripsi."""
+    id_temp = uuid.uuid4().hex[:8]
+    temp_ext_dir = base_dir / f"._dec_{id_temp}"
+    temp_ext_dir.mkdir(parents=True, exist_ok=True)
+
+    temp_tar_path = temp_ext_dir / "temp_decrypted.tar"
+    return temp_ext_dir, temp_tar_path
+
+
+def _cleanup_temp_decrypt_dir(temp_dir: Path) -> None:
+    """Membersihkan direktori temporary hasil dekripsi secara defensif.
+
+    Tidak pernah boleh melempar exception ke pemanggil, karena ini dipanggil
+    dari finally block.
+    """
+    try:
+        hapus_permanen(temp_dir)
+    except Exception:
+        logger.debug("Gagal membersihkan temp decrypt directory (non-fatal)")

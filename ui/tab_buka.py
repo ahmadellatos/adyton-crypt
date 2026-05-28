@@ -159,7 +159,7 @@ class TabBuka(QWidget):
 
             # PANCARKAN SINYAL KE APP.PY UNTUK WINOTIFY
             self.system_notification.emit(
-                "Adyton Crypt", f"Brankas '{msg}' berhasil dibuka."
+                "Dekripsi Sukses", f"Brankas '{msg}' berhasil dibuka."
             )
 
         elif status == VaultStatus.CANCELLED:

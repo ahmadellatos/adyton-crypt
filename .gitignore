@@ -43,3 +43,6 @@ Thumbs.db
 .coverage
 .coverage.*
 htmlcov/
+
+# Temporary review artifacts
+review_tmp/

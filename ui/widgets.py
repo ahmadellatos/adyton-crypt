@@ -35,6 +35,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QColor, QCursor, QPixmap
 
 from .styles import CLR_INNER, CLR_BORDER
+from core.paths import get_asset_path
 
 
 def apply_shadow(widget, blur_radius=20, y_offset=6, opacity=60):
@@ -333,7 +334,7 @@ class CustomTitleBar(QFrame):
         lay.setSpacing(10)
 
         self.lbl_icon = QLabel()
-        pixmap = QPixmap("assets/icon_adyton.png")
+        pixmap = QPixmap(get_asset_path("assets/icon_adyton.png"))
         self.lbl_icon.setPixmap(
             pixmap.scaled(
                 16,
