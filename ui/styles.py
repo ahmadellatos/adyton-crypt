@@ -35,6 +35,7 @@ CLR_WARN_DK = "#E67E22"  # Oranye gelap (Secure Wipe Checkbox)
 CLR_WARN_BG = "#2B1E0D"
 
 CLR_SUCCESS_BG = "#0D2B1E"  # Hijau Gelap (Notif Sukses)
+CLR_SUCCESS = "#28C75D"       # Hijau cerah untuk indikator sukses / match
 
 # --- HOVER & INTERAKSI (TRANSPARANSI/STATE) ---
 CLR_HOVER_BG = "#232B3E"
@@ -160,12 +161,23 @@ def load_stylesheet() -> str:
 
     /* --- DROP AREA (Drag & Drop) --- */
     QFrame#DropArea[empty="true"] {{ border: 2px dashed {CLR_BORDER}; background-color: {CLR_BG}; border-radius: 12px; }}
-    QFrame#DropArea[empty="true"][dragActive="true"] {{ border: 2px dashed {CLR_ACCENT}; background-color: {CLR_INNER}; }}
+    QFrame#DropArea[empty="true"][dragActive="true"] {{ border: 2px dashed {CLR_ACCENT}; background-color: {CLR_INNER}; border-radius: 12px; }}
     QFrame#DropArea[empty="false"] {{ border: 1px solid {CLR_BORDER}; background-color: {CLR_CARD}; border-radius: 12px; }}
-    QFrame#DropArea[empty="false"][dragActive="true"] {{ border: 2px dashed {CLR_ACCENT}; background-color: {CLR_INNER}; }}
+    QFrame#DropArea[empty="false"][dragActive="true"] {{ border: 2px dashed {CLR_ACCENT}; background-color: {CLR_INNER}; border-radius: 12px; }}
 
     /* --- TOOLTIPS, ALERTS, & TITLE BAR --- */
     QLabel#CustomToolTip {{ background-color: {CLR_CARD}; color: {CLR_TEXT_MAIN}; border: 1px solid {CLR_BORDER}; border-radius: 6px; padding: 6px 10px; font-size: 9pt; font-family: 'IBM Plex Sans', sans-serif; }}
+
+    /* Native Qt tooltips (digunakan oleh QListView via ToolTipRole, setToolTip(), dll) */
+    QToolTip {{
+        background-color: {CLR_CARD};
+        color: {CLR_TEXT_MAIN};
+        border: 1px solid {CLR_BORDER};
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-size: 9pt;
+        font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+    }}
 
     QPushButton#BtnAlertConfirm {{ background-color: {CLR_DANGER}; color: {CLR_TEXT_MAIN}; border: 2px solid transparent; border-radius: 8px; font-weight: bold; }}
     QPushButton#BtnAlertConfirm:hover {{ background-color: {CLR_DANGER_HOVER}; }}
@@ -185,3 +197,27 @@ def load_stylesheet() -> str:
     QFrame#NotifBar[kind="warn"] {{ background-color: {CLR_WARN_BG}; border-radius: 8px; border: none; }}
     QFrame#NotifBar[kind="warn"] QLabel {{ border: none; background: transparent; color: {CLR_WARN}; font-weight: bold; font-size: 10pt; }}
     """
+
+
+# =============================================================================
+# STYLE HELPERS (Untuk mengurangi inline styles di komponen)
+# =============================================================================
+
+def muted_label_style(size: str = "9pt") -> str:
+    """Style untuk teks sekunder / keterangan."""
+    return f"font-size: {size}; color: {CLR_TEXT_MUTED};"
+
+
+def card_title_style() -> str:
+    """Style untuk judul kartu."""
+    return f"font-size: 11pt; font-weight: 600; color: {CLR_TEXT_MAIN}; letter-spacing: 0.8px; text-transform: uppercase;"
+
+
+def card_subtitle_style() -> str:
+    """Style untuk sub-judul kartu."""
+    return f"font-size: 9pt; color: {CLR_TEXT_MUTED};"
+
+
+def small_footer_style() -> str:
+    """Style untuk teks footer kecil."""
+    return f"font-size: 9pt; color: {CLR_TEXT_MUTED};"

@@ -37,12 +37,9 @@ except ImportError:
 from .tab_kunci import TabKunci
 from .tab_buka import TabBuka
 from .constants import APP_NAME, APP_VERSION, APP_AUMID
-from .widgets import (
-    CustomTitleBar,
-    CenteredMenuAction,
-    AccessibleCenteredMenu,
-    ModernMessageBox,
-)
+from .widgets import CustomTitleBar
+from .menus import AccessibleCenteredMenu, CenteredMenuAction
+from .dialogs import ModernMessageBox
 
 # =========================================================================
 # MAIN WINDOW
@@ -115,8 +112,17 @@ class AppBrankas(FramelessMainWindow):
 
         content_lay.addWidget(self.stacked_tabs, 1)
 
+        # Systematic tab order at main window level
+        self.setTabOrder(self.btn_nav_kunci, self.btn_nav_buka)
+        # The content inside the active tab will manage its own tab order.
+        # We connect the action button focus when the tab changes.
+        self.tab_group.buttonClicked.connect(self._update_action_button_tab_order)
+
         self._build_footer(content_lay)
         main_layout.addWidget(content_container, 1)
+
+        # Initial tab order setup
+        self._update_action_button_tab_order()
 
     def _init_tray(self, app_icon: QIcon) -> None:
         self.tray = QSystemTrayIcon(self)
@@ -299,9 +305,12 @@ class AppBrankas(FramelessMainWindow):
 
         self.btn_nav_kunci = self._make_tab_button(" Kunci Folder", "mdi6.lock")
         self.btn_nav_kunci.setChecked(True)
+        self.btn_nav_kunci.setAccessibleName("Tab Kunci Folder")
+
         self.btn_nav_buka = self._make_tab_button(
             " Buka Brankas", "mdi6.lock-open-variant"
         )
+        self.btn_nav_buka.setAccessibleName("Tab Buka Brankas")
 
         self.tab_group = QButtonGroup(self)
         self.tab_group.addButton(self.btn_nav_kunci, 0)
@@ -403,3 +412,9 @@ class AppBrankas(FramelessMainWindow):
         self.btn_nav_kunci.setChecked(False)
         self.stacked_tabs.setCurrentIndex(1)
         self.tab_buka.auto_load_file(path)
+
+    def _update_action_button_tab_order(self):
+        """Ensure logical tab order from navigation to the current tab's action button."""
+        current_tab = self.stacked_tabs.currentWidget()
+        if hasattr(current_tab, 'btn_aksi'):
+            self.setTabOrder(self.btn_nav_buka, current_tab.btn_aksi)

@@ -5,13 +5,16 @@ Deskripsi: Controller utama untuk Tab "Buka Brankas".
 """
 
 import os
+import time
 from loguru import logger
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QDialog
 from PySide6.QtCore import Qt, Signal
 
 from core.vault import buka_brankas, VaultStatus
 from core.worker import CryptoWorker
-from .widgets import AnimatedNotifBar, apply_shadow, BigActionBtn, ModernMessageBox
+from .widgets import AnimatedNotifBar, apply_shadow
+from .buttons import BigActionBtn
+from .dialogs import ModernMessageBox
 
 # --- IMPORT SMART COMPONENTS (Sesuai dengan nama asli file lu!) ---
 from .components.drop_zone_open import DropZoneOpen
@@ -29,6 +32,7 @@ class TabBuka(QWidget):
         self._cached_pw = None
         self._has_file = False
         self._has_password = False
+        self._crypto_start_time: float | None = None
 
         self._build_ui()
         self._connect_signals()
@@ -53,6 +57,7 @@ class TabBuka(QWidget):
             "Masukkan password untuk membuka",
             icon_name="mdi6.lock-open-variant",
         )
+        self.btn_aksi.setAccessibleName("Tombol Buka Brankas")
         self.btn_aksi.setEnabled(False)
         self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         apply_shadow(self.btn_aksi, blur_radius=20, y_offset=4, opacity=80)
@@ -95,6 +100,7 @@ class TabBuka(QWidget):
     def _proses(self):
         if self.worker is not None and self.worker.isRunning():
             self.worker.cancel()
+            self._crypto_start_time = None
             self.btn_aksi.setTextLabels("MEMBATALKAN...", "Harap tunggu...")
             self.btn_aksi.setEnabled(False)
             return
@@ -114,25 +120,58 @@ class TabBuka(QWidget):
         if not path_file or not pw:
             return
 
+        self._crypto_start_time = time.time()
         self._set_busy(True)
         self.worker = CryptoWorker(buka_brankas, path_file, pw, force)
         self.password_panel.reset_field()
 
-        self.worker.progress.connect(
-            lambda v: self.btn_aksi.setTextLabels(
-                "MEMBUKA...", f"Progress: {int(v*100)}% (Klik untuk Batal)"
-            )
-        )
+        self.worker.progress.connect(self._update_progress)
         self.worker.finished.connect(self._on_selesai)
         self.worker.finished.connect(self.worker.deleteLater)
         self.worker.start()
+
+    def _update_progress(self, val):
+        if self.worker and not getattr(self.worker, "_is_cancelled", False):
+            eta_str = self._get_eta_string(val)
+
+            if val <= 0.85:
+                pct = int(val * 100)
+                self.btn_aksi.setTextLabels(
+                    "MEMBUKA DATA...", f"{pct}%  •  {eta_str}"
+                )
+            else:
+                final_pct = int((val - 0.85) / 0.15 * 100)
+                self.btn_aksi.setTextLabels(
+                    "FINALISASI...", f"{final_pct}%  •  {eta_str}"
+                )
+
+    def _get_eta_string(self, progress: float) -> str:
+        """Hitung estimasi waktu tersisa berdasarkan progress."""
+        if self._crypto_start_time is None or progress <= 0.01:
+            return "Menghitung..."
+
+        elapsed = time.time() - self._crypto_start_time
+        if elapsed < 0.5:
+            return "Menghitung..."
+
+        estimated_total = elapsed / progress
+        remaining = estimated_total - elapsed
+
+        if remaining < 1:
+            return "Hampir selesai"
+        elif remaining < 60:
+            return f"~{int(remaining)} detik lagi"
+        else:
+            minutes = int(remaining // 60)
+            seconds = int(remaining % 60)
+            return f"~{minutes}m {seconds}s lagi"
 
     def _set_busy(self, busy: bool):
         self.drop_zone.set_busy(busy)
         self.password_panel.setEnabled(not busy)
 
         if busy:
-            self.btn_aksi.setTextLabels("MEMBUKA BRANKAS...", "Harap tunggu...")
+            self.btn_aksi.setTextLabels("MEMBUKA BRANKAS...", "Mempersiapkan dekripsi...")
             self.btn_aksi.setEnabled(True)
             self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         else:
@@ -140,6 +179,7 @@ class TabBuka(QWidget):
                 "BUKA BRANKAS", "Masukkan password untuk membuka"
             )
             self._validate_state()
+            self._crypto_start_time = None
 
     def _on_selesai(self, result):
         self.worker = None
@@ -150,6 +190,7 @@ class TabBuka(QWidget):
             self.drop_zone.reset_zone()
 
         self._set_busy(False)
+        self._crypto_start_time = None
 
         if status == VaultStatus.SUCCESS:
             logger.info(f"Dekripsi sukses: {msg}")

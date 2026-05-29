@@ -3,7 +3,8 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
 from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Signal
 from PySide6.QtGui import QKeyEvent
 
-from ..widgets import ModernMessageBox
+from ..dialogs import ModernMessageBox
+from ..styles import CLR_TEXT_MAIN, muted_label_style
 
 
 class KeyboardCheckbox(QFrame):
@@ -72,11 +73,12 @@ class OptionsPanel(QWidget):
         v_chk_txt1 = QVBoxLayout()
         v_chk_txt1.setSpacing(2)
         lbl_chk_title1 = QLabel("Hapus file/folder asli setelah dikunci")
-        lbl_chk_title1.setStyleSheet("font-size: 10pt; color: #FFFFFF;")
+        lbl_chk_title1.setStyleSheet(f"font-size: 10pt; color: {CLR_TEXT_MAIN};")
+        self.chk_hapus.setAccessibleName("Hapus file asli setelah dikunci")
         lbl_chk_desc1 = QLabel(
             "File atau folder asli akan dihapus secara standar (Cepat & Aman untuk SSD)."
         )
-        lbl_chk_desc1.setStyleSheet("font-size: 9pt; color: #8B95A5;")
+        lbl_chk_desc1.setStyleSheet(muted_label_style("9pt"))
         v_chk_txt1.addWidget(lbl_chk_title1)
         v_chk_txt1.addWidget(lbl_chk_desc1)
 
@@ -103,7 +105,8 @@ class OptionsPanel(QWidget):
         self.chk_secure.hide()
 
         lbl_chk_title2 = QLabel("Advanced: Secure Wipe (Timpa data)")
-        lbl_chk_title2.setStyleSheet("font-size: 9pt; color: #FFFFFF;")
+        lbl_chk_title2.setStyleSheet(f"font-size: 9pt; color: {CLR_TEXT_MAIN};")
+        self.chk_secure.setAccessibleName("Secure Wipe - Timpa data asli")
 
         lay_chk2.addWidget(self.chk_secure, alignment=Qt.AlignmentFlag.AlignVCenter)
         lay_chk2.addSpacing(10)

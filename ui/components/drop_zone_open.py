@@ -17,8 +17,9 @@ from ..widgets import (
     CustomToolTip,
     ElidedLabel,
     HeroIconWidget,
-    ClearButton,
 )
+from ..buttons import ClearButton
+from ..styles import CLR_TEXT_MUTED, muted_label_style, small_footer_style
 
 
 class DropTargetFrame(QFrame):
@@ -27,6 +28,13 @@ class DropTargetFrame(QFrame):
         self.setObjectName("DropArea")
         self.setAcceptDrops(True)
         self.on_file_dropped = None
+        self.setProperty("empty", True)
+
+    def set_empty_state(self, is_empty: bool):
+        """Set empty state via property (global stylesheet will handle visual)."""
+        self.setProperty("empty", is_empty)
+        self.style().unpolish(self)
+        self.style().polish(self)
 
     def _set_drag_state(self, state: bool):
         self.setProperty("dragActive", state)
@@ -102,7 +110,7 @@ class DropZoneOpen(QWidget):
         self.lbl_main_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.lbl_sub_empty = QLabel("atau klik tombol di bawah untuk memilih file")
-        self.lbl_sub_empty.setStyleSheet("font-size: 10pt; color: #8B95A5;")
+        self.lbl_sub_empty.setStyleSheet(muted_label_style("10pt"))
         self.lbl_sub_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.btn_browse_center = QPushButton(" Pilih File Brankas")
@@ -110,12 +118,13 @@ class DropZoneOpen(QWidget):
         self.btn_browse_center.setFixedSize(220, 42)
         self.btn_browse_center.setObjectName("BtnBrowseLg")
         self.btn_browse_center.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_browse_center.setAccessibleName("Pilih File Brankas untuk Dibuka")
         self.btn_browse_center.clicked.connect(self._pilih_file)
 
         self.lbl_footer_empty = QLabel(
             "Hanya file dengan ekstensi .adtn yang dapat dibuka"
         )
-        self.lbl_footer_empty.setStyleSheet("font-size: 9pt; color: #8B95A5;")
+        self.lbl_footer_empty.setStyleSheet(small_footer_style())
         self.lbl_footer_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         lay_empty.addStretch(1)
@@ -164,12 +173,13 @@ class DropZoneOpen(QWidget):
         )
         lbl_path_desc = QLabel("Siap untuk didekripsi")
         lbl_path_desc.setStyleSheet(
-            "color: #8B95A5; font-size: 9pt; border: none; background: transparent;"
+            "color: {CLR_TEXT_MUTED}; font-size: 9pt; border: none; background: transparent;"
         )
         v_fname.addWidget(self.lbl_path_filled)
         v_fname.addWidget(lbl_path_desc)
 
         self.btn_clear = ClearButton()
+        self.btn_clear.setAccessibleName("Hapus File dari Daftar")
         self.btn_clear.clicked.connect(self._clear_file)
 
         lay_fbox.addWidget(icon_locked)
@@ -181,6 +191,7 @@ class DropZoneOpen(QWidget):
         self.btn_ganti = QPushButton(" Ganti File Brankas")
         self.btn_ganti.setIcon(qta.icon("mdi6.file-find", color="white"))
         self.btn_ganti.setFixedHeight(40)
+        self.btn_ganti.setAccessibleName("Ganti File Brankas")
         self.btn_ganti.clicked.connect(self._pilih_file)
         lay_filled.addWidget(self.btn_ganti)
 
@@ -201,7 +212,7 @@ class DropZoneOpen(QWidget):
             self.lbl_main_empty.setStyleSheet(
                 "font-size: 10pt; font-weight: bold; color: white;"
             )
-            self.lbl_sub_empty.setStyleSheet("font-size: 8pt; color: #8B95A5;")
+            self.lbl_sub_empty.setStyleSheet(f"font-size: 8pt; color: {CLR_TEXT_MUTED};")
             self.btn_browse_center.setFixedSize(180, 34)
             self.lbl_footer_empty.hide()
         else:
@@ -209,21 +220,14 @@ class DropZoneOpen(QWidget):
             self.lbl_main_empty.setStyleSheet(
                 "font-size: 13pt; font-weight: bold; color: white;"
             )
-            self.lbl_sub_empty.setStyleSheet("font-size: 10pt; color: #8B95A5;")
+            self.lbl_sub_empty.setStyleSheet(f"font-size: 10pt; color: {CLR_TEXT_MUTED};")
             self.btn_browse_center.setFixedSize(220, 42)
             self.lbl_footer_empty.show()
 
     def _update_card_style(self, is_empty: bool):
-        if is_empty:
-            self.card_file.setStyleSheet("""
-                QFrame#DropArea { border: 2px dashed #232B3E; background-color: #0B101E; border-radius: 12px; }
-                QFrame#DropArea[dragActive="true"] { border: 2px dashed #00D2C8; background-color: #181F32; }
-            """)
-        else:
-            self.card_file.setStyleSheet("""
-                QFrame#DropArea { border: 1px solid #232B3E; background-color: #111625; border-radius: 12px; }
-                QFrame#DropArea[dragActive="true"] { border: 2px dashed #00D2C8; background-color: #181F32; }
-            """)
+        """Update visual state via properties (styled globally in styles.py)."""
+        if hasattr(self, "card_file") and hasattr(self.card_file, "set_empty_state"):
+            self.card_file.set_empty_state(is_empty)
 
     def _setup_accessibility(self):
         self.btn_browse_center.installEventFilter(self)

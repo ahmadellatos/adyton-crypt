@@ -1,6 +1,5 @@
 import qtawesome as qta
 from PySide6.QtWidgets import (
-    QWidget,
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
@@ -11,6 +10,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QSize, Signal
 
 from ..widgets import apply_shadow
+from ..styles import CLR_TIPS_BG, CLR_TIPS_BORDER, CLR_TEXT_MUTED
 
 
 class PasswordPanelOpen(QFrame):
@@ -45,11 +45,12 @@ class PasswordPanelOpen(QFrame):
         self.entry_pw.setFixedHeight(45)
         self.entry_pw.setPlaceholderText("Ketik password di sini…")
         self.entry_pw.setEchoMode(QLineEdit.EchoMode.Password)
+        self.entry_pw.setAccessibleName("Password untuk Membuka Brankas")
         self.entry_pw.textChanged.connect(self._on_pw_change)
         lay_box.addWidget(self.entry_pw)
 
         self.btn_toggle_pw = QPushButton()
-        self.btn_toggle_pw.setIcon(qta.icon("mdi6.eye-outline", color="#8B95A5"))
+        self.btn_toggle_pw.setIcon(qta.icon("mdi6.eye-outline", color=CLR_TEXT_MUTED))
         self.btn_toggle_pw.setIconSize(QSize(22, 22))
         self.btn_toggle_pw.setObjectName("BtnEye")
         self.btn_toggle_pw.setFixedSize(40, 45)
@@ -62,8 +63,8 @@ class PasswordPanelOpen(QFrame):
 
     def _build_info_box(self) -> QFrame:
         info_box = QFrame()
-        info_box.setStyleSheet("""
-            QFrame { background-color: #0E1A24; border: 1px solid #142E3B; border-radius: 8px; }
+        info_box.setStyleSheet(f"""
+            QFrame {{ background-color: {CLR_TIPS_BG}; border: 1px solid {CLR_TIPS_BORDER}; border-radius: 8px; }}
         """)
         lay_info = QVBoxLayout(info_box)
         lay_info.setContentsMargins(14, 12, 14, 12)
@@ -156,7 +157,7 @@ class PasswordPanelOpen(QFrame):
         self.entry_pw.blockSignals(True)
         self.entry_pw.clear()
         self.entry_pw.setEchoMode(QLineEdit.EchoMode.Password)
-        self.btn_toggle_pw.setIcon(qta.icon("mdi6.eye-outline", color="#8B95A5"))
+        self.btn_toggle_pw.setIcon(qta.icon("mdi6.eye-outline", color=CLR_TEXT_MUTED))
         self.entry_pw.blockSignals(False)
         self.valid_state_changed.emit(False)
 

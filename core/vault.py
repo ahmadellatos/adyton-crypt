@@ -43,33 +43,72 @@ class VaultStatus(Enum):
 # ── File Operations ───────────────────────────────────────────────────────────
 
 
-def hapus_permanen(path: Path, secure_wipe: bool = False):
+def _hitung_total_wipe_size(paths: list[Path], secure_wipe: bool) -> int:
+    """Hitung total byte yang akan di-secure-wipe (hanya file)."""
+    total = 0
+    for p in paths:
+        if not p.exists():
+            continue
+        if p.is_file() and secure_wipe:
+            try:
+                total += p.stat().st_size
+            except Exception:
+                pass
+        elif p.is_dir():
+            for root, _, files in os.walk(p):
+                if secure_wipe:
+                    for fname in files:
+                        fpath = Path(root) / fname
+                        try:
+                            total += fpath.stat().st_size
+                        except Exception:
+                            pass
+    return total
+
+
+def hapus_permanen(
+    path: Path,
+    secure_wipe: bool = False,
+    progress_cb=None,
+    wipe_start_pct: float = 0.93,
+    wipe_end_pct: float = 0.98,
+    total_wipe_bytes: int = 0,
+    wiped_bytes: list[int] | None = None,
+):
     """
     Menghapus file/folder secara permanen.
 
     Jika secure_wipe=True:
         - Melakukan single-pass overwrite dengan random bytes (bukan 0x00).
-        - Ini adalah best-effort defense-in-depth, terutama berguna pada HDD.
-        - Pada SSD, wear-leveling membuat overwrite biasa kurang efektif.
-        - Bukan pengganti ATA Secure Erase / multi-pass DoD 5220.22-M.
+        - Bisa melaporkan sub-progress jika parameter progress_* diberikan.
     """
     if not path.exists():
         return
 
     if path.is_file() or path.is_symlink():
-        if secure_wipe and not path.is_symlink():
+        file_size = 0
+        try:
+            file_size = path.stat().st_size if path.is_file() else 0
+        except Exception:
+            pass
+
+        if secure_wipe and not path.is_symlink() and file_size > 0:
             try:
                 path.chmod(stat.S_IWRITE)
-                size = path.stat().st_size
                 with path.open("r+b") as f:
                     written = 0
                     random_data = os.urandom(CHUNK_SIZE)
-                    while written < size:
-                        chunk = min(CHUNK_SIZE, size - written)
+                    while written < file_size:
+                        chunk = min(CHUNK_SIZE, file_size - written)
                         f.write(random_data[:chunk])
                         written += chunk
+
+                        # Laporkan sub-progress jika diminta
+                        if progress_cb and total_wipe_bytes > 0 and wiped_bytes is not None:
+                            wiped_bytes[0] += chunk
+                            pct = wipe_start_pct + (wiped_bytes[0] / total_wipe_bytes) * (wipe_end_pct - wipe_start_pct)
+                            safe_cb(progress_cb, min(wipe_end_pct, pct))
             except Exception:
-                # Gagal overwrite — tetap lanjut hapus file-nya
                 logger.debug("Secure wipe overwrite gagal (file akan tetap dihapus)")
 
         try:
@@ -79,8 +118,16 @@ def hapus_permanen(path: Path, secure_wipe: bool = False):
             path.unlink(missing_ok=True)
 
     elif path.is_dir():
-        for child in path.iterdir():
-            hapus_permanen(child, secure_wipe)
+        for child in list(path.iterdir()):
+            hapus_permanen(
+                child,
+                secure_wipe=secure_wipe,
+                progress_cb=progress_cb,
+                wipe_start_pct=wipe_start_pct,
+                wipe_end_pct=wipe_end_pct,
+                total_wipe_bytes=total_wipe_bytes,
+                wiped_bytes=wiped_bytes,
+            )
         try:
             path.rmdir()
         except OSError:
@@ -125,7 +172,8 @@ class EncryptingStream:
         self.bytes_written += len(data)
 
         if self.total_bytes > 0:
-            pct = min(0.89, 0.05 + 0.85 * (self.bytes_written / self.total_bytes))
+            # Data phase: 5% → 85%
+            pct = min(0.85, 0.05 + 0.80 * (self.bytes_written / self.total_bytes))
             if pct - self._last_pct >= 0.005:
                 safe_cb(self.progress_cb, pct)
                 self._last_pct = pct
@@ -245,8 +293,9 @@ def _write_decrypted_to_temp_tar(
             ftar.write(decryptor.update(chunk))
 
             bytes_read_so_far += len(chunk)
+            # Data decryption phase: 5% → 85%
             pct = min(
-                0.90, 0.05 + 0.85 * (bytes_read_so_far / (total_to_read or 1))
+                0.85, 0.05 + 0.80 * (bytes_read_so_far / (total_to_read or 1))
             )
             if pct - _last_pct >= 0.005:
                 safe_cb(progress_cb, pct)
@@ -303,7 +352,8 @@ def _extract_and_place_vault(
                         pct = 0.92 + 0.07 * (
                             extracted_bytes / max(total_tar_size, 1)
                         )
-                        safe_cb(progress_cb, min(0.99, pct))
+                        # Extraction is part of finalization (85-100%)
+                        safe_cb(progress_cb, min(0.99, 0.85 + 0.14 * (extracted_bytes / max(total_tar_size, 1))))
 
                 # Kembalikan metadata dasar
                 try:
@@ -434,7 +484,7 @@ def kunci_brankas(
         salt = os.urandom(16)
         nonce = os.urandom(12)
         key = derive_key(password, salt)
-        safe_cb(progress_cb, 0.05)
+        safe_cb(progress_cb, 0.03)  # Key derivation done
 
         encryptor = make_encryptor(key, nonce)
 
@@ -469,21 +519,45 @@ def kunci_brankas(
             fk.write(encryptor.finalize())
             fk.write(encryptor.tag)
 
-        safe_cb(progress_cb, 0.90)
+        # Data encryption complete → end of data phase (85%)
+        safe_cb(progress_cb, 0.85)
 
         if backup_dibuat and backup_path.exists():
             backup_path.unlink()
 
         if hapus_asli:
-            safe_cb(progress_cb, 0.95)
+            safe_cb(progress_cb, 0.88)
             if not _verify_vault_integrity(target_path, password):
                 return (
                     VaultStatus.ERROR,
                     "Vault gagal diverifikasi setelah ditulis. File asli tidak dihapus."
                     "Coba periksa ruang disk dan integritas vault secara manual.",
                 )
-            for p in valid_paths:
-                hapus_permanen(Path(p), secure_wipe)
+            safe_cb(progress_cb, 0.90)  # Verification done
+
+            if secure_wipe:
+                wipe_paths = [Path(p) for p in valid_paths]
+                total_wipe = _hitung_total_wipe_size(wipe_paths, True)
+                wiped_counter = [0]
+
+                def _wipe_progress(pct: float):
+                    safe_cb(progress_cb, pct)
+
+                for p in wipe_paths:
+                    hapus_permanen(
+                        p,
+                        secure_wipe=True,
+                        progress_cb=_wipe_progress,
+                        wipe_start_pct=0.90,
+                        wipe_end_pct=0.98,
+                        total_wipe_bytes=total_wipe,
+                        wiped_bytes=wiped_counter,
+                    )
+            else:
+                for p in valid_paths:
+                    hapus_permanen(Path(p), secure_wipe=False)
+
+            safe_cb(progress_cb, 0.99)  # Wipe + cleanup done
 
         size_mb = target_path.stat().st_size / (1024 * 1024)
         safe_cb(progress_cb, 1.0)
@@ -550,6 +624,8 @@ def buka_brankas(
                 f"Ruang penyimpanan tidak cukup!\nSisa disk: {free_mb:.1f} MB. Butuh minimal {req_mb:.1f} MB.",
             )
 
+        safe_cb(progress_cb, 0.01)  # Mulai proses buka
+
         # Hapus temp folder yang umurnya > 5 menit
         for old_temp in base_dir.glob("._dec_*"):
             if old_temp.is_dir():
@@ -591,9 +667,13 @@ def buka_brankas(
             # Kembali ke posisi setelah header selesai (byte ke-33)
             fk.seek(HEADER_SIZE)
 
+            safe_cb(progress_cb, 0.02)  # Header dibaca
+
             # Lanjut derive_key dan proses dekripsi...
             key = derive_key(password, salt)
             decryptor = make_decryptor(key, nonce, tag)
+
+            safe_cb(progress_cb, 0.04)  # Key derivation selesai (PBKDF2)
 
             first_sz = min(FIRST_DECRYPT_CHUNK_SIZE, cipher_len)
             first_chunk = fk.read(first_sz)
@@ -614,6 +694,7 @@ def buka_brankas(
                 return VaultStatus.OVERWRITE_NEEDED, nama_folder
 
             temp_ext_dir, temp_tar_path = _create_temp_decrypt_paths(base_dir)
+            safe_cb(progress_cb, 0.05)  # Persiapan selesai, mulai dekripsi data
 
             try:
                 # FASE 1: DEKRIPSI KE FILE TEMP
