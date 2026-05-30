@@ -45,6 +45,7 @@ class HeroIconWidget(QWidget):
         super().__init__(parent)
         self.setFixedSize(160, 110)
 
+        self._sparkle_glows = []
         sparkles = [
             (30, 15, 14, "#4A90E2"),
             (10, 40, 10, "#4A90E2"),
@@ -62,6 +63,7 @@ class HeroIconWidget(QWidget):
             glow.setXOffset(0)
             glow.setYOffset(0)
             lbl.setGraphicsEffect(glow)
+            self._sparkle_glows.append(glow)
 
         lbl_folder = QLabel(self)
         lbl_folder.setPixmap(qta.icon("mdi6.folder", color="#2A344A").pixmap(90, 90))
@@ -75,12 +77,39 @@ class HeroIconWidget(QWidget):
         lbl_overlay.setGeometry(62, 42, 36, 36)
         lbl_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        glow_overlay = QGraphicsDropShadowEffect(self)
-        glow_overlay.setBlurRadius(25)
-        glow_overlay.setColor(QColor("#00D2C8"))
-        glow_overlay.setXOffset(0)
-        glow_overlay.setYOffset(0)
-        lbl_overlay.setGraphicsEffect(glow_overlay)
+        self._overlay_icon = lbl_overlay
+        self._glow_overlay = QGraphicsDropShadowEffect(self)
+        self._glow_overlay.setBlurRadius(25)
+        self._glow_overlay.setColor(QColor("#00D2C8"))
+        self._glow_overlay.setXOffset(0)
+        self._glow_overlay.setYOffset(0)
+        lbl_overlay.setGraphicsEffect(self._glow_overlay)
+
+    def set_drag_active(self, active: bool):
+        """Intensify the icon glow when drag is active over the drop area."""
+        if active:
+            # Main shield icon - MUCH brighter glow when dragging
+            if hasattr(self, "_glow_overlay") and self._glow_overlay:
+                self._glow_overlay.setBlurRadius(55)           # bigger spread
+                self._glow_overlay.setColor(QColor(120, 255, 255, 255))  # very bright cyan-teal, full opacity
+
+            # Sparkles also get much brighter
+            for glow in getattr(self, "_sparkle_glows", []):
+                glow.setBlurRadius(30)
+                glow.setColor(QColor(200, 255, 255, 240))
+
+            self.update()   # force repaint so the brighter glow shows immediately
+        else:
+            # Return to normal
+            if hasattr(self, "_glow_overlay") and self._glow_overlay:
+                self._glow_overlay.setBlurRadius(25)
+                self._glow_overlay.setColor(QColor("#00D2C8"))
+
+            for glow in getattr(self, "_sparkle_glows", []):
+                glow.setBlurRadius(15)
+                glow.setColor(QColor("#4A90E2"))
+
+            self.update()   # force repaint when returning to normal glow
 
 
 # ── CUSTOM TOOLTIP ──────────────────────────────────────────────────
@@ -250,7 +279,7 @@ class CustomTitleBar(QFrame):
 
         # Judul bersih
         lbl_title = QLabel("Adyton Crypt")
-        lbl_title.setStyleSheet("color: #8B95A5; font-size: 9pt;")
+        lbl_title.setObjectName("MutedText")
 
         lay.addWidget(self.lbl_icon)
         lay.addWidget(lbl_title)
@@ -378,11 +407,11 @@ class AnimatedNotifBar(QFrame):
 
         self.setStyleSheet(
             f"QFrame#NotifBar {{ background-color: {bg_color}; border-radius: 8px; border: none; }}"
-            f"QLabel {{ border: none; background: transparent; color: {fg_color}; font-weight: bold; font-size: 10pt; }}"
+            f"QLabel {{ border: none; background: transparent; color: {fg_color}; font-weight: 600; font-size: 10pt; }}"
         )
         self.lbl_icon.setPixmap(qta.icon(icon_name, color=fg_color).pixmap(24, 24))
         self.lbl_text.setStyleSheet(
-            f"color: {fg_color}; font-weight: bold; font-size: 10pt;"
+            f"color: {fg_color}; font-weight: 600; font-size: 10pt;"
         )
         self.lbl_text.setText(msg)
 

@@ -60,7 +60,7 @@ class TabBuka(QWidget):
         self.btn_aksi.setAccessibleName("Tombol Buka Brankas")
         self.btn_aksi.setEnabled(False)
         self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        apply_shadow(self.btn_aksi, blur_radius=20, y_offset=4, opacity=80)
+        apply_shadow(self.btn_aksi, blur_radius=24, y_offset=5, opacity=85)  # Option B: sedikit lebih berani
 
         main_layout.addWidget(self.btn_aksi)
         self.notif = AnimatedNotifBar(self)
@@ -122,7 +122,7 @@ class TabBuka(QWidget):
 
         self._crypto_start_time = time.time()
         self._set_busy(True)
-        self.worker = CryptoWorker(buka_brankas, path_file, pw, force)
+        self.worker = CryptoWorker(buka_brankas, path_file, pw, force, parent=self)
         self.password_panel.reset_field()
 
         self.worker.progress.connect(self._update_progress)

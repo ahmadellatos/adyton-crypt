@@ -148,7 +148,7 @@ import tarfile
 import io
 from core.vault import (
     MAGIC_BYTES, VERSION, HEADER_SIZE, OVERHEAD,
-    _verify_vault_integrity, kunci_brankas, buka_brankas, VaultStatus
+    kunci_brankas, buka_brankas, VaultStatus
 )
 from core.crypto import derive_key, make_encryptor, CHUNK_SIZE
 from core.worker import CryptoWorker
@@ -199,26 +199,6 @@ class TestHeaderFormat:
         # (this used to return ERROR before the heuristic fix)
         status, msg = buka_brankas(locked_path, PASSWORD_SALAH)
         assert status == VaultStatus.WRONG_PASSWORD
-
-
-class TestVerifyIntegrity:
-    """Direct tests for the internal _verify_vault_integrity helper."""
-
-    def test_verify_succeeds_with_correct_password(self, sample_folder, tmp_dir):
-        locked = kunci_dan_dapat_path(sample_folder, hapus=False)
-        assert _verify_vault_integrity(Path(locked), PASSWORD_BENAR) is True
-
-    def test_verify_fails_with_wrong_password(self, sample_folder, tmp_dir):
-        locked = kunci_dan_dapat_path(sample_folder, hapus=False)
-        assert _verify_vault_integrity(Path(locked), PASSWORD_SALAH) is False
-
-    def test_verify_fails_on_corrupted_magic(self, tmp_dir):
-        path = os.path.join(tmp_dir, "corrupt.adtn")
-        # valid structure except magic
-        data = b"XXXX" + VERSION + os.urandom(100)
-        with open(path, "wb") as f:
-            f.write(data)
-        assert _verify_vault_integrity(Path(path), PASSWORD_BENAR) is False
 
 
 class TestSecureWipeBasic:

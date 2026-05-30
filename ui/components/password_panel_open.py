@@ -10,7 +10,13 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QSize, Signal
 
 from ..widgets import apply_shadow
-from ..styles import CLR_TIPS_BG, CLR_TIPS_BORDER, CLR_TEXT_MUTED
+from ..styles import (
+    CLR_TIPS_BG,
+    CLR_TIPS_BORDER,
+    CLR_TEXT_MUTED,
+    CLR_ACCENT,
+    CLR_WARN,
+)
 
 
 class PasswordPanelOpen(QFrame):
@@ -26,18 +32,18 @@ class PasswordPanelOpen(QFrame):
 
     def _build_ui(self):
         v_pw = QVBoxLayout(self)
-        v_pw.setContentsMargins(25, 25, 25, 25)
-        v_pw.setSpacing(15)
+        v_pw.setContentsMargins(24, 20, 24, 20)
+        v_pw.setSpacing(12)  # Match premium rhythm from Kunci side
 
         lbl_title_pw = QLabel("MASUKKAN PASSWORD")
         lbl_title_pw.setObjectName("CardTitle")
         v_pw.addWidget(lbl_title_pw)
-        v_pw.addSpacing(10)
+        v_pw.addSpacing(8)  # Tighter, more consistent with Kunci panel
 
         self.box_pw = QFrame()
         self.box_pw.setObjectName("InputBox")
         lay_box = QHBoxLayout(self.box_pw)
-        lay_box.setContentsMargins(10, 0, 5, 0)
+        lay_box.setContentsMargins(12, 0, 6, 0)
         lay_box.setSpacing(0)
 
         self.entry_pw = QLineEdit()
@@ -53,7 +59,7 @@ class PasswordPanelOpen(QFrame):
         self.btn_toggle_pw.setIcon(qta.icon("mdi6.eye-outline", color=CLR_TEXT_MUTED))
         self.btn_toggle_pw.setIconSize(QSize(22, 22))
         self.btn_toggle_pw.setObjectName("BtnEye")
-        self.btn_toggle_pw.setFixedSize(40, 45)
+        self.btn_toggle_pw.setFixedSize(44, 45)  # Match Kunci side for consistency
         self.btn_toggle_pw.clicked.connect(self._toggle_pw)
         lay_box.addWidget(self.btn_toggle_pw)
 
@@ -63,27 +69,25 @@ class PasswordPanelOpen(QFrame):
 
     def _build_info_box(self) -> QFrame:
         info_box = QFrame()
-        info_box.setStyleSheet(f"""
-            QFrame {{ background-color: {CLR_TIPS_BG}; border: 1px solid {CLR_TIPS_BORDER}; border-radius: 8px; }}
-        """)
+        info_box.setObjectName("TipsBox")
         lay_info = QVBoxLayout(info_box)
-        lay_info.setContentsMargins(14, 12, 14, 12)
-        lay_info.setSpacing(10)
+        lay_info.setContentsMargins(12, 10, 12, 10)
+        lay_info.setSpacing(8)  # Slightly tighter for premium feel
 
         tips = [
             (
                 "mdi6.shield-key-outline",
-                "#00D2C8",
+                CLR_ACCENT,
                 "Password tidak dapat dipulihkan. Simpan di tempat yang aman.",
             ),
             (
                 "mdi6.lock-alert-outline",
-                "#F39C12",
+                CLR_WARN,
                 "Pastikan password sama persis dengan yang digunakan saat mengunci.",
             ),
             (
                 "mdi6.file-lock-outline",
-                "#8B95A5",
+                CLR_TEXT_MUTED,
                 "Hanya file .adtn yang dibuat oleh Adyton Crypt yang dapat dibuka.",
             ),
         ]
@@ -92,15 +96,13 @@ class PasswordPanelOpen(QFrame):
             row = QHBoxLayout()
             row.setSpacing(10)
             lbl_ic = QLabel()
-            lbl_ic.setPixmap(qta.icon(icon_name, color=color).pixmap(18, 18))
-            lbl_ic.setFixedSize(18, 18)
+            lbl_ic.setPixmap(qta.icon(icon_name, color=color).pixmap(16, 16))
+            lbl_ic.setFixedSize(16, 16)  # Consistent with other icons in the app
             row.addWidget(lbl_ic, alignment=Qt.AlignmentFlag.AlignTop)
 
             lbl_tx = QLabel(text)
             lbl_tx.setWordWrap(True)
-            lbl_tx.setStyleSheet(
-                "font-size: 9pt; color: #8B95A5; background: transparent; border: none;"
-            )
+            lbl_tx.setObjectName("MutedText")
             row.addWidget(lbl_tx, 1)
             lay_info.addLayout(row)
 
@@ -137,7 +139,7 @@ class PasswordPanelOpen(QFrame):
             else QLineEdit.EchoMode.Password
         )
         self.entry_pw.setEchoMode(mode)
-        color = "#00D2C8" if mode == QLineEdit.EchoMode.Normal else "#8B95A5"
+        color = CLR_ACCENT if mode == QLineEdit.EchoMode.Normal else CLR_TEXT_MUTED
         icon_name = (
             "mdi6.eye-outline"
             if mode == QLineEdit.EchoMode.Password

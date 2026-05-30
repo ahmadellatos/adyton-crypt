@@ -25,7 +25,7 @@ from ..widgets import (
 from ..menus import AccessibleCenteredMenu, CenteredMenuAction
 from ..buttons import ClearButton, TambahClearSplitButton
 from ..dialogs import ModernMessageBox
-from ..styles import CLR_TEXT_MUTED, muted_label_style, small_footer_style
+from ..styles import CLR_TEXT_MUTED, muted_label_style, caption_style
 
 
 class MultiDropFrame(QFrame):
@@ -47,6 +47,11 @@ class MultiDropFrame(QFrame):
         self.setProperty("dragActive", state)
         self.style().unpolish(self)
         self.style().polish(self)
+
+        # Intensify icon glow when dragging (look for icon on parent DropZoneLock)
+        parent = self.parent()
+        if parent and hasattr(parent, "icon_empty") and parent.icon_empty:
+            parent.icon_empty.set_drag_active(state)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -170,66 +175,7 @@ class TargetListModel(QAbstractListModel):
     def getPaths(self):
         return list(self._paths)
 
-    # --- Drag & Drop support for reordering (Tahap 3) ---
-    def flags(self, index):
-        if not index.isValid():
-            return Qt.ItemFlag.ItemIsDropEnabled
-        return (
-            Qt.ItemFlag.ItemIsEnabled
-            | Qt.ItemFlag.ItemIsSelectable
-            | Qt.ItemFlag.ItemIsDragEnabled
-            | Qt.ItemFlag.ItemIsDropEnabled
-        )
-
-    def supportedDropActions(self):
-        return Qt.DropAction.MoveAction
-
-    def mimeTypes(self):
-        return ["application/x-adyton-target-row"]
-
-    def mimeData(self, indexes):
-        if not indexes:
-            return None
-        # Encode the row indices being dragged (usually one)
-        rows = [str(i.row()) for i in indexes if i.isValid()]
-        md = QMimeData()
-        md.setData("application/x-adyton-target-row", ",".join(rows).encode("utf-8"))
-        return md
-
-    def dropMimeData(self, data, action, row, column, parent):
-        if action != Qt.DropAction.MoveAction:
-            return False
-        if not data.hasFormat("application/x-adyton-target-row"):
-            return False
-
-        try:
-            rows_str = data.data("application/x-adyton-target-row").data().decode("utf-8")
-            src_rows = [int(r) for r in rows_str.split(",") if r.strip()]
-        except Exception:
-            return False
-
-        if not src_rows:
-            return False
-
-        # Determine destination row (Qt gives -1 for append at end)
-        dest_row = row if row >= 0 else self.rowCount()
-
-        # For single selection drag, move one row
-        src_row = src_rows[0]
-        if src_row == dest_row or src_row + 1 == dest_row:
-            return False  # no-op
-
-        self.beginMoveRows(QModelIndex(), src_row, src_row, QModelIndex(), dest_row)
-        item = self._paths.pop(src_row)
-        # Adjust dest if we popped before it
-        if dest_row > src_row:
-            dest_row -= 1
-        self._paths.insert(dest_row, item)
-        self.endMoveRows()
-        return True
-
-    def canDropMimeData(self, data, action, row, column, parent):
-        return action == Qt.DropAction.MoveAction and data.hasFormat("application/x-adyton-target-row")
+    # No drag & drop reordering (removed as per request)
 
 
 class TargetListDelegate(QStyledItemDelegate):
@@ -260,8 +206,9 @@ class TargetListDelegate(QStyledItemDelegate):
         return pix
 
     def _get_delete_pixmap(self, is_hovered: bool, size: int = 18):
-        color = "#E74C3C" if is_hovered else "#6B7688"
-        return qta.icon("mdi6.close-circle", color=color).pixmap(size, size)
+        # Use the same icon as ClearButton ("mdi6.close")
+        color = "#FFFFFF" if is_hovered else "#8B95A5"
+        return qta.icon("mdi6.close", color=color).pixmap(size, size)
 
     def _human_size(self, size_bytes: int) -> str:
         if size_bytes < 0:
@@ -278,6 +225,9 @@ class TargetListDelegate(QStyledItemDelegate):
     def paint(self, painter: QPainter, option, index):
         painter.save()
 
+        # Make text crisp (fixes "pecah" / blurry text)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+
         rect = option.rect
         path = index.data(Qt.UserRole) or ""
         name = index.data(Qt.DisplayRole) or "?"
@@ -287,33 +237,31 @@ class TargetListDelegate(QStyledItemDelegate):
 
         is_selected = bool(option.state & QStyle.State_Selected)
         is_hovered = index.row() == self._hovered_row
+        is_folder = (index.data(TargetListModel.TypeRole) == "folder")
 
         # Background highlight
         if is_selected:
             painter.fillRect(rect, QColor("#1E2A40"))
-            # Left accent bar (teal) for strong selected feedback
             accent = QRect(rect.left(), rect.top() + 2, 3, rect.height() - 4)
             painter.fillRect(accent, QColor("#00D2C8"))
         elif is_hovered:
             painter.fillRect(rect, QColor("#182033"))
         else:
-            # subtle separator
             painter.setPen(QPen(QColor("#232B3E"), 1))
             painter.drawLine(rect.left() + 14, rect.bottom() - 1, rect.right() - 14, rect.bottom() - 1)
 
-        # Keyboard focus indicator (subtle outline when this item is current + view has focus)
+        # Keyboard focus indicator
         is_focused_item = bool(option.state & QStyle.State_HasFocus)
         if is_focused_item and (is_selected or is_hovered):
             painter.setPen(QPen(QColor("#00D2C8"), 1, Qt.PenStyle.DashLine))
             focus_rect = rect.adjusted(1, 1, -1, -1)
             painter.drawRect(focus_rect)
 
-        # Content layout
         pad_x = 14
         pad_y = 8
         content = rect.adjusted(pad_x, pad_y, -pad_x, -pad_y)
 
-        # Icon (left)
+        # Icon
         icon_size = 24
         icon_pix = self._get_icon(path, icon_size)
         icon_y = content.top() + (content.height() - icon_size) // 2
@@ -321,68 +269,101 @@ class TargetListDelegate(QStyledItemDelegate):
 
         text_x = content.left() + icon_size + 10
 
-        # Delete button area (space always reserved for stable layout; icon only painted on hover)
-        del_size = 18
-        del_x = content.right() - del_size
+        # === Layout constants for right side (delete + size) ===
+        del_size = 20
+        del_x = content.right() - del_size - 2
         del_y = content.top() + (content.height() - del_size) // 2
+        show_delete = is_hovered
 
-        # Only show delete affordance on hover (or selected) — cleaner for long lists
-        show_delete = is_hovered or is_selected
+        # Draw delete button first (hover only) — no font dependency
         if show_delete:
-            del_pix = self._get_delete_pixmap(is_hovered, del_size)
-            painter.drawPixmap(del_x, del_y, del_pix)
+            # Red rounded background on hover (matching ClearButton style from Buka tab)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor("#E74C3C"))
+            painter.drawRoundedRect(del_x, del_y, del_size, del_size, 4, 4)
 
-        # Available width for text: use full width when delete hidden, reserve space when shown (stable layout)
-        text_reserve = 70 if show_delete else 20
-        avail_w = del_x - text_x - text_reserve
+            # White close icon
+            del_pix = self._get_delete_pixmap(True, del_size - 4)
+            icon_x = del_x + (del_size - (del_size - 4)) // 2
+            icon_y = del_y + (del_size - (del_size - 4)) // 2
+            painter.drawPixmap(icon_x, icon_y, del_pix)
 
-        # Primary: basename (bold, prominent)
-        fm = QFontMetrics(painter.font())
-        bold_font = QFont(painter.font())
-        bold_font.setBold(True)
-        bold_font.setPointSize(10)
-        painter.setFont(bold_font)
-        elided_name = fm.elidedText(name, Qt.TextElideMode.ElideMiddle, max(avail_w, 60))
+        # Prepare fonts using the rich IBM Plex Sans family the user added
+        size_str = self._human_size(size_bytes if size_bytes is not None else -1)
+
+        # Name: SemiBold (DemiBold) — strong but not as heavy as Bold
+        name_font = QFont(painter.font())
+        name_font.setWeight(QFont.Weight.DemiBold)
+        name_font.setPointSize(9.5)
+        fm_name = QFontMetrics(name_font)
+
+        # Path: Light weight (new fonts) — delicate, secondary info
+        path_font = QFont(painter.font())
+        path_font.setWeight(QFont.Weight.Light)
+        path_font.setPointSize(8)
+        fm_path = QFontMetrics(path_font)
+
+        # Size: Regular / slightly lighter presence
+        size_font = QFont(painter.font())
+        size_font.setWeight(QFont.Weight.Normal)
+        size_font.setPointSize(7.5)
+        fm_size = QFontMetrics(size_font)
+
+        size_w = fm_size.horizontalAdvance(size_str)
+
+        # Right reservation: always leave room for size + comfortable gap.
+        # When hovering, also reserve space for the delete button.
+        right_reserve = 8
+        if show_delete:
+            right_reserve += del_size + 8
+
+        # Size right-aligned within reserved area
+        size_right = content.right() - right_reserve
+        size_x = size_right - size_w
+
+        # Path stops before gap + size (use path font metrics for correct eliding)
+        path_to_size_gap = 12
+        max_path_w = max(50, (size_x - path_to_size_gap) - text_x)
+
+        # Name reservation
+        name_right_reserve = 6 if show_delete else 2
+        max_name_w = max(80, (content.right() - name_right_reserve - (del_size + 6 if show_delete else 0)) - text_x)
+
+        # === NAME (SemiBold 9.5pt) ===
+        painter.setFont(name_font)
+        elided_name = fm_name.elidedText(name, Qt.TextElideMode.ElideMiddle, max_name_w)
         painter.setPen(QColor("#FFFFFF"))
         name_y = content.top() + 13
         painter.drawText(text_x, name_y, elided_name)
 
-        # Secondary line: path + size
-        small_font = QFont(painter.font())
-        small_font.setPointSize(8)
-        painter.setFont(small_font)
-        fm_small = QFontMetrics(small_font)
-
-        # Path (dirname elided)
+        # === PATH (Light 8pt) + SIZE (Regular 7.5pt) ===
+        painter.setFont(path_font)
         dirname = os.path.dirname(path) or ""
-        path_elided = fm_small.elidedText(dirname, Qt.TextElideMode.ElideMiddle, max(avail_w - 10, 40))
+        path_elided = fm_path.elidedText(dirname, Qt.TextElideMode.ElideMiddle, max_path_w)
         painter.setPen(QColor("#8B95A5"))
         painter.drawText(text_x, name_y + 15, path_elided)
 
-        # Size label (right-aligned before delete button)
-        size_str = self._human_size(size_bytes if size_bytes is not None else -1)
-        size_w = fm_small.horizontalAdvance(size_str)
-        size_x = del_x - size_w - 6
+        painter.setFont(size_font)
         painter.setPen(QColor("#6B7688"))
         painter.drawText(size_x, name_y + 15, size_str)
 
         painter.restore()
 
     def sizeHint(self, option, index):
-        # Fixed height for consistent rich rows; width follows view
+        # Fixed height for consistent rich rows (using richer typography now)
         w = option.rect.width() if option.rect.width() > 80 else 420
-        return QSize(w, 56)
+        return QSize(w, 58)
 
     def editorEvent(self, event, model, option, index):
-        """Tangani klik kiri pada area tombol hapus tanpa memerlukan editor."""
+        """Tangani klik pada tombol hapus (hanya muncul saat hover)."""
         if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
             rect = option.rect
             pad_x = 14
             pad_y = 8
             content = rect.adjusted(pad_x, pad_y, -pad_x, -pad_y)
 
-            del_size = 18
-            del_x = content.right() - del_size
+            del_size = 20
+            del_x = content.right() - del_size - 2
             del_y = content.top() + (content.height() - del_size) // 2
             del_rect = QRect(del_x, del_y, del_size, del_size)
 
@@ -390,7 +371,7 @@ class TargetListDelegate(QStyledItemDelegate):
                 path = index.data(Qt.UserRole)
                 if path:
                     self.remove_requested.emit(str(path))
-                    return True  # event consumed, jangan lanjut ke default behavior
+                    return True
 
         return super().editorEvent(event, model, option, index)
 
@@ -447,15 +428,13 @@ class DropZoneLock(QWidget):
         self.icon_empty.setMaximumHeight(85)
 
         self.lbl_main_empty = QLabel("Drag & drop file atau folder ke sini")
-        self.lbl_main_empty.setStyleSheet(
-            "font-size: 13pt; font-weight: bold; color: white;"
-        )
+        self.lbl_main_empty.setObjectName("DropZoneMainText")
         self.lbl_main_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.lbl_sub_empty = QLabel(
             "atau klik tombol di bawah untuk memilih secara manual"
         )
-        self.lbl_sub_empty.setStyleSheet(muted_label_style("10pt"))
+        self.lbl_sub_empty.setObjectName("DropZoneSubText")
         self.lbl_sub_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.btn_empty_browse = QPushButton(" Pilih Target")
@@ -468,22 +447,22 @@ class DropZoneLock(QWidget):
         self.lbl_footer_empty = QLabel(
             "Mendukung semua format file dan folder tak terbatas"
         )
-        self.lbl_footer_empty.setStyleSheet(small_footer_style())
+        self.lbl_footer_empty.setObjectName("DropZoneFooter")
         self.lbl_footer_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        lay_empty.addStretch(1)
+        lay_empty.addStretch(2)
         lay_empty.addWidget(self.icon_empty, alignment=Qt.AlignmentFlag.AlignHCenter)
-        lay_empty.addStretch(1)
+        lay_empty.addSpacing(18)
         lay_empty.addWidget(self.lbl_main_empty)
-        lay_empty.addSpacing(2)
+        lay_empty.addSpacing(3)
         lay_empty.addWidget(self.lbl_sub_empty)
-        lay_empty.addStretch(1)
+        lay_empty.addSpacing(22)
         lay_empty.addWidget(
             self.btn_empty_browse, alignment=Qt.AlignmentFlag.AlignHCenter
         )
-        lay_empty.addStretch(1)
+        lay_empty.addSpacing(28)
         lay_empty.addWidget(self.lbl_footer_empty)
-        lay_empty.addStretch(1)
+        lay_empty.addStretch(2)
 
         self.stack_target.addWidget(page_empty)
 
@@ -500,9 +479,9 @@ class DropZoneLock(QWidget):
         )
 
         v_hdr_text = QVBoxLayout()
-        v_hdr_text.setSpacing(2)
+        v_hdr_text.setSpacing(3)
         lbl_target = QLabel("DAFTAR TARGET")
-        lbl_target.setObjectName("CardTitle")
+        lbl_target.setObjectName("TargetHeaderTitle")   # bigger specific title for daftar target
         lbl_target_sub = QLabel("Pilih file atau folder yang akan dikunci")
         lbl_target_sub.setObjectName("CardSubtitle")
         v_hdr_text.addWidget(lbl_target)
@@ -555,16 +534,14 @@ class DropZoneLock(QWidget):
         self.list_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list_view.setVerticalScrollMode(QListView.ScrollMode.ScrollPerPixel)
 
-        # Tahap 3: Enable internal drag-and-drop reordering
-        self.list_view.setDragEnabled(True)
-        self.list_view.setAcceptDrops(True)
-        self.list_view.setDropIndicatorShown(True)
-        self.list_view.setDragDropMode(QListView.DragDropMode.InternalMove)
-        self.list_view.setDefaultDropAction(Qt.DropAction.MoveAction)
+        # Drag & drop reordering disabled (not needed for encryption use case)
+        self.list_view.setDragEnabled(False)
+        self.list_view.setAcceptDrops(False)
+        self.list_view.setDropIndicatorShown(False)
 
         self.list_view.setAccessibleName("Daftar Target")
         self.list_view.setAccessibleDescription(
-            "Daftar file dan folder yang akan dikunci. Seret untuk urut ulang, gunakan tombol hapus atau tombol Delete."
+            "Daftar file dan folder yang akan dikunci. Gunakan tombol hapus atau tombol Delete pada keyboard."
         )
 
         self.target_model = TargetListModel()
@@ -593,18 +570,14 @@ class DropZoneLock(QWidget):
 
         if compact:
             self.icon_empty.setMaximumHeight(52)
-            self.lbl_main_empty.setStyleSheet(
-                "font-size: 10pt; font-weight: bold; color: white;"
-            )
-            self.lbl_sub_empty.setStyleSheet(f"font-size: 8pt; color: {CLR_TEXT_MUTED};")
+            self.lbl_main_empty.setObjectName("DropZoneMainText")
+            self.lbl_sub_empty.setObjectName("DropZoneSubText")
             self.btn_empty_browse.setFixedSize(180, 34)
             self.lbl_footer_empty.hide()
         else:
             self.icon_empty.setMaximumHeight(85)
-            self.lbl_main_empty.setStyleSheet(
-                "font-size: 13pt; font-weight: bold; color: white;"
-            )
-            self.lbl_sub_empty.setStyleSheet(f"font-size: 10pt; color: {CLR_TEXT_MUTED};")
+            self.lbl_main_empty.setObjectName("DropZoneMainText")
+            self.lbl_sub_empty.setObjectName("DropZoneSubText")
             self.btn_empty_browse.setFixedSize(220, 42)
             self.lbl_footer_empty.show()
 

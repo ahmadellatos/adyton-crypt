@@ -63,7 +63,7 @@ class TabKunci(QWidget):
         self.btn_aksi.setAccessibleName("Tombol Kunci Brankas")
         self.btn_aksi.setEnabled(False)
         self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        apply_shadow(self.btn_aksi, blur_radius=20, y_offset=4, opacity=80)
+        apply_shadow(self.btn_aksi, blur_radius=24, y_offset=5, opacity=85)  # Option B: sedikit lebih berani
 
         main_layout.addWidget(self.btn_aksi)
         self.notif = AnimatedNotifBar(self)
@@ -182,6 +182,7 @@ class TabKunci(QWidget):
             pw,
             hapus_asli=hapus_asli,
             secure_wipe=secure_wipe,
+            parent=self,
         )
 
         self.password_panel.reset_fields()

@@ -81,13 +81,26 @@ def setup_qt_env() -> None:
 
 
 def setup_fonts(app: QApplication) -> None:
-    """Load IBM Plex Sans dari assets, fallback ke Segoe UI jika tidak ada."""
+    """Load IBM Plex Sans (semua weight yang tersedia) + fallback ke Segoe UI."""
     fonts_loaded = False
-    for weight in ["Regular", "Medium", "SemiBold", "Bold"]:
+
+    # Load main weights (user added many variants)
+    main_weights = [
+        "Thin", "ExtraLight", "Light",
+        "Regular", "Medium", "SemiBold", "Bold"
+    ]
+    for weight in main_weights:
         font_path = get_asset_path(f"assets/fonts/IBMPlexSans-{weight}.ttf")
         if os.path.exists(font_path):
             QFontDatabase.addApplicationFont(font_path)
             fonts_loaded = True
+
+    # Also load a few Condensed variants (useful for tight labels / size text)
+    condensed_weights = ["Condensed-Regular", "Condensed-Medium", "Condensed-SemiBold"]
+    for weight in condensed_weights:
+        font_path = get_asset_path(f"assets/fonts/IBMPlexSans_{weight}.ttf")
+        if os.path.exists(font_path):
+            QFontDatabase.addApplicationFont(font_path)
 
     font = QFont("IBM Plex Sans" if fonts_loaded else "Segoe UI")
     font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)

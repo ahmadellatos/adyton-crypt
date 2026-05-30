@@ -48,7 +48,7 @@ class ModernMessageBox(QDialog):
         layout.setSpacing(15)
 
         lbl_title = QLabel(title)
-        lbl_title.setStyleSheet("font-weight: 700; font-size: 12pt; color: white;")
+        lbl_title.setObjectName("CardTitle")
         layout.addWidget(lbl_title)
 
         content_lay = QHBoxLayout()
@@ -63,7 +63,7 @@ class ModernMessageBox(QDialog):
         lbl_msg.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding
         )
-        lbl_msg.setStyleSheet("color: #8B95A5; font-size: 10pt;")
+        lbl_msg.setObjectName("MutedText")
 
         content_lay.addWidget(lbl_msg, 1)
 

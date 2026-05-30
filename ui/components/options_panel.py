@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Signal
 from PySide6.QtGui import QKeyEvent
 
 from ..dialogs import ModernMessageBox
-from ..styles import CLR_TEXT_MAIN, muted_label_style
+from ..styles import CLR_TEXT_MAIN, CLR_TEXT_MUTED, muted_label_style
 
 
 class KeyboardCheckbox(QFrame):
@@ -58,32 +58,41 @@ class OptionsPanel(QWidget):
         self._build_ui()
 
     def _build_ui(self):
-        lay_opsi_hapus = QVBoxLayout(self)
+        # Wrapper tanpa background spesial supaya warnanya konsisten dengan card lain
+        container = QFrame(self)
+        container.setObjectName("OptionsPanel")
+        container.setContentsMargins(0, 0, 0, 0)
+
+        lay_opsi_hapus = QVBoxLayout(container)
         lay_opsi_hapus.setContentsMargins(0, 0, 0, 0)
-        lay_opsi_hapus.setSpacing(0)
+        lay_opsi_hapus.setSpacing(8)  # Premium breathing between main options
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 4, 0, 0)  # Small top breathing when placed under drop zone
+        main_layout.addWidget(container)
 
         lay_chk1 = QHBoxLayout()
-        lay_chk1.setContentsMargins(5, 5, 5, 0)
-        lay_chk1.setSpacing(0)
+        lay_chk1.setContentsMargins(0, 0, 0, 0)
+        lay_chk1.setSpacing(10)  # Balanced checkbox-to-text gap
 
         self.chk_hapus = KeyboardCheckbox(size=22)
         self.chk_hapus.setObjectName("ChkHapus")
         self.chk_hapus.set_checked(False)
 
         v_chk_txt1 = QVBoxLayout()
-        v_chk_txt1.setSpacing(2)
+        v_chk_txt1.setSpacing(3)  # Tight premium title-to-desc spacing
         lbl_chk_title1 = QLabel("Hapus file/folder asli setelah dikunci")
-        lbl_chk_title1.setStyleSheet(f"font-size: 10pt; color: {CLR_TEXT_MAIN};")
+        lbl_chk_title1.setObjectName("SectionLabel")
         self.chk_hapus.setAccessibleName("Hapus file asli setelah dikunci")
         lbl_chk_desc1 = QLabel(
             "File atau folder asli akan dihapus secara standar (Cepat & Aman untuk SSD)."
         )
-        lbl_chk_desc1.setStyleSheet(muted_label_style("9pt"))
+        lbl_chk_desc1.setObjectName("OptionDesc")
         v_chk_txt1.addWidget(lbl_chk_title1)
         v_chk_txt1.addWidget(lbl_chk_desc1)
 
         lay_chk1.addWidget(self.chk_hapus, alignment=Qt.AlignmentFlag.AlignVCenter)
-        lay_chk1.addSpacing(10)
+        lay_chk1.addSpacing(12)
         lay_chk1.addLayout(v_chk_txt1)
         lay_opsi_hapus.addLayout(lay_chk1)
 
@@ -92,24 +101,24 @@ class OptionsPanel(QWidget):
         self.widget_secure_wipe.setMinimumHeight(0)
 
         lay_collapse = QVBoxLayout(self.widget_secure_wipe)
-        lay_collapse.setContentsMargins(37, 5, 5, 5)
-        lay_collapse.setSpacing(0)
+        lay_collapse.setContentsMargins(42, 2, 0, 2)
+        lay_collapse.setSpacing(2)  # Tight premium indent for sub-option
 
         lay_chk2 = QHBoxLayout()
         lay_chk2.setContentsMargins(0, 0, 0, 0)
-        lay_chk2.setSpacing(0)
+        lay_chk2.setSpacing(10)
 
-        self.chk_secure = KeyboardCheckbox(size=18)
+        self.chk_secure = KeyboardCheckbox(size=20)  # Slightly larger for better hit area as sub-option
         self.chk_secure.setObjectName("ChkSecure")
         self.chk_secure.set_checked(False)
         self.chk_secure.hide()
 
         lbl_chk_title2 = QLabel("Advanced: Secure Wipe (Timpa data)")
-        lbl_chk_title2.setStyleSheet(f"font-size: 9pt; color: {CLR_TEXT_MAIN};")
+        lbl_chk_title2.setObjectName("OptionDesc")
         self.chk_secure.setAccessibleName("Secure Wipe - Timpa data asli")
 
         lay_chk2.addWidget(self.chk_secure, alignment=Qt.AlignmentFlag.AlignVCenter)
-        lay_chk2.addSpacing(10)
+        lay_chk2.addSpacing(12)
         lay_chk2.addWidget(lbl_chk_title2)
         lay_chk2.addStretch()
         lay_collapse.addLayout(lay_chk2)
@@ -128,7 +137,7 @@ class OptionsPanel(QWidget):
             self.widget_secure_wipe.show()
             self.chk_secure.show()
             self.anim_secure.setStartValue(0)
-            self.anim_secure.setEndValue(50)
+            self.anim_secure.setEndValue(48)  # Adjusted for tighter premium sub-option spacing
             self.anim_secure.start()
         else:
             self.anim_secure.setStartValue(self.widget_secure_wipe.maximumHeight())

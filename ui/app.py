@@ -94,8 +94,8 @@ class AppBrankas(FramelessMainWindow):
 
         content_container = QWidget()
         content_lay = QVBoxLayout(content_container)
-        content_lay.setContentsMargins(30, 20, 30, 15)
-        content_lay.setSpacing(25)
+        content_lay.setContentsMargins(30, 8, 30, 15)
+        content_lay.setSpacing(22)
 
         self._build_header(content_lay)
 
@@ -208,7 +208,7 @@ class AppBrankas(FramelessMainWindow):
         """Tampilkan UWP Toast via winotify. Fallback ke Qt tray jika tidak tersedia."""
         if HAS_WINOTIFY:
             try:
-                icon_path = os.path.abspath(get_asset_path("assets/icon_notif.png"))
+                icon_path = os.path.abspath(get_asset_path("assets/icon_adyton.png"))
                 toast = Notification(
                     app_id=APP_AUMID,
                     title=title,
@@ -226,7 +226,7 @@ class AppBrankas(FramelessMainWindow):
         self.tray.showMessage(
             title,
             message,
-            QIcon(get_asset_path("assets/icon_notif.png")),
+            QIcon(get_asset_path("assets/icon_adyton.png")),
             5000,
         )
 
@@ -276,21 +276,27 @@ class AppBrankas(FramelessMainWindow):
     # =========================================================================
 
     def _build_header(self, parent_layout: QVBoxLayout) -> None:
-        header_layout = QHBoxLayout()
-        header_layout.setContentsMargins(0, 0, 0, 0)
+        # Wrapper header dengan subtle separator
+        header_wrapper = QFrame()
+        header_wrapper.setObjectName("HeaderWrapper")
+        header_wrapper.setContentsMargins(0, 0, 0, 0)
+
+        header_layout = QHBoxLayout(header_wrapper)
+        header_layout.setContentsMargins(0, 6, 0, 6)  # lebih rapat tanpa separator
+        header_layout.setSpacing(20)
 
         # Kiri — logo
         lay_kiri = QHBoxLayout()
-        lay_kiri.setSpacing(15)
+        lay_kiri.setSpacing(12)
         lbl_logo = QLabel()
         pixmap = QPixmap(get_asset_path("assets/logo_adyton2.png"))
         if not pixmap.isNull():
             lbl_logo.setPixmap(
-                pixmap.scaledToHeight(45, Qt.TransformationMode.SmoothTransformation)
+                pixmap.scaledToHeight(40, Qt.TransformationMode.SmoothTransformation)  # sedikit lebih kecil untuk balance
             )
         else:
             lbl_logo.setText("LOGO NOT FOUND")
-            lbl_logo.setStyleSheet("color: red; font-weight: bold;")
+            lbl_logo.setStyleSheet("color: red; font-weight: 700;")
         lay_kiri.addWidget(lbl_logo)
         header_layout.addLayout(lay_kiri)
         header_layout.addStretch()
@@ -298,9 +304,9 @@ class AppBrankas(FramelessMainWindow):
         # Tengah — tab navigation
         tab_container = QFrame()
         tab_container.setObjectName("TabContainer")
-        tab_container.setFixedSize(320, 48)
+        tab_container.setFixedSize(340, 46)  # lebih tipis sesuai request
         lay_tabs = QHBoxLayout(tab_container)
-        lay_tabs.setContentsMargins(4, 4, 4, 4)
+        lay_tabs.setContentsMargins(4, 3, 4, 3)
         lay_tabs.setSpacing(4)
 
         self.btn_nav_kunci = self._make_tab_button(" Kunci Folder", "mdi6.lock")
@@ -322,24 +328,22 @@ class AppBrankas(FramelessMainWindow):
         header_layout.addWidget(tab_container)
         header_layout.addStretch()
 
-        # Kanan — status enkripsi
+        # Kanan — status enkripsi (lebih premium)
         lay_kanan = QHBoxLayout()
-        lay_kanan.setSpacing(15)
+        lay_kanan.setSpacing(12)
 
         lbl_shield = QLabel()
         lbl_shield.setPixmap(
-            qta.icon("mdi6.shield-check", color="#00D2C8").pixmap(32, 32)
+            qta.icon("mdi6.shield-check", color="#00D2C8").pixmap(28, 28)
         )
 
         lay_status = QVBoxLayout()
-        lay_status.setSpacing(0)
+        lay_status.setSpacing(1)
         lay_status.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         lbl_stat_title = QLabel("AES-256 • GCM")
-        lbl_stat_title.setStyleSheet(
-            "font-size: 9pt; font-weight: bold; color: #8B95A5;"
-        )
+        lbl_stat_title.setObjectName("MutedText")
         lbl_stat_sub = QLabel("Data Anda aman")
-        lbl_stat_sub.setStyleSheet("font-size: 9pt; color: #00D2C8; font-weight: 600;")
+        lbl_stat_sub.setObjectName("AccentText")
         lay_status.addWidget(lbl_stat_title)
         lay_status.addWidget(lbl_stat_sub)
 
@@ -347,13 +351,13 @@ class AppBrankas(FramelessMainWindow):
         lay_kanan.addLayout(lay_status)
         header_layout.addLayout(lay_kanan)
 
-        parent_layout.addLayout(header_layout)
+        parent_layout.addWidget(header_wrapper)
 
     def _make_tab_button(self, label: str, icon_name: str) -> QPushButton:
         """Factory untuk tombol navigasi tab."""
         btn = QPushButton(label)
         btn.setIcon(qta.icon(icon_name, color="#8B95A5", color_on="white"))
-        btn.setIconSize(QSize(20, 20))
+        btn.setIconSize(QSize(18, 18))
         btn.setObjectName("TabBtn")
         btn.setCheckable(True)
         btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -369,14 +373,14 @@ class AppBrankas(FramelessMainWindow):
             qta.icon("mdi6.shield-check", color="#8B95A5").pixmap(16, 16)
         )
         lbl_safe_text = QLabel("Semua operasi aman dan terenkripsi")
-        lbl_safe_text.setStyleSheet("color: #8B95A5; font-size: 9pt;")
+        lbl_safe_text.setObjectName("MutedText")
         lay_safe.addWidget(lbl_safe_icon)
         lay_safe.addWidget(lbl_safe_text)
 
         lay_ver = QHBoxLayout()
         lay_ver.setSpacing(8)
         lbl_ver_text = QLabel(f"Version {APP_VERSION}")
-        lbl_ver_text.setStyleSheet("color: #8B95A5; font-size: 9pt;")
+        lbl_ver_text.setObjectName("MutedText")
         lbl_ver_icon = QLabel()
         lbl_ver_icon.setPixmap(
             qta.icon("mdi6.check-circle", color="#8B95A5").pixmap(16, 16)
@@ -416,5 +420,5 @@ class AppBrankas(FramelessMainWindow):
     def _update_action_button_tab_order(self):
         """Ensure logical tab order from navigation to the current tab's action button."""
         current_tab = self.stacked_tabs.currentWidget()
-        if hasattr(current_tab, 'btn_aksi'):
+        if hasattr(current_tab, "btn_aksi"):
             self.setTabOrder(self.btn_nav_buka, current_tab.btn_aksi)

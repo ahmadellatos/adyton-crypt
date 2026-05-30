@@ -68,67 +68,348 @@ def load_stylesheet() -> str:
     
     QLabel#Icon {{ font-family: 'Segoe MDL2 Assets', 'Segoe Fluent Icons', sans-serif; background: transparent; }}
     
-    /* --- CARDS & CONTAINERS --- */
-    QFrame#Card {{ background-color: {CLR_CARD}; border-radius: 12px; border: 1px solid {CLR_BORDER}; }}
-    #Inner {{ background-color: {CLR_INNER}; border-radius: 8px; border: 1px solid {CLR_BORDER}; }}
+    /* --- CARDS & CONTAINERS (Minimalist Premium) --- */
+    QFrame#Card {{
+        background-color: {CLR_CARD};
+        border-radius: 14px;
+        border: 1px solid rgba(35, 43, 62, 0.45);
+    }}
+
+    #Inner {{
+        background-color: {CLR_INNER};
+        border-radius: 10px;
+        border: 1px solid rgba(35, 43, 62, 0.5);
+    }}
+
+    QFrame#ListItem {{
+        background-color: transparent;
+        border: none;
+        border-bottom: 1px solid {CLR_BORDER};
+        border-radius: 0px;
+    }}
+    QFrame#ListItem:hover {{
+        background-color: {CLR_LIST_HOVER};
+    }}
+
+    QFrame#TipsBox {{
+        background-color: {CLR_TIPS_BG};
+        border: 1px solid {CLR_TIPS_BORDER};
+        border-radius: 10px;
+    }}
     
-    QFrame#ListItem {{ background-color: transparent; border: none; border-bottom: 1px solid {CLR_BORDER}; border-radius: 0px; }}
-    QFrame#ListItem:hover {{ background-color: {CLR_LIST_HOVER}; }}
+    /* --- HEADER (Minimalist Premium) --- */
+    QFrame#HeaderWrapper {{
+        background-color: transparent;
+    }}
+
+    /* --- TABS (Minimalist Premium) --- */
+    QFrame#TabContainer {{
+        background-color: {CLR_CARD};
+        border-radius: 12px;
+        border: 1px solid {CLR_BORDER};
+    }}
+
+    QPushButton#TabBtn {{
+        background-color: transparent;
+        color: {CLR_TEXT_MUTED};
+        border: none;
+        border-radius: 10px;
+        font-weight: 500;
+        font-size: 10pt;
+        padding: 6px 18px;  /* lebih tipis vertikal */
+    }}
+
+    QPushButton#TabBtn:checked {{
+        background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {CLR_ACCENT}, stop:1 {CLR_ACCENT_DK});
+        color: {CLR_TEXT_MAIN};
+        font-weight: 600;
+        border: 1px solid {CLR_ACCENT_HOVER};
+    }}
+
+    QPushButton#TabBtn:hover:!checked {{
+        background-color: {CLR_INNER};
+        color: {CLR_TEXT_MAIN};
+    }}
+
+    QPushButton#TabBtn:focus {{
+        border: 2px solid {CLR_ACCENT};
+        background-color: transparent;
+    }}
+
+    QPushButton#TabBtn:checked:focus {{
+        background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {CLR_ACCENT}, stop:1 {CLR_ACCENT_DK});
+        border: 2px solid {CLR_TEXT_MAIN};
+    }}
     
-    QFrame#TipsBox {{ background-color: {CLR_TIPS_BG}; border: 1px solid {CLR_TIPS_BORDER}; border-radius: 8px; }}
+    /* --- TYPOGRAPHY (Improved Scale - Minimalist Premium) --- */
+    QLabel {{
+        background-color: transparent;
+        font-size: 10pt;
+    }}
+
+    /* Large titles (app header) */
+    QLabel#AppTitle {{
+        font-size: 18pt;
+        font-weight: 600;
+        color: {CLR_TEXT_MAIN};
+        letter-spacing: -0.3px;
+    }}
+
+    /* Subtle subtitles under big titles */
+    QLabel#AppSubtitle {{
+        font-size: 9pt;
+        color: {CLR_TEXT_MUTED};
+        font-weight: 400;
+    }}
+
+    /* Section / Card titles */
+    QLabel#CardTitle {{
+        font-size: 12pt;
+        font-weight: 600;
+        color: {CLR_TEXT_MAIN};
+        letter-spacing: 0.5px;
+    }}
+
+    /* Specific bigger title for "DAFTAR TARGET" header (user request) */
+    QLabel#TargetHeaderTitle {{
+        font-size: 13pt;
+        font-weight: 600;
+        color: {CLR_TEXT_MAIN};
+        letter-spacing: 0.6px;
+    }}
+
+    /* Card subtitles / descriptions */
+    QLabel#CardSubtitle {{
+        font-size: 9pt;
+        color: {CLR_TEXT_MUTED};
+    }}
+
+    /* Section labels (e.g. "Password", "Ulangi Password") */
+    QLabel#SectionLabel {{
+        font-size: 10pt;
+        font-weight: 600;
+        color: {CLR_TEXT_MAIN};
+    }}
+
+    /* --- PASSWORD PANEL (Kunci) - Premium Typography & States --- */
+    QLabel#ChecklistLabel {{
+        font-size: 8.5pt;
+        color: {CLR_TEXT_MUTED};
+    }}
+    QLabel#ChecklistLabel[valid="true"] {{
+        color: #A8B2C1;
+        font-weight: 500;
+    }}
+
+    QLabel#PwMatchLabel {{
+        font-size: 8.5pt;
+        font-weight: 500;
+    }}
+
+    /* Options Panel descriptions (premium secondary text) */
+    QLabel#OptionDesc {{
+        font-size: 8.5pt;
+        color: {CLR_TEXT_MUTED};
+        font-weight: 300;  /* Light weight for delicate secondary info */
+    }}
+
+    /* Standard body text */
+    QLabel#BodyText {{
+        font-size: 10pt;
+        color: {CLR_TEXT_MAIN};
+    }}
+
+    /* Muted / secondary text */
+    QLabel#MutedText {{
+        font-size: 9pt;
+        color: {CLR_TEXT_MUTED};
+    }}
+
+    /* Accent / highlight text (e.g. "Data Anda aman") */
+    QLabel#AccentText {{
+        font-size: 9pt;
+        color: {CLR_ACCENT};
+        font-weight: 600;
+    }}
+
+    /* Small captions / footers */
+    QLabel#CaptionText {{
+        font-size: 8pt;
+        color: {CLR_TEXT_MUTED};
+    }}
+
+    /* Status colors for text */
+    QLabel#ErrorText {{
+        font-size: 9pt;
+        color: {CLR_DANGER};
+        font-weight: 500;
+    }}
+
+    QLabel#SuccessText {{
+        font-size: 9pt;
+        color: {CLR_SUCCESS};
+        font-weight: 500;
+    }}
+
+    QLabel#WarningText {{
+        font-size: 9pt;
+        color: {CLR_WARN};
+        font-weight: 500;
+    }}
     
-    /* --- HEADER & TABS --- */
-    QFrame#TabContainer {{ background-color: {CLR_CARD}; border-radius: 10px; border: 1px solid {CLR_BORDER}; }}
-    QPushButton#TabBtn {{ background-color: transparent; color: {CLR_TEXT_MUTED}; border: none; border-radius: 8px; font-weight: 500; font-size: 10pt; }}
-    QPushButton#TabBtn:checked {{ background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {CLR_ACCENT}, stop:1 {CLR_ACCENT_DK}); color: {CLR_TEXT_MAIN}; font-weight: 600; border: 1px solid {CLR_ACCENT_HOVER}; }}
-    QPushButton#TabBtn:hover:!checked {{ background-color: {CLR_INNER}; color: {CLR_TEXT_MAIN}; }}
-    
-    QPushButton#TabBtn:focus {{ border: 2px solid {CLR_ACCENT}; background-color: transparent; }}
-    QPushButton#TabBtn:checked:focus {{ background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {CLR_ACCENT}, stop:1 {CLR_ACCENT_DK}); border: 2px solid {CLR_TEXT_MAIN}; }}
-    
-    /* --- TYPOGRAPHY --- */
-    QLabel {{ background-color: transparent; }}
-    QLabel#AppTitle {{ font-size: 16pt; font-weight: 600; color: {CLR_TEXT_MAIN}; letter-spacing: -0.2px; }}
-    QLabel#AppSubtitle {{ font-size: 9pt; color: {CLR_TEXT_MUTED}; font-weight: 400; }}
-    QLabel#CardTitle {{ font-size: 11pt; font-weight: 600; color: {CLR_TEXT_MAIN}; letter-spacing: 0.8px; text-transform: uppercase; }}
-    QLabel#CardSubtitle {{ font-size: 9pt; color: {CLR_TEXT_MUTED}; margin-bottom: 5px; }}
-    
-    /* --- INPUTS --- */
-    QFrame#InputBox {{ background-color: {CLR_INNER}; border: 1px solid {CLR_BORDER}; border-radius: 8px; }}
-    QLineEdit#InputInside {{ background-color: transparent; border: none; padding: 0px 5px; color: {CLR_TEXT_MAIN}; font-size: 10pt; font-family: 'IBM Plex Sans', sans-serif; }}
-    QPushButton#BtnEye {{ background-color: transparent; border: none; color: {CLR_TEXT_MUTED}; padding: 0px; margin: 0px; }}
-    QLabel#IconInside {{ background-color: transparent; padding: 0px; margin: 0px; }}
+    /* --- INPUTS (Cleaner & More Premium) --- */
+    QFrame#InputBox {{
+        background-color: {CLR_INNER};
+        border: 1px solid rgba(35, 43, 62, 0.7);
+        border-radius: 10px;
+    }}
+
+    QFrame#InputBox[focused="true"] {{
+        background-color: {CLR_BG};
+        border: 1px solid {CLR_ACCENT};
+    }}
+
+    QLineEdit#InputInside {{
+        background-color: transparent;
+        border: none;
+        padding: 0px 8px;
+        color: {CLR_TEXT_MAIN};
+        font-size: 10pt;
+        font-family: 'IBM Plex Sans', sans-serif;
+    }}
+
+    QPushButton#BtnEye {{
+        background-color: transparent;
+        border: none;
+        color: {CLR_TEXT_MUTED};
+        padding: 0px 6px;
+        margin: 0px;
+    }}
+
+    QPushButton#BtnEye:hover {{
+        color: {CLR_TEXT_MAIN};
+    }}
+
+    QLabel#IconInside {{
+        background-color: transparent;
+        padding: 0px;
+        margin: 0px;
+    }}
     
     /* --- FOCUS & A11Y STATES --- */
     * {{ outline: none; }}
     QFrame#InputBox[focused="true"] {{ background-color: {CLR_BG}; border: 1px solid {CLR_ACCENT}; }}
     QFrame[checked="true"]:focus, QFrame[checked="false"]:focus {{ border: 2px solid {CLR_TEXT_MAIN}; }}
 
-    /* --- BUTTONS (Standard) --- */
-    QPushButton {{ background-color: {CLR_INNER}; color: {CLR_TEXT_MAIN}; border: 1px solid {CLR_BORDER}; border-radius: 8px; font-weight: 500; padding: 0 16px; font-size: 9pt; font-family: 'IBM Plex Sans', sans-serif; letter-spacing: 0.4px; }}
-    QPushButton:hover {{ background-color: {CLR_HOVER_BG}; border: 1px solid {CLR_HOVER_BORDER}; }}
-    QPushButton:focus {{ border: 2px solid {CLR_ACCENT}; background-color: {CLR_INNER}; }}
+    /* --- BUTTONS (Clean Minimalist Premium) --- */
+    QPushButton {{
+        background-color: {CLR_INNER};
+        color: {CLR_TEXT_MAIN};
+        border: 1px solid rgba(35, 43, 62, 0.35);
+        border-radius: 10px;
+        font-weight: 500;
+        padding: 8px 20px;
+        font-size: 9.5pt;
+        font-family: 'IBM Plex Sans', sans-serif;
+        letter-spacing: 0.3px;
+    }}
+    QPushButton:hover {{
+        background-color: {CLR_HOVER_BG};
+        border: 1px solid {CLR_HOVER_BORDER};
+    }}
+    QPushButton:focus {{
+        border: 2px solid {CLR_ACCENT};
+        background-color: {CLR_INNER};
+    }}
+    QPushButton:disabled {{
+        background-color: rgba(24, 31, 50, 0.4);
+        color: {CLR_TEXT_MUTED};
+        border: 1px solid rgba(35, 43, 62, 0.2);
+    }}
     
     /* --- GHOST & EYE BUTTONS --- */
-    QPushButton#BtnGhost {{ background-color: transparent; border: none; color: {CLR_TEXT_MUTED}; padding: 0; }}
-    QPushButton#BtnGhost:hover {{ background-color: {CLR_BORDER}; border-radius: 8px; }}
-    QPushButton#BtnGhost:focus, QPushButton#BtnEye:focus {{ border: 2px solid {CLR_ACCENT}; background-color: transparent; border-radius: 6px; }}
+    QPushButton#BtnGhost {{
+        background-color: transparent;
+        border: none;
+        color: {CLR_TEXT_MUTED};
+        padding: 4px 8px;
+        border-radius: 6px;
+    }}
+    QPushButton#BtnGhost:hover {{
+        background-color: {CLR_HOVER_BG};
+        color: {CLR_TEXT_MAIN};
+    }}
+    QPushButton#BtnGhost:focus, QPushButton#BtnEye:focus {{
+        border: 2px solid {CLR_ACCENT};
+        background-color: transparent;
+        border-radius: 6px;
+    }}
 
-    /* --- BIG ACTION BUTTON --- */
-    QPushButton#BtnAksiBesar {{ background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {CLR_ACCENT}, stop:1 {CLR_ACCENT_DK}); border: 1px solid {CLR_ACCENT_HOVER}; border-radius: 12px; letter-spacing: 0.7px; }}
-    QPushButton#BtnAksiBesar:hover {{ background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {CLR_ACCENT_HOVER}, stop:1 {CLR_ACCENT_DK_HOVER}); }}
-    QPushButton#BtnAksiBesar:focus {{ border: 2px solid {CLR_TEXT_MAIN}; background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {CLR_ACCENT}, stop:1 {CLR_ACCENT_DK}); }}
-    QPushButton#BtnAksiBesar:disabled {{ background-color: {CLR_ACCENT_DISABLED}; border: 1px solid {CLR_BORDER}; }}
+    /* --- BIG ACTION BUTTON (Strong CTA) --- */
+    QPushButton#BtnAksiBesar {{
+        background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {CLR_ACCENT}, stop:1 {CLR_ACCENT_DK});
+        border: 1px solid {CLR_ACCENT_HOVER};
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 10.5pt;
+        letter-spacing: 0.4px;
+        padding: 13px 34px;  /* Option B: lebih lega untuk tinggi 82px */
+    }}
+    QPushButton#BtnAksiBesar:hover {{
+        background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {CLR_ACCENT_HOVER}, stop:1 {CLR_ACCENT_DK_HOVER});
+    }}
+    QPushButton#BtnAksiBesar:focus {{
+        border: 2px solid {CLR_TEXT_MAIN};
+        background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {CLR_ACCENT}, stop:1 {CLR_ACCENT_DK});
+    }}
+    QPushButton#BtnAksiBesar:disabled {{
+        background-color: {CLR_ACCENT_DISABLED};
+        border: 1px solid {CLR_BORDER};
+        /* color is controlled per-label below to avoid inheritance issues */
+    }}
 
-    /* --- CUSTOM BUTTONS (Browse & Gen) --- */
-    QPushButton#BtnBrowseLg {{ background-color: {CLR_BTN_TRANSPARENT}; border: 1px solid {CLR_BORDER}; border-radius: 8px; color: {CLR_TEXT_MAIN}; font-weight: bold; }}
-    QPushButton#BtnBrowseLg:hover {{ background-color: {CLR_INNER}; border: 1px solid {CLR_HOVER_BORDER}; }}
-    QPushButton#BtnBrowseLg:focus {{ border: 2px solid {CLR_ACCENT}; background-color: {CLR_BTN_TRANSPARENT}; }}
-    QPushButton#BtnBrowseLg::menu-indicator {{ image: none; width: 0px; }}
+    /* Note: Text colors for labels inside #BtnAksiBesar are controlled directly
+       in Python (BigActionBtn.setEnabled) for reliable enabled/disabled behavior. */
 
-    QPushButton#BtnGen {{ background-color: transparent; border: 1px solid {CLR_BORDER}; border-radius: 6px; color: {CLR_TEXT_MAIN}; font-weight: bold; padding: 0 10px; }}
-    QPushButton#BtnGen:hover {{ background-color: {CLR_INNER}; border: 1px solid {CLR_HOVER_BORDER}; }}
-    QPushButton#BtnGen:focus {{ border: 2px solid {CLR_ACCENT}; background-color: transparent; }}
+    /* --- CUSTOM BUTTONS (Browse & Gen) - More Premium --- */
+    QPushButton#BtnBrowseLg {{
+        background-color: {CLR_BTN_TRANSPARENT};
+        border: 1px solid rgba(35, 43, 62, 0.5);
+        border-radius: 10px;
+        color: {CLR_TEXT_MAIN};
+        font-weight: 600;
+        padding: 0 18px;
+    }}
+    QPushButton#BtnBrowseLg:hover {{
+        background-color: {CLR_HOVER_BG};
+        border: 1px solid {CLR_HOVER_BORDER};
+    }}
+    QPushButton#BtnBrowseLg:focus {{
+        border: 2px solid {CLR_ACCENT};
+        background-color: {CLR_BTN_TRANSPARENT};
+    }}
+    QPushButton#BtnBrowseLg::menu-indicator {{
+        image: none;
+        width: 0px;
+    }}
+
+    QPushButton#BtnGen {{
+        background-color: transparent;
+        border: 1px solid rgba(35, 43, 62, 0.5);
+        border-radius: 8px;
+        color: {CLR_TEXT_MAIN};
+        font-weight: 600;
+        padding: 0 12px;
+        font-size: 9pt;
+    }}
+    QPushButton#BtnGen:hover {{
+        background-color: {CLR_HOVER_BG};
+        border: 1px solid {CLR_HOVER_BORDER};
+    }}
+    QPushButton#BtnGen:focus {{
+        border: 2px solid {CLR_ACCENT};
+        background-color: transparent;
+    }}
 
     /* --- CUSTOM CHECKBOX --- */
     QFrame#ChkHapus {{ background: {CLR_INNER}; border: 1px solid {CLR_BORDER}; border-radius: 4px; }}
@@ -159,11 +440,50 @@ def load_stylesheet() -> str:
     QScrollBar::sub-line:horizontal, QScrollBar::add-line:horizontal {{ width: 0px; border: none; background: none; }}
     QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: transparent; }}
 
-    /* --- DROP AREA (Drag & Drop) --- */
-    QFrame#DropArea[empty="true"] {{ border: 2px dashed {CLR_BORDER}; background-color: {CLR_BG}; border-radius: 12px; }}
-    QFrame#DropArea[empty="true"][dragActive="true"] {{ border: 2px dashed {CLR_ACCENT}; background-color: {CLR_INNER}; border-radius: 12px; }}
-    QFrame#DropArea[empty="false"] {{ border: 1px solid {CLR_BORDER}; background-color: {CLR_CARD}; border-radius: 12px; }}
-    QFrame#DropArea[empty="false"][dragActive="true"] {{ border: 2px dashed {CLR_ACCENT}; background-color: {CLR_INNER}; border-radius: 12px; }}
+    /* --- DROP AREA - Empty State (Minimalist Premium) --- */
+    QFrame#DropArea[empty="true"] {{
+        border: 1px solid rgba(35, 43, 62, 0.35);
+        background-color: {CLR_CARD};
+        border-radius: 16px;
+    }}
+
+    QFrame#DropArea[empty="true"][dragActive="true"] {{
+        border: 2px solid {CLR_ACCENT};
+        background-color: rgba(0, 210, 200, 0.08);
+        border-radius: 16px;
+    }}
+
+    /* When there are files inside */
+    QFrame#DropArea[empty="false"] {{
+        border: 1px solid rgba(35, 43, 62, 0.5);
+        background-color: {CLR_CARD};
+        border-radius: 14px;
+    }}
+
+    QFrame#DropArea[empty="false"][dragActive="true"] {{
+        border: 2px dashed {CLR_ACCENT};
+        background-color: {CLR_INNER};
+        border-radius: 14px;
+    }}
+
+    /* --- DROP ZONE EMPTY STATE (Premium) --- */
+    QLabel#DropZoneMainText {{
+        font-size: 14pt;
+        font-weight: 600;
+        color: {CLR_TEXT_MAIN};
+        letter-spacing: 0.1px;
+    }}
+
+    QLabel#DropZoneSubText {{
+        font-size: 10pt;
+        color: {CLR_TEXT_MUTED};
+    }}
+
+    QLabel#DropZoneFooter {{
+        font-size: 8pt;
+        color: {CLR_TEXT_MUTED};
+        opacity: 0.65;
+    }}
 
     /* --- TOOLTIPS, ALERTS, & TITLE BAR --- */
     QLabel#CustomToolTip {{ background-color: {CLR_CARD}; color: {CLR_TEXT_MAIN}; border: 1px solid {CLR_BORDER}; border-radius: 6px; padding: 6px 10px; font-size: 9pt; font-family: 'IBM Plex Sans', sans-serif; }}
@@ -203,21 +523,48 @@ def load_stylesheet() -> str:
 # STYLE HELPERS (Untuk mengurangi inline styles di komponen)
 # =============================================================================
 
+def body_style(size: str = "10pt") -> str:
+    """Standard body text."""
+    return f"font-size: {size}; color: {CLR_TEXT_MAIN};"
+
+
 def muted_label_style(size: str = "9pt") -> str:
     """Style untuk teks sekunder / keterangan."""
     return f"font-size: {size}; color: {CLR_TEXT_MUTED};"
 
 
+def caption_style(size: str = "8pt") -> str:
+    """Very small / footer text."""
+    return f"font-size: {size}; color: {CLR_TEXT_MUTED};"
+
+
+def small_footer_style() -> str:
+    """Style untuk teks footer kecil. (Deprecated - use caption_style instead)"""
+    return caption_style("9pt")
+
+
+def error_text_style(size: str = "9pt") -> str:
+    return f"font-size: {size}; color: {CLR_DANGER}; font-weight: 500;"
+
+
+def success_text_style(size: str = "9pt") -> str:
+    return f"font-size: {size}; color: {CLR_SUCCESS}; font-weight: 500;"
+
+
+def warning_text_style(size: str = "9pt") -> str:
+    return f"font-size: {size}; color: {CLR_WARN}; font-weight: 500;"
+
+
+def section_title_style() -> str:
+    """Style untuk judul section / card."""
+    return f"font-size: 12pt; font-weight: 600; color: {CLR_TEXT_MAIN}; letter-spacing: 0.5px;"
+
+
 def card_title_style() -> str:
-    """Style untuk judul kartu."""
-    return f"font-size: 11pt; font-weight: 600; color: {CLR_TEXT_MAIN}; letter-spacing: 0.8px; text-transform: uppercase;"
+    """Style untuk judul kartu (uppercase version)."""
+    return f"font-size: 11pt; font-weight: 600; color: {CLR_TEXT_MAIN}; letter-spacing: 0.6px; text-transform: uppercase;"
 
 
 def card_subtitle_style() -> str:
     """Style untuk sub-judul kartu."""
-    return f"font-size: 9pt; color: {CLR_TEXT_MUTED};"
-
-
-def small_footer_style() -> str:
-    """Style untuk teks footer kecil."""
     return f"font-size: 9pt; color: {CLR_TEXT_MUTED};"

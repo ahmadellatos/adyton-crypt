@@ -19,7 +19,7 @@ from ..widgets import (
     HeroIconWidget,
 )
 from ..buttons import ClearButton
-from ..styles import CLR_TEXT_MUTED, muted_label_style, small_footer_style
+from ..styles import CLR_TEXT_MUTED
 
 
 class DropTargetFrame(QFrame):
@@ -40,6 +40,11 @@ class DropTargetFrame(QFrame):
         self.setProperty("dragActive", state)
         self.style().unpolish(self)
         self.style().polish(self)
+
+        # Intensify icon glow when dragging (look for icon on parent DropZoneOpen)
+        parent = self.parent()
+        if parent and hasattr(parent, "icon_empty") and parent.icon_empty:
+            parent.icon_empty.set_drag_active(state)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -104,13 +109,11 @@ class DropZoneOpen(QWidget):
         self.icon_empty.setMaximumHeight(85)
 
         self.lbl_main_empty = QLabel("Drag & drop file .adtn ke sini")
-        self.lbl_main_empty.setStyleSheet(
-            "font-size: 13pt; font-weight: bold; color: white;"
-        )
+        self.lbl_main_empty.setObjectName("DropZoneMainText")
         self.lbl_main_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.lbl_sub_empty = QLabel("atau klik tombol di bawah untuk memilih file")
-        self.lbl_sub_empty.setStyleSheet(muted_label_style("10pt"))
+        self.lbl_sub_empty.setObjectName("DropZoneSubText")
         self.lbl_sub_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.btn_browse_center = QPushButton(" Pilih File Brankas")
@@ -124,22 +127,22 @@ class DropZoneOpen(QWidget):
         self.lbl_footer_empty = QLabel(
             "Hanya file dengan ekstensi .adtn yang dapat dibuka"
         )
-        self.lbl_footer_empty.setStyleSheet(small_footer_style())
+        self.lbl_footer_empty.setObjectName("DropZoneFooter")
         self.lbl_footer_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        lay_empty.addStretch(1)
+        lay_empty.addStretch(2)
         lay_empty.addWidget(self.icon_empty, alignment=Qt.AlignmentFlag.AlignHCenter)
-        lay_empty.addStretch(1)
+        lay_empty.addSpacing(18)
         lay_empty.addWidget(self.lbl_main_empty)
-        lay_empty.addSpacing(2)
+        lay_empty.addSpacing(3)
         lay_empty.addWidget(self.lbl_sub_empty)
-        lay_empty.addStretch(1)
+        lay_empty.addSpacing(22)
         lay_empty.addWidget(
             self.btn_browse_center, alignment=Qt.AlignmentFlag.AlignHCenter
         )
-        lay_empty.addStretch(1)
+        lay_empty.addSpacing(28)
         lay_empty.addWidget(self.lbl_footer_empty)
-        lay_empty.addStretch(1)
+        lay_empty.addStretch(2)
 
         return page_empty
 
@@ -209,18 +212,14 @@ class DropZoneOpen(QWidget):
 
         if compact:
             self.icon_empty.setMaximumHeight(52)
-            self.lbl_main_empty.setStyleSheet(
-                "font-size: 10pt; font-weight: bold; color: white;"
-            )
-            self.lbl_sub_empty.setStyleSheet(f"font-size: 8pt; color: {CLR_TEXT_MUTED};")
+            self.lbl_main_empty.setObjectName("DropZoneMainText")  # QSS will handle size
+            self.lbl_sub_empty.setObjectName("DropZoneSubText")
             self.btn_browse_center.setFixedSize(180, 34)
             self.lbl_footer_empty.hide()
         else:
             self.icon_empty.setMaximumHeight(85)
-            self.lbl_main_empty.setStyleSheet(
-                "font-size: 13pt; font-weight: bold; color: white;"
-            )
-            self.lbl_sub_empty.setStyleSheet(f"font-size: 10pt; color: {CLR_TEXT_MUTED};")
+            self.lbl_main_empty.setObjectName("DropZoneMainText")
+            self.lbl_sub_empty.setObjectName("DropZoneSubText")
             self.btn_browse_center.setFixedSize(220, 42)
             self.lbl_footer_empty.show()
 

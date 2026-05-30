@@ -1,77 +1,197 @@
-; ─────────────────────────────────────────────────────────────────────────────
-; INNO SETUP SCRIPT - ADYTON CRYPT INSTALLER CONFIGURATION
-; ─────────────────────────────────────────────────────────────────────────────
+; ═════════════════════════════════════════════════════════════════════════════
+; ADYTON CRYPT - Inno Setup Installer (Improved Hybrid Version)
+; ═════════════════════════════════════════════════════════════════════════════
+;
+; Fitur Utama:
+;   ✓ Modern privilege selection (Per-User / All Users dialog)
+;   ✓ Smart registry using HKA
+;   ✓ Minimal Pascal code
+;   ✓ Automatic VC++ Redistributable download (only when needed)
+;   ✓ File association for .adtn
+;   ✓ License Agreement
+;   ✓ Previous version uninstall handling
+;   ✓ 64-bit only
+;
+; ═════════════════════════════════════════════════════════════════════════════
 
 [Setup]
 AppId={{A3D9B5E6-7D42-4A21-B861-C3F982ADTN99}
 AppName=Adyton Crypt
 AppVersion=1.0.0
 AppPublisher=Adyton Security
+AppPublisherURL=https://github.com/yourusername/adyton-crypt
+AppSupportURL=https://github.com/yourusername/adyton-crypt/issues
+AppUpdatesURL=https://github.com/yourusername/adyton-crypt/releases
 AppComments=Advanced AES-256-GCM Digital Vault
+VersionInfoVersion=1.0.0.0
+VersionInfoCompany=Adyton Security
+VersionInfoDescription=Adyton Crypt Installer
+UninstallDisplayName=Adyton Crypt
 UninstallDisplayIcon={app}\AdytonCrypt.exe
-DefaultDirName={autopf}\Adyton Crypt
+
+; --- 64-bit Only ---
+ArchitecturesAllowed=x64
+ArchitecturesInstallIn64BitMode=yes
+
+; --- MODERN PRIVILEGE HANDLING ---
+PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
+
+; Default ke LocalAppData (lebih ramah untuk user biasa)
+DefaultDirName={localappdata}\Adyton Crypt
 DefaultGroupName=Adyton Crypt
 AllowNoIcons=yes
-PrivilegesRequired=admin
 
-; Output file setup
+; Mencegah dua installer berjalan bersamaan
+AppMutex=AdytonCrypt_SingleInstance_Installer
+
 OutputDir=release_build
 OutputBaseFilename=Adyton_Crypt_Setup_v1.0.0
-
-; Ikon untuk file installer .exe itu sendiri
 SetupIconFile=assets\icon_adyton.ico
 
-; Kompresi maksimal (LZMA2 Ultra) agar ukuran installer sekecil mungkin
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 
-; --- CUSTOM INSTALLER IMAGES ---
+; Custom wizard images
 WizardImageFile=assets\wizard_image.bmp
 WizardSmallImageFile=assets\wizard_small.bmp
 WizardImageStretch=no
 
-; Beritahu Windows kalau aplikasi ini mendaftarkan ekstensi file custom
+; License & Info
+LicenseFile=license.txt
+InfoAfterFile=readme_after_install.txt
+
 ChangesAssociations=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+; Desktop shortcut - dicentang secara default
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checked
+
+; VC++ hanya muncul jika diperlukan
+Name: "vcredist"; Description: "Download and install Microsoft Visual C++ Redistributable 2015-2022 (recommended)"; GroupDescription: "System Requirements"; Check: NeedsVCRedist
 
 [Files]
-; 1. Aplikasi Utama (Kita rename main.exe hasil Nuitka menjadi AdytonCrypt.exe saat diinstall)
-Source: "release_build\main.dist\main.exe"; DestDir: "{app}"; DestName: "AdytonCrypt.exe"; Flags: ignoreversion
-
-; 2. Semua file dependency (.dll, pyd, dll) dari folder main.dist hasil kompilasi Nuitka
-Source: "release_build\main.dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "main.exe"
-
-; 3. File Ikon untuk kebutuhan registrasi file association di Windows Explorer
-Source: "assets\icon_adyton.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "release_build\main.dist\AdytonCrypt.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "release_build\main.dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "AdytonCrypt.exe"
+Source: "assets\icon_adyton.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
 
 [Icons]
-; Shortcut di Start Menu
-Name: "{group}\Adyton Crypt"; Filename: "{app}\AdytonCrypt.exe"; IconFilename: "{app}\AdytonCrypt.exe"; AppUserModelID: "AdytonSecurity.AdytonCrypt.App.1"
-; Shortcut di Desktop (opsional tergantung pilihan user saat install)
-Name: "{autodesktop}\Adyton Crypt"; Filename: "{app}\AdytonCrypt.exe"; Tasks: desktopicon; AppUserModelID: "AdytonSecurity.AdytonCrypt.App.1"
+Name: "{group}\Adyton Crypt"; Filename: "{app}\AdytonCrypt.exe"; WorkingDir: "{app}"; IconFilename: "{app}\AdytonCrypt.exe"; AppUserModelID: "AdytonSecurity.AdytonCrypt.App.1"
+Name: "{autodesktop}\Adyton Crypt"; Filename: "{app}\AdytonCrypt.exe"; WorkingDir: "{app}"; Tasks: desktopicon; AppUserModelID: "AdytonSecurity.AdytonCrypt.App.1"
 
 [Run]
-; Opsi untuk langsung menjalankan aplikasi setelah installer selesai
-Filename: "{app}\AdytonCrypt.exe"; Description: "{cm:LaunchProgram,Adyton Crypt}"; Flags: nowait postinstall skipifsilent
+; Install VC++ (jika dicentang)
+Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; Tasks: vcredist; StatusMsg: "Installing Visual C++ Redistributable..."; Flags: waituntilterminated
 
-; ─────────────────────────────────────────────────────────────────────────────
-; REGISTRY REGISTRATION FOR FILE ASSOCIATION (.adtn -> Adyton Crypt File)
-; ─────────────────────────────────────────────────────────────────────────────
+; Launch aplikasi setelah install (dicentang secara default)
+Filename: "{app}\AdytonCrypt.exe"; Description: "{cm:LaunchProgram,Adyton Crypt}"; Flags: nowait postinstall skipifsilent runasoriginaluser
+
 [Registry]
-; Daftarkan ekstensi .adtn ke Windows Classes
+; File association menggunakan HKA (otomatis mengikuti privilege)
 Root: HKA; Subkey: "Software\Classes\.adtn"; ValueType: string; ValueName: ""; ValueData: "AdytonCryptFile"; Flags: uninsdeletevalue
-
-; Set tipe deskripsi file yang muncul di kolom "Type" File Explorer
 Root: HKA; Subkey: "Software\Classes\AdytonCryptFile"; ValueType: string; ValueName: ""; ValueData: "Adyton Crypt File"; Flags: uninsdeletekey
-
-; Pasang logo Adyton sebagai ikon default untuk SEMUA file ber-ekstensi .adtn
-Root: HKA; Subkey: "Software\Classes\AdytonCryptFile\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\icon_adyton.ico"; Flags: uninsdeletekey
-
-; Atur aksi open command: Jika file .adtn diklik ganda, buka lewat AdytonCrypt.exe
+Root: HKA; Subkey: "Software\Classes\AdytonCryptFile\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\assets\icon_adyton.ico"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\AdytonCryptFile\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\AdytonCrypt.exe"" ""%1"""; Flags: uninsdeletekey
+
+[UninstallRun]
+; Matikan aplikasi sebelum uninstall
+Filename: "{cmd}"; Parameters: "/C taskkill /F /IM AdytonCrypt.exe /T"; Flags: runhidden
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\*"
+Type: dirifempty; Name: "{app}"
+
+; ═════════════════════════════════════════════════════════════════════════════
+; PASCAL SCRIPT
+; ═════════════════════════════════════════════════════════════════════════════
+[Code]
+
+// =============================================
+// VC++ REDISTRIBUTABLE DETECTION
+// =============================================
+
+function NeedsVCRedist(): Boolean;
+begin
+  Result := not RegKeyExists(HKEY_LOCAL_MACHINE, 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64');
+end;
+
+// =============================================
+// DOWNLOAD VC++ SEBELUM EKSTRAKSI
+// =============================================
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+
+  if WizardIsTaskSelected('vcredist') then
+  begin
+    try
+      DownloadTemporaryFile(
+        'https://aka.ms/vs/17/release/vc_redist.x64.exe',
+        'vc_redist.x64.exe',
+        '',
+        nil
+      );
+    except
+      Result := 'Gagal mengunduh Visual C++ Redistributable.'#13#13 +
+                'Pastikan koneksi internet stabil, lalu coba lagi.'#13#13 +
+                'Atau install secara manual dari:'#13 +
+                'https://aka.ms/vs/17/release/vc_redist.x64.exe';
+    end;
+  end;
+end;
+
+// =============================================
+// UNINSTALL PREVIOUS VERSION
+// =============================================
+
+function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+
+  // Cek apakah ada versi lama yang terinstall
+  if RegKeyExists(HKEY_LOCAL_MACHINE, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\' + ExpandConstant('{{A3D9B5E6-7D42-4A21-B861-C3F982ADTN99}_is1') then
+  begin
+    if MsgBox('Versi lama Adyton Crypt terdeteksi.'#13#13 +
+              'Apakah Anda ingin menghapus versi lama sebelum melanjutkan instalasi?',
+              mbConfirmation, MB_YESNO) = IDYES then
+    begin
+      if not Exec(ExpandConstant('{uninstallexe}'), '/SILENT', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+      begin
+        MsgBox('Gagal menghapus versi lama. Silakan uninstall secara manual melalui Control Panel.',
+               mbError, MB_OK);
+      end;
+    end;
+  end;
+end;
+
+// =============================================
+// PENYESUAIAN DIREKTORI
+// =============================================
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if CurPageID = wpSelectDir then
+  begin
+    if IsAdminInstallMode then
+    begin
+      if Pos('LocalAppData', WizardDirValue) > 0 then
+      begin
+        WizardForm.DirEdit.Text := ExpandConstant('{autopf}\Adyton Crypt');
+      end;
+    end
+    else
+    begin
+      if Pos('Program Files', WizardDirValue) > 0 then
+      begin
+        WizardForm.DirEdit.Text := ExpandConstant('{localappdata}\Adyton Crypt');
+      end;
+    end;
+  end;
+end;

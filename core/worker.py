@@ -15,8 +15,8 @@ class CryptoWorker(QThread):
     progress = Signal(float)
     finished = Signal(tuple)
 
-    def __init__(self, func, *args, **kwargs):
-        super().__init__()
+    def __init__(self, func, *args, parent=None, **kwargs):
+        super().__init__(parent)
         self.func = func
         self.args = args
         self.kwargs = kwargs

@@ -10,8 +10,10 @@ from PySide6.QtWidgets import (
     QLabel,
     QHBoxLayout,
     QVBoxLayout,
+    QGraphicsDropShadowEffect,
 )
 from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QColor
 
 
 class BigActionBtn(QPushButton):
@@ -20,32 +22,36 @@ class BigActionBtn(QPushButton):
     def __init__(self, title, subtitle, icon_name="mdi6.lock", parent=None):
         super().__init__(parent)
         self.setObjectName("BtnAksiBesar")
-        self.setFixedHeight(75)
+        self.setFixedHeight(82)   # Option B: sedikit lebih tinggi & berani
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.icon_name = icon_name
 
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(25, 10, 25, 10)
+        lay.setContentsMargins(28, 12, 28, 12)  # Proporsi lebih baik untuk tinggi 82px
 
         self.lbl_icon = QLabel()
-        self.lbl_icon.setPixmap(qta.icon(self.icon_name, color="white").pixmap(32, 32))
+        self.lbl_icon.setPixmap(qta.icon(self.icon_name, color="white").pixmap(34, 34))  # Sedikit lebih besar (Option B)
 
         v_lay = QVBoxLayout()
         v_lay.setSpacing(2)
         v_lay.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         self.lbl_title = QLabel(title)
-        self.lbl_title.setStyleSheet("font-size: 13pt; font-weight: 700; color: white;")
+        self.lbl_title.setObjectName("CardTitle")
 
         self.lbl_sub = QLabel(subtitle)
-        self.lbl_sub.setStyleSheet("font-size: 9pt; color: rgba(255, 255, 255, 0.75);")
+        self.lbl_sub.setObjectName("MutedText")
 
         v_lay.addWidget(self.lbl_title)
         v_lay.addWidget(self.lbl_sub)
 
+        # Refined typography for Option B (minimalist premium + sedikit berani)
+        self.lbl_title.setStyleSheet("font-size: 14pt; font-weight: 600; color: white; letter-spacing: 0.2px;")
+        self.lbl_sub.setStyleSheet("font-size: 9.5pt; color: rgba(255,255,255,0.82);")
+
         self.lbl_arrow = QLabel()
         self.lbl_arrow.setPixmap(
-            qta.icon("mdi6.chevron-right", color="white").pixmap(24, 24)
+            qta.icon("mdi6.chevron-right", color="white").pixmap(27, 27)  # Sedikit lebih tegas (Option B)
         )
 
         lay.addWidget(self.lbl_icon)
@@ -54,24 +60,42 @@ class BigActionBtn(QPushButton):
         lay.addStretch()
         lay.addWidget(self.lbl_arrow)
 
+        # Hover glow state (we mutate the existing effect instead of replacing it)
+        self._original_shadow_color = None
+        self._original_blur = None
+        self._original_y_offset = None
+
+        # Set initial enabled state so colors are correct from the start
+        self.setEnabled(True)
+
     def setEnabled(self, val):
         super().setEnabled(val)
-        opacity = "1.0" if val else "0.3"
-        color_val = "white" if val else "rgba(255,255,255,0.3)"
+        color_val = "white" if val else "rgba(255,255,255,0.35)"
 
         self.lbl_icon.setPixmap(
-            qta.icon(self.icon_name, color=color_val).pixmap(32, 32)
+            qta.icon(self.icon_name, color=color_val).pixmap(34, 34)
         )
         self.lbl_arrow.setPixmap(
-            qta.icon("mdi6.chevron-right", color=color_val).pixmap(24, 24)
+            qta.icon("mdi6.chevron-right", color=color_val).pixmap(27, 27)
         )
 
-        self.lbl_title.setStyleSheet(
-            f"font-size: 13pt; font-weight: 700; color: rgba(255,255,255,{opacity});"
-        )
-        self.lbl_sub.setStyleSheet(
-            f"font-size: 9pt; color: rgba(255,255,255,{float(opacity)*0.75});"
-        )
+        # Refined typography with proper hierarchy for Option B
+        if val:
+            # Active state - premium strong but not shouting
+            self.lbl_title.setStyleSheet(
+                "font-size: 14pt; font-weight: 600; color: white; letter-spacing: 0.2px;"
+            )
+            self.lbl_sub.setStyleSheet(
+                "font-size: 9.5pt; color: rgba(255,255,255,0.82);"
+            )
+        else:
+            # Disabled state - properly muted (not just faded white)
+            self.lbl_title.setStyleSheet(
+                "font-size: 14pt; font-weight: 500; color: rgba(255,255,255,0.45);"
+            )
+            self.lbl_sub.setStyleSheet(
+                "font-size: 9.5pt; color: rgba(255,255,255,0.35);"
+            )
 
     def setTextLabels(self, title, subtitle=""):
         self.lbl_title.setText(title)
@@ -83,6 +107,43 @@ class BigActionBtn(QPushButton):
             event.accept()
         else:
             super().keyPressEvent(event)
+
+    # --- Hover Shadow (Teal glow) ---
+    # We mutate the *existing* QGraphicsDropShadowEffect instead of replacing it.
+    # This avoids "C++ object already deleted" crashes.
+    def enterEvent(self, event):
+        self._apply_hover_glow()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._restore_normal_shadow()
+        super().leaveEvent(event)
+
+    def _apply_hover_glow(self):
+        effect = self.graphicsEffect()
+        if not isinstance(effect, QGraphicsDropShadowEffect):
+            return
+
+        # Save original values the first time we hover
+        if self._original_shadow_color is None:
+            self._original_shadow_color = effect.color()
+            self._original_blur = effect.blurRadius()
+            self._original_y_offset = effect.yOffset()
+
+        # Switch to a nice teal glow
+        effect.setColor(QColor(0, 210, 200, 120))
+        effect.setBlurRadius(30)
+        effect.setYOffset(0)   # centered glow
+
+    def _restore_normal_shadow(self):
+        effect = self.graphicsEffect()
+        if not isinstance(effect, QGraphicsDropShadowEffect):
+            return
+
+        if self._original_shadow_color is not None:
+            effect.setColor(self._original_shadow_color)
+            effect.setBlurRadius(self._original_blur or 24)
+            effect.setYOffset(self._original_y_offset or 5)
 
 
 class ClearButton(QPushButton):
