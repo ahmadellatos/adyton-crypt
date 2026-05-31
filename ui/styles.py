@@ -13,6 +13,9 @@ CLR_BG = "#0B101E"
 CLR_CARD = "#111625"
 CLR_INNER = "#181F32"
 CLR_BORDER = "#232B3E"
+CLR_BORDER_SUBTLE = (
+    "rgba(35, 43, 62, 0.28)"  # Lebih subtle untuk border halus seperti di footer
+)
 
 # --- TIPOGRAFI ---
 CLR_TEXT_MAIN = "#FFFFFF"
@@ -35,7 +38,7 @@ CLR_WARN_DK = "#E67E22"  # Oranye gelap (Secure Wipe Checkbox)
 CLR_WARN_BG = "#2B1E0D"
 
 CLR_SUCCESS_BG = "#0D2B1E"  # Hijau Gelap (Notif Sukses)
-CLR_SUCCESS = "#28C75D"       # Hijau cerah untuk indikator sukses / match
+CLR_SUCCESS = "#28C75D"  # Hijau cerah untuk indikator sukses / match
 
 # --- HOVER & INTERAKSI (TRANSPARANSI/STATE) ---
 CLR_HOVER_BG = "#232B3E"
@@ -74,6 +77,7 @@ def load_stylesheet() -> str:
         border-radius: 14px;
         border: 1px solid rgba(35, 43, 62, 0.45);
     }}
+
 
     #Inner {{
         background-color: {CLR_INNER};
@@ -238,6 +242,13 @@ def load_stylesheet() -> str:
         color: {CLR_TEXT_MUTED};
     }}
 
+    /* Tips text di PasswordPanelOpen — lebih ringan & premium */
+    QLabel#TipText {{
+        font-size: 8.5pt;
+        color: {CLR_TEXT_MUTED};
+        font-weight: 300;
+    }}
+
     /* Status colors for text */
     QLabel#ErrorText {{
         font-size: 9pt;
@@ -393,6 +404,27 @@ def load_stylesheet() -> str:
         width: 0px;
     }}
 
+    /* Tombol "Ganti File Brankas" — reference style (darker, solid presence) */
+    QPushButton#BtnGantiFile {{
+        background-color: #181F32;
+        border: 1px solid #232B3E;
+        border-radius: 9px;
+        color: {CLR_TEXT_MAIN};
+        font-weight: 500;
+        font-size: 9pt;
+        padding: 0 16px;
+    }}
+
+    QPushButton#BtnGantiFile:hover {{
+        background-color: #1E2A40;
+        border-color: #2A344A;
+    }}
+
+    QPushButton#BtnGantiFile:focus {{
+        border: 1px solid {CLR_ACCENT};
+        background-color: #181F32;
+    }}
+
     QPushButton#BtnGen {{
         background-color: transparent;
         border: 1px solid rgba(35, 43, 62, 0.5);
@@ -412,13 +444,37 @@ def load_stylesheet() -> str:
     }}
 
     /* --- CUSTOM CHECKBOX --- */
-    QFrame#ChkHapus {{ background: {CLR_INNER}; border: 1px solid {CLR_BORDER}; border-radius: 4px; }}
-    QFrame#ChkHapus[checked="true"] {{ background: {CLR_DANGER}; border: 1px solid {CLR_DANGER}; }}
-    QFrame#ChkHapus:focus {{ border: 2px solid {CLR_TEXT_MAIN}; }}
+    QFrame#ChkHapus {{
+        background: {CLR_INNER};
+        border: 1px solid {CLR_BORDER};
+        border-radius: 4px;
+    }}
+    QFrame#ChkHapus:hover {{
+        border-color: {CLR_ACCENT_HOVER};
+    }}
+    QFrame#ChkHapus[checked="true"] {{
+        background: {CLR_DANGER};
+        border: 1px solid {CLR_DANGER};
+    }}
+    QFrame#ChkHapus:focus {{
+        border: 2px solid {CLR_TEXT_MAIN};
+    }}
 
-    QFrame#ChkSecure {{ background: {CLR_INNER}; border: 1px solid {CLR_BORDER}; border-radius: 4px; }}
-    QFrame#ChkSecure[checked="true"] {{ background: {CLR_WARN_DK}; border: 1px solid {CLR_WARN_DK}; }}
-    QFrame#ChkSecure:focus {{ border: 2px solid {CLR_TEXT_MAIN}; }}
+    QFrame#ChkSecure {{
+        background: {CLR_INNER};
+        border: 1px solid {CLR_BORDER};
+        border-radius: 4px;
+    }}
+    QFrame#ChkSecure:hover {{
+        border-color: {CLR_ACCENT_HOVER};
+    }}
+    QFrame#ChkSecure[checked="true"] {{
+        background: {CLR_WARN_DK};
+        border: 1px solid {CLR_WARN_DK};
+    }}
+    QFrame#ChkSecure:focus {{
+        border: 2px solid {CLR_TEXT_MAIN};
+    }}
 
     /* --- SCROLL & MENUS --- */
     QMenu {{ background-color: {CLR_CARD}; border: 1px solid {CLR_BORDER}; border-radius: 8px; padding: 4px; }}
@@ -466,6 +522,78 @@ def load_stylesheet() -> str:
         border-radius: 14px;
     }}
 
+    /* --- DROP ZONE FILLED STATE (Buka) - reference matched --- */
+    /* Metadata labels (used in 4-col grid inside FileInfoCard) */
+    QLabel#MetaLabel {{
+        color: #8B95A5;
+        font-size: 7.5pt;
+        font-weight: 400;
+    }}
+
+    QLabel#MetaValue {{
+        color: #E8ECF3;
+        font-size: 8pt;
+        font-weight: 500;
+    }}
+
+    /* New rich info card for redesigned DropZoneOpen filled state */
+    QFrame#FileInfoCard {{
+        background-color: #181F32;
+        border: 1px solid #232B3E;
+        border-radius: 12px;
+    }}
+
+    /* Valid badge */
+    QLabel#ValidBadge {{
+        background-color: #1E3A2F;
+        color: #2ECC71;
+        font-size: 7.5pt;
+        font-weight: 600;
+        padding: 2px 9px;
+        border-radius: 5px;
+    }}
+
+    /* "Siap untuk didekripsi" subtitle under filename */
+    QLabel#FileReadySubtitle {{
+        color: #8B95A5;
+        font-size: 8pt;
+        font-weight: 400;
+    }}
+
+    /* Valid banner "File brankas valid dan siap untuk dibuka" — kept for compatibility but not primary anymore */
+    QFrame#ValidBanner {{
+        background-color: #0A1F18;
+        border: 1px solid #142E26;
+        border-radius: 10px;
+    }}
+
+    QLabel#BannerTitle {{
+        color: {CLR_ACCENT};
+        font-size: 9.5pt;
+        font-weight: 600;
+    }}
+
+    QLabel#BannerDesc {{
+        color: {CLR_TEXT_MUTED};
+        font-size: 8.5pt;
+        font-weight: 300;
+    }}
+
+    /* Encryption info section header — more presence */
+    QLabel#EncSectionTitle {{
+        font-size: 9.5pt;
+        font-weight: 600;
+        color: #A3ACBD;
+        letter-spacing: 0.5px;
+    }}
+
+    /* Bordered container for INFORMASI ENKRIPSI section */
+    QFrame#EncInfoSection {{
+        background-color: #0F141F;
+        border: 1px solid #232B3E;
+        border-radius: 8px;
+    }}
+
     /* --- DROP ZONE EMPTY STATE (Premium) --- */
     QLabel#DropZoneMainText {{
         font-size: 14pt;
@@ -503,9 +631,31 @@ def load_stylesheet() -> str:
     QPushButton#BtnAlertConfirm:hover {{ background-color: {CLR_DANGER_HOVER}; }}
     QPushButton#BtnAlertConfirm:focus {{ border: 2px solid {CLR_TEXT_MAIN}; background-color: {CLR_DANGER_HOVER}; }}
 
+    /* Dialog secondary button (Batal) */
+    QPushButton#BtnDialogCancel {{
+        background-color: transparent;
+        border: 1px solid rgba(35, 43, 62, 0.5);
+        border-radius: 8px;
+        color: {CLR_TEXT_MAIN};
+        font-weight: 500;
+    }}
+    QPushButton#BtnDialogCancel:hover {{
+        background-color: {CLR_INNER};
+        border-color: {CLR_ACCENT_HOVER};
+    }}
+    QPushButton#BtnDialogCancel:focus {{
+        border: 2px solid {CLR_ACCENT};
+    }}
+
     QPushButton#TitleMinBtn, QPushButton#TitleMaxBtn, QPushButton#TitleCloseBtn {{ background-color: transparent; border: none; border-radius: 0; }}
     QPushButton#TitleMinBtn:hover, QPushButton#TitleMaxBtn:hover {{ background-color: {CLR_HOVER_BG}; }}
     QPushButton#TitleCloseBtn:hover {{ background-color: {CLR_DANGER}; }}
+
+    /* --- MAIN FOOTER --- */
+    QFrame#MainFooter {{
+        border-top: 1px solid {CLR_BORDER_SUBTLE};
+        background-color: transparent;
+    }}
 
     /* --- NOTIFICATION BARS --- */
     QFrame#NotifBar[kind="ok"] {{ background-color: {CLR_SUCCESS_BG}; border-radius: 8px; border: none; }}
@@ -522,6 +672,7 @@ def load_stylesheet() -> str:
 # =============================================================================
 # STYLE HELPERS (Untuk mengurangi inline styles di komponen)
 # =============================================================================
+
 
 def body_style(size: str = "10pt") -> str:
     """Standard body text."""

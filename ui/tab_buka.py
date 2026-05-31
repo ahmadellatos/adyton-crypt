@@ -15,6 +15,8 @@ from core.worker import CryptoWorker
 from .widgets import AnimatedNotifBar, apply_shadow
 from .buttons import BigActionBtn
 from .dialogs import ModernMessageBox
+from .constants import APP_NAME
+from .utils import get_eta_string, format_progress_label, apply_cancelling_state, start_crypto_worker
 
 # --- IMPORT SMART COMPONENTS (Sesuai dengan nama asli file lu!) ---
 from .components.drop_zone_open import DropZoneOpen
@@ -40,14 +42,16 @@ class TabBuka(QWidget):
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(20)
+        main_layout.setSpacing(
+            22
+        )  # Sedikit lebih lapang untuk harmoni visual dua kolom
 
         # Inisialisasi sesuai nama Class asli lu
         self.drop_zone = DropZoneOpen()
         self.password_panel = PasswordPanelOpen()
 
         h_container = QHBoxLayout()
-        h_container.setSpacing(20)
+        h_container.setSpacing(28)   # More generous separation between columns
         h_container.addWidget(self.drop_zone, 1)
         h_container.addWidget(self.password_panel, 1)
         main_layout.addLayout(h_container)
@@ -60,7 +64,9 @@ class TabBuka(QWidget):
         self.btn_aksi.setAccessibleName("Tombol Buka Brankas")
         self.btn_aksi.setEnabled(False)
         self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        apply_shadow(self.btn_aksi, blur_radius=24, y_offset=5, opacity=85)  # Option B: sedikit lebih berani
+        apply_shadow(
+            self.btn_aksi, blur_radius=24, y_offset=5, opacity=85
+        )  # Option B: sedikit lebih berani
 
         main_layout.addWidget(self.btn_aksi)
         self.notif = AnimatedNotifBar(self)
@@ -101,8 +107,7 @@ class TabBuka(QWidget):
         if self.worker is not None and self.worker.isRunning():
             self.worker.cancel()
             self._crypto_start_time = None
-            self.btn_aksi.setTextLabels("MEMBATALKAN...", "Harap tunggu...")
-            self.btn_aksi.setEnabled(False)
+            apply_cancelling_state(self.btn_aksi)
             return
 
         force = self._konfirmasi_timpa
@@ -125,53 +130,23 @@ class TabBuka(QWidget):
         self.worker = CryptoWorker(buka_brankas, path_file, pw, force, parent=self)
         self.password_panel.reset_field()
 
-        self.worker.progress.connect(self._update_progress)
-        self.worker.finished.connect(self._on_selesai)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.worker.start()
+        start_crypto_worker(self.worker, self._update_progress, self._on_selesai)
 
     def _update_progress(self, val):
         if self.worker and not getattr(self.worker, "_is_cancelled", False):
-            eta_str = self._get_eta_string(val)
+            eta_str = get_eta_string(self._crypto_start_time, val)
+            title, subtitle = format_progress_label(val, "buka", eta_str)
+            self.btn_aksi.setTextLabels(title, subtitle)
 
-            if val <= 0.85:
-                pct = int(val * 100)
-                self.btn_aksi.setTextLabels(
-                    "MEMBUKA DATA...", f"{pct}%  •  {eta_str}"
-                )
-            else:
-                final_pct = int((val - 0.85) / 0.15 * 100)
-                self.btn_aksi.setTextLabels(
-                    "FINALISASI...", f"{final_pct}%  •  {eta_str}"
-                )
-
-    def _get_eta_string(self, progress: float) -> str:
-        """Hitung estimasi waktu tersisa berdasarkan progress."""
-        if self._crypto_start_time is None or progress <= 0.01:
-            return "Menghitung..."
-
-        elapsed = time.time() - self._crypto_start_time
-        if elapsed < 0.5:
-            return "Menghitung..."
-
-        estimated_total = elapsed / progress
-        remaining = estimated_total - elapsed
-
-        if remaining < 1:
-            return "Hampir selesai"
-        elif remaining < 60:
-            return f"~{int(remaining)} detik lagi"
-        else:
-            minutes = int(remaining // 60)
-            seconds = int(remaining % 60)
-            return f"~{minutes}m {seconds}s lagi"
 
     def _set_busy(self, busy: bool):
         self.drop_zone.set_busy(busy)
         self.password_panel.setEnabled(not busy)
 
         if busy:
-            self.btn_aksi.setTextLabels("MEMBUKA BRANKAS...", "Mempersiapkan dekripsi...")
+            self.btn_aksi.setTextLabels(
+                "MEMBUKA BRANKAS...", "Mempersiapkan dekripsi..."
+            )
             self.btn_aksi.setEnabled(True)
             self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         else:
@@ -185,14 +160,14 @@ class TabBuka(QWidget):
         self.worker = None
         status, msg = result
 
-        if status == VaultStatus.SUCCESS:
-            self._cached_pw = None
-            self.drop_zone.reset_zone()
-
         self._set_busy(False)
         self._crypto_start_time = None
 
+        if status != VaultStatus.OVERWRITE_NEEDED:
+            self._cached_pw = None
+
         if status == VaultStatus.SUCCESS:
+            self.drop_zone.reset_zone()
             logger.info(f"Dekripsi sukses: {msg}")
             self.notif.show_msg(
                 "ok", f"Folder/File '{msg}' berhasil dikembalikan!", 6000
@@ -200,16 +175,14 @@ class TabBuka(QWidget):
 
             # PANCARKAN SINYAL KE APP.PY UNTUK WINOTIFY
             self.system_notification.emit(
-                "Dekripsi Sukses", f"Brankas '{msg}' berhasil dibuka."
+                APP_NAME, f"Brankas '{msg}' berhasil dibuka."
             )
 
         elif status == VaultStatus.CANCELLED:
-            self._cached_pw = None
             logger.info("Dekripsi dibatalkan pengguna.")
             self.notif.show_msg("warn", "Dekripsi dibatalkan pengguna.", 4000)
 
         elif status == VaultStatus.WRONG_PASSWORD:
-            self._cached_pw = None
             logger.warning("Dekripsi gagal: Password salah.")
             self.notif.show_msg("err", "Password salah atau file corrupted! Coba lagi.")
 
@@ -232,10 +205,8 @@ class TabBuka(QWidget):
                 self._validate_state()
                 logger.info("Dekripsi dibatalkan: User menolak overwrite file asli.")
         else:
-            self._cached_pw = None
             logger.error(f"Dekripsi gagal: {msg}")
             self.notif.show_msg("err", f"Error: {msg}", 8000)
 
     def auto_load_file(self, path: str) -> None:
-        if hasattr(self, "drop_zone"):
-            self.drop_zone._set_file(path)
+        self.drop_zone.load_file(path)

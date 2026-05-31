@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Signal
 from PySide6.QtGui import QKeyEvent
 
 from ..dialogs import ModernMessageBox
-from ..styles import CLR_TEXT_MAIN, CLR_TEXT_MUTED, muted_label_style
+from ..styles import CLR_TEXT_MAIN, CLR_TEXT_MUTED, muted_label_style, CLR_WARN_DK
 
 
 class KeyboardCheckbox(QFrame):
@@ -68,7 +68,7 @@ class OptionsPanel(QWidget):
         lay_opsi_hapus.setSpacing(8)  # Premium breathing between main options
 
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 4, 0, 0)  # Small top breathing when placed under drop zone
+        main_layout.setContentsMargins(0, 6, 0, 0)
         main_layout.addWidget(container)
 
         lay_chk1 = QHBoxLayout()
@@ -101,14 +101,14 @@ class OptionsPanel(QWidget):
         self.widget_secure_wipe.setMinimumHeight(0)
 
         lay_collapse = QVBoxLayout(self.widget_secure_wipe)
-        lay_collapse.setContentsMargins(42, 2, 0, 2)
-        lay_collapse.setSpacing(2)  # Tight premium indent for sub-option
+        lay_collapse.setContentsMargins(36, 6, 0, 4)  # Better indent + breathing for sub-option
+        lay_collapse.setSpacing(4)
 
         lay_chk2 = QHBoxLayout()
         lay_chk2.setContentsMargins(0, 0, 0, 0)
         lay_chk2.setSpacing(10)
 
-        self.chk_secure = KeyboardCheckbox(size=20)  # Slightly larger for better hit area as sub-option
+        self.chk_secure = KeyboardCheckbox(size=20)
         self.chk_secure.setObjectName("ChkSecure")
         self.chk_secure.set_checked(False)
         self.chk_secure.hide()
@@ -118,7 +118,7 @@ class OptionsPanel(QWidget):
         self.chk_secure.setAccessibleName("Secure Wipe - Timpa data asli")
 
         lay_chk2.addWidget(self.chk_secure, alignment=Qt.AlignmentFlag.AlignVCenter)
-        lay_chk2.addSpacing(12)
+        lay_chk2.addSpacing(10)
         lay_chk2.addWidget(lbl_chk_title2)
         lay_chk2.addStretch()
         lay_collapse.addLayout(lay_chk2)
@@ -137,7 +137,7 @@ class OptionsPanel(QWidget):
             self.widget_secure_wipe.show()
             self.chk_secure.show()
             self.anim_secure.setStartValue(0)
-            self.anim_secure.setEndValue(48)  # Adjusted for tighter premium sub-option spacing
+            self.anim_secure.setEndValue(52)  # Adjusted for new sub-option spacing + padding
             self.anim_secure.start()
         else:
             self.anim_secure.setStartValue(self.widget_secure_wipe.maximumHeight())
@@ -161,7 +161,7 @@ class OptionsPanel(QWidget):
                 "• Hanya gunakan untuk Harddisk (HDD).\n\n"
                 "Apakah Anda yakin ingin mengaktifkan opsi ini?",
                 icon_name="mdi6.alert-decagram",
-                icon_color="#E67E22",
+                icon_color=CLR_WARN_DK,
                 parent=self,
             )
             if dialog.exec() != QDialog.DialogCode.Accepted:

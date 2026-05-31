@@ -45,7 +45,7 @@ class ModernMessageBox(QDialog):
 
         layout = QVBoxLayout(container)
         layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(15)
+        layout.setSpacing(12)  # Premium tight rhythm
 
         lbl_title = QLabel(title)
         lbl_title.setObjectName("CardTitle")
@@ -55,7 +55,7 @@ class ModernMessageBox(QDialog):
         content_lay.setSpacing(15)
 
         lbl_icon = QLabel()
-        lbl_icon.setPixmap(qta.icon(icon_name, color=icon_color).pixmap(36, 36))
+        lbl_icon.setPixmap(qta.icon(icon_name, color=icon_color).pixmap(32, 32))  # More balanced size
         content_lay.addWidget(lbl_icon, alignment=Qt.AlignmentFlag.AlignTop)
 
         lbl_msg = QLabel(message)
@@ -68,19 +68,20 @@ class ModernMessageBox(QDialog):
         content_lay.addWidget(lbl_msg, 1)
 
         layout.addLayout(content_lay)
-        layout.addSpacing(10)
+        layout.addSpacing(8)  # Tighter premium spacing before buttons
 
         btn_lay = QHBoxLayout()
-        btn_lay.setSpacing(12)
+        btn_lay.setSpacing(10)  # Premium tight button spacing
         btn_lay.addStretch()
 
         self.btn_cancel = QPushButton("Batal")
-        self.btn_cancel.setFixedSize(90, 36)
+        self.btn_cancel.setObjectName("BtnDialogCancel")
+        self.btn_cancel.setFixedHeight(42)
         self.btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_cancel.clicked.connect(self.reject)
 
         self.btn_yes = QPushButton("Lanjutkan")
-        self.btn_yes.setFixedSize(110, 36)
+        self.btn_yes.setFixedHeight(42)
         self.btn_yes.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_yes.setObjectName("BtnAlertConfirm")
         self.btn_yes.clicked.connect(self.accept)

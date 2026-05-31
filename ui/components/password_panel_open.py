@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QSize, Signal
 
-from ..widgets import apply_shadow
+from ..widgets import apply_shadow, PasswordLineEdit
 from ..styles import (
     CLR_TIPS_BG,
     CLR_TIPS_BORDER,
@@ -32,47 +32,34 @@ class PasswordPanelOpen(QFrame):
 
     def _build_ui(self):
         v_pw = QVBoxLayout(self)
-        v_pw.setContentsMargins(24, 20, 24, 20)
-        v_pw.setSpacing(12)  # Match premium rhythm from Kunci side
+        v_pw.setContentsMargins(24, 18, 24, 18)
+        v_pw.setSpacing(11)
 
         lbl_title_pw = QLabel("MASUKKAN PASSWORD")
         lbl_title_pw.setObjectName("CardTitle")
         v_pw.addWidget(lbl_title_pw)
-        v_pw.addSpacing(8)  # Tighter, more consistent with Kunci panel
 
-        self.box_pw = QFrame()
-        self.box_pw.setObjectName("InputBox")
-        lay_box = QHBoxLayout(self.box_pw)
-        lay_box.setContentsMargins(12, 0, 6, 0)
-        lay_box.setSpacing(0)
+        sub_pw = QLabel("Masukkan password untuk membuka brankas Anda.")
+        sub_pw.setObjectName("CardSubtitle")
+        v_pw.addWidget(sub_pw)
+        v_pw.addSpacing(4)
 
-        self.entry_pw = QLineEdit()
-        self.entry_pw.setObjectName("InputInside")
-        self.entry_pw.setFixedHeight(45)
-        self.entry_pw.setPlaceholderText("Ketik password di sini…")
-        self.entry_pw.setEchoMode(QLineEdit.EchoMode.Password)
+        self.entry_pw = PasswordLineEdit("Ketik password di sini…")
         self.entry_pw.setAccessibleName("Password untuk Membuka Brankas")
         self.entry_pw.textChanged.connect(self._on_pw_change)
-        lay_box.addWidget(self.entry_pw)
 
-        self.btn_toggle_pw = QPushButton()
-        self.btn_toggle_pw.setIcon(qta.icon("mdi6.eye-outline", color=CLR_TEXT_MUTED))
-        self.btn_toggle_pw.setIconSize(QSize(22, 22))
-        self.btn_toggle_pw.setObjectName("BtnEye")
-        self.btn_toggle_pw.setFixedSize(44, 45)  # Match Kunci side for consistency
-        self.btn_toggle_pw.clicked.connect(self._toggle_pw)
-        lay_box.addWidget(self.btn_toggle_pw)
-
-        v_pw.addWidget(self.box_pw)
-        v_pw.addStretch()
+        v_pw.addWidget(self.entry_pw)
+        v_pw.addStretch(
+            1
+        )  # Sedikit stretch agar input area lebih seimbang vertikal dengan drop zone
         v_pw.addWidget(self._build_info_box())
 
     def _build_info_box(self) -> QFrame:
         info_box = QFrame()
         info_box.setObjectName("TipsBox")
         lay_info = QVBoxLayout(info_box)
-        lay_info.setContentsMargins(12, 10, 12, 10)
-        lay_info.setSpacing(8)  # Slightly tighter for premium feel
+        lay_info.setContentsMargins(14, 12, 14, 12)
+        lay_info.setSpacing(10)  # Lebih lapang, premium feel
 
         tips = [
             (
@@ -94,15 +81,15 @@ class PasswordPanelOpen(QFrame):
 
         for icon_name, color, text in tips:
             row = QHBoxLayout()
-            row.setSpacing(10)
+            row.setSpacing(8)
             lbl_ic = QLabel()
-            lbl_ic.setPixmap(qta.icon(icon_name, color=color).pixmap(16, 16))
-            lbl_ic.setFixedSize(16, 16)  # Consistent with other icons in the app
+            lbl_ic.setPixmap(qta.icon(icon_name, color=color).pixmap(15, 15))
+            lbl_ic.setFixedSize(15, 15)
             row.addWidget(lbl_ic, alignment=Qt.AlignmentFlag.AlignTop)
 
             lbl_tx = QLabel(text)
             lbl_tx.setWordWrap(True)
-            lbl_tx.setObjectName("MutedText")
+            lbl_tx.setObjectName("TipText")  # Dedicated style untuk tips
             row.addWidget(lbl_tx, 1)
             lay_info.addLayout(row)
 
@@ -110,26 +97,20 @@ class PasswordPanelOpen(QFrame):
 
     def _setup_accessibility(self):
         self.entry_pw.installEventFilter(self)
-        self.btn_toggle_pw.installEventFilter(self)
-        self.setTabOrder(self.entry_pw, self.btn_toggle_pw)
+        self.setTabOrder(self.entry_pw, self.entry_pw)  # internal handling
 
     def eventFilter(self, obj, event):
         if event.type() in (event.Type.FocusIn, event.Type.FocusOut):
-            if (
-                isinstance(obj, QLineEdit)
-                and obj.parent()
-                and obj.parent().objectName() == "InputBox"
-            ):
+            # Delegate focus styling to the PasswordLineEdit
+            if obj == self.entry_pw:
                 is_focus = event.type() == event.Type.FocusIn
-                box = obj.parent()
-                box.setProperty("focused", is_focus)
-                box.style().unpolish(box)
-                box.style().polish(box)
+                self.entry_pw.setProperty("focused", is_focus)
+                self.entry_pw.style().unpolish(self.entry_pw)
+                self.entry_pw.style().polish(self.entry_pw)
         elif event.type() == event.Type.KeyPress:
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
-                if isinstance(obj, QPushButton) and obj.objectName() == "BtnEye":
-                    obj.click()
-                    return True
+                # PasswordLineEdit handles its own eye button internally
+                pass
         return super().eventFilter(obj, event)
 
     def _toggle_pw(self):
@@ -158,8 +139,6 @@ class PasswordPanelOpen(QFrame):
     def reset_field(self):
         self.entry_pw.blockSignals(True)
         self.entry_pw.clear()
-        self.entry_pw.setEchoMode(QLineEdit.EchoMode.Password)
-        self.btn_toggle_pw.setIcon(qta.icon("mdi6.eye-outline", color=CLR_TEXT_MUTED))
         self.entry_pw.blockSignals(False)
         self.valid_state_changed.emit(False)
 

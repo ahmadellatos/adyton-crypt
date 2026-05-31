@@ -1,10 +1,6 @@
 """
 Modul: widgets.py
-Deskripsi: Kumpulan komponen UI (Widget) kustom.
-           Komponen widget kecil dan reusable.
-
-Catatan: CryptoWorker telah dipindah ke core/worker.py karena merupakan
-         business logic threading, bukan UI component.
+Deskripsi: Kumpulan komponen UI (Widget) kustom yang reusable.
 """
 
 import qtawesome as qta
@@ -16,6 +12,7 @@ from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect,
     QPushButton,
     QSizePolicy,
+    QLineEdit,
 )
 from PySide6.QtCore import (
     Qt,
@@ -24,19 +21,16 @@ from PySide6.QtCore import (
     QTimer,
     QSize,
     QPoint,
+    Signal,
 )
 from PySide6.QtGui import QColor, QCursor, QPixmap
 
 from core.paths import get_asset_path
 
+from .styles import CLR_TEXT_MUTED, CLR_ACCENT
+from .utils import apply_shadow
 
-def apply_shadow(widget, blur_radius=20, y_offset=6, opacity=60):
-    shadow = QGraphicsDropShadowEffect()
-    shadow.setBlurRadius(blur_radius)
-    shadow.setXOffset(0)
-    shadow.setYOffset(y_offset)
-    shadow.setColor(QColor(0, 0, 0, opacity))
-    widget.setGraphicsEffect(shadow)
+
 
 
 # ── HERO ICON WIDGET (FOLDER GLOWING) ───────────────────────────────
@@ -73,6 +67,7 @@ class HeroIconWidget(QWidget):
         lbl_overlay = QLabel(self)
         icon_name = "mdi6.shield-lock" if mode == "kunci" else "mdi6.shield-key"
 
+        self._overlay_icon_name = icon_name
         lbl_overlay.setPixmap(qta.icon(icon_name, color="#00D2C8").pixmap(36, 36))
         lbl_overlay.setGeometry(62, 42, 36, 36)
         lbl_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -88,28 +83,38 @@ class HeroIconWidget(QWidget):
     def set_drag_active(self, active: bool):
         """Intensify the icon glow when drag is active over the drop area."""
         if active:
-            # Main shield icon - MUCH brighter glow when dragging
+            # Main shield icon - EXTREMELY bright + brighter base icon
             if hasattr(self, "_glow_overlay") and self._glow_overlay:
-                self._glow_overlay.setBlurRadius(55)           # bigger spread
-                self._glow_overlay.setColor(QColor(120, 255, 255, 255))  # very bright cyan-teal, full opacity
+                self._glow_overlay.setBlurRadius(75)
+                self._glow_overlay.setColor(QColor(200, 255, 255, 255))
 
-            # Sparkles also get much brighter
+            if hasattr(self, "_overlay_icon") and hasattr(self, "_overlay_icon_name"):
+                self._overlay_icon.setPixmap(
+                    qta.icon(self._overlay_icon_name, color="#7FFFFF").pixmap(36, 36)
+                )
+
+            # Sparkles - very bright and large
             for glow in getattr(self, "_sparkle_glows", []):
-                glow.setBlurRadius(30)
-                glow.setColor(QColor(200, 255, 255, 240))
+                glow.setBlurRadius(40)
+                glow.setColor(QColor(230, 255, 255, 255))
 
-            self.update()   # force repaint so the brighter glow shows immediately
+            self.update()
         else:
             # Return to normal
             if hasattr(self, "_glow_overlay") and self._glow_overlay:
                 self._glow_overlay.setBlurRadius(25)
                 self._glow_overlay.setColor(QColor("#00D2C8"))
 
+            if hasattr(self, "_overlay_icon") and hasattr(self, "_overlay_icon_name"):
+                self._overlay_icon.setPixmap(
+                    qta.icon(self._overlay_icon_name, color="#00D2C8").pixmap(36, 36)
+                )
+
             for glow in getattr(self, "_sparkle_glows", []):
                 glow.setBlurRadius(15)
                 glow.setColor(QColor("#4A90E2"))
 
-            self.update()   # force repaint when returning to normal glow
+            self.update()
 
 
 # ── CUSTOM TOOLTIP ──────────────────────────────────────────────────
@@ -458,5 +463,93 @@ class AnimatedNotifBar(QFrame):
         self.anim.start()
 
 
+# ── PASSWORD LINE EDIT WITH TOGGLE ────────────────────────────────
+class PasswordLineEdit(QFrame):
+    """
+    Reusable password input field with eye toggle button.
+    Provides consistent look and behavior across the app.
+    """
 
+    textChanged = Signal(str)
 
+    def __init__(self, placeholder: str = "", parent=None):
+        super().__init__(parent)
+
+        self.setObjectName("InputBox")
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(12, 0, 6, 0)
+        lay.setSpacing(0)
+
+        self.line_edit = QLineEdit()
+        self.line_edit.setObjectName("InputInside")
+        self.line_edit.setFixedHeight(45)
+        self.line_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        if placeholder:
+            self.line_edit.setPlaceholderText(placeholder)
+        self.line_edit.textChanged.connect(self.textChanged)
+        lay.addWidget(self.line_edit)
+
+        self.btn_toggle = QPushButton()
+        self.btn_toggle.setIcon(qta.icon("mdi6.eye-outline", color=CLR_TEXT_MUTED))
+        self.btn_toggle.setIconSize(QSize(22, 22))
+        self.btn_toggle.setObjectName("BtnEye")
+        self.btn_toggle.setFixedSize(44, 45)
+        self.btn_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_toggle.clicked.connect(self._toggle_visibility)
+        lay.addWidget(self.btn_toggle)
+
+        # Store reference to styles (imported at top level)
+        self._muted_color = CLR_TEXT_MUTED
+        self._accent_color = CLR_ACCENT
+
+    def _toggle_visibility(self):
+        if self.line_edit.echoMode() == QLineEdit.EchoMode.Password:
+            self.line_edit.setEchoMode(QLineEdit.EchoMode.Normal)
+            self.btn_toggle.setIcon(qta.icon("mdi6.eye-off-outline", color=self._accent_color))
+        else:
+            self.line_edit.setEchoMode(QLineEdit.EchoMode.Password)
+            self.btn_toggle.setIcon(qta.icon("mdi6.eye-outline", color=self._muted_color))
+
+    # --- Public API ---
+    def text(self) -> str:
+        return self.line_edit.text()
+
+    def setText(self, text: str):
+        self.line_edit.setText(text)
+
+    def setPlaceholderText(self, text: str):
+        self.line_edit.setPlaceholderText(text)
+
+    def setAccessibleName(self, name: str):
+        self.line_edit.setAccessibleName(name)
+
+    def clear(self):
+        self.line_edit.clear()
+        self.setEchoMode(QLineEdit.EchoMode.Password)
+
+    def setEnabled(self, enabled: bool):
+        self.line_edit.setEnabled(enabled)
+        self.btn_toggle.setEnabled(enabled)
+
+    def installEventFilter(self, obj):
+        self.line_edit.installEventFilter(obj)
+        self.btn_toggle.installEventFilter(obj)
+
+    # --- Echo mode control (public API) ---
+    def setEchoMode(self, mode):
+        self.line_edit.setEchoMode(mode)
+        self._update_toggle_icon()
+
+    def echoMode(self):
+        return self.line_edit.echoMode()
+
+    def _update_toggle_icon(self):
+        if self.line_edit.echoMode() == QLineEdit.EchoMode.Password:
+            self.btn_toggle.setIcon(qta.icon("mdi6.eye-outline", color=self._muted_color))
+        else:
+            self.btn_toggle.setIcon(qta.icon("mdi6.eye-off-outline", color=self._accent_color))
+
+    # Forward common signals
+    @property
+    def returnPressed(self):
+        return self.line_edit.returnPressed

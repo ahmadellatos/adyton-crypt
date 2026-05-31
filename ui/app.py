@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QSize, QPropertyAnimation
 from PySide6.QtGui import QPixmap, QIcon
+
+from .styles import CLR_TEXT_MUTED
 from loguru import logger
 from qframelesswindow import FramelessMainWindow
 from core.paths import get_asset_path
@@ -51,7 +53,7 @@ class AppBrankas(FramelessMainWindow):
         super().__init__()
 
         self._quitting = False
-        self.setMinimumSize(960, 680)
+        self.setMinimumSize(1100, 700)
         self.setObjectName("MainWindow")
 
         app_icon = self._load_app_icon()
@@ -74,6 +76,7 @@ class AppBrankas(FramelessMainWindow):
         return icon
 
     def _center_window(self) -> None:
+        # Initial window size (no compact mode - always full design size)
         self.resize(1100, 700)
         center_point = QApplication.primaryScreen().availableGeometry().center()
         frame_geo = self.frameGeometry()
@@ -364,13 +367,18 @@ class AppBrankas(FramelessMainWindow):
         return btn
 
     def _build_footer(self, parent_layout: QVBoxLayout) -> None:
-        lay_footer = QHBoxLayout()
+        footer_wrapper = QFrame()
+        footer_wrapper.setObjectName("MainFooter")
+
+        lay_footer = QHBoxLayout(footer_wrapper)
+        lay_footer.setContentsMargins(0, 12, 0, 4)  # Premium breathing
+        lay_footer.setSpacing(12)
 
         lay_safe = QHBoxLayout()
-        lay_safe.setSpacing(8)
+        lay_safe.setSpacing(6)
         lbl_safe_icon = QLabel()
         lbl_safe_icon.setPixmap(
-            qta.icon("mdi6.shield-check", color="#8B95A5").pixmap(16, 16)
+            qta.icon("mdi6.shield-check", color=CLR_TEXT_MUTED).pixmap(15, 15)
         )
         lbl_safe_text = QLabel("Semua operasi aman dan terenkripsi")
         lbl_safe_text.setObjectName("MutedText")
@@ -378,12 +386,12 @@ class AppBrankas(FramelessMainWindow):
         lay_safe.addWidget(lbl_safe_text)
 
         lay_ver = QHBoxLayout()
-        lay_ver.setSpacing(8)
+        lay_ver.setSpacing(6)
         lbl_ver_text = QLabel(f"Version {APP_VERSION}")
         lbl_ver_text.setObjectName("MutedText")
         lbl_ver_icon = QLabel()
         lbl_ver_icon.setPixmap(
-            qta.icon("mdi6.check-circle", color="#8B95A5").pixmap(16, 16)
+            qta.icon("mdi6.check-circle", color=CLR_TEXT_MUTED).pixmap(15, 15)
         )
         lay_ver.addWidget(lbl_ver_text)
         lay_ver.addWidget(lbl_ver_icon)
@@ -391,7 +399,7 @@ class AppBrankas(FramelessMainWindow):
         lay_footer.addLayout(lay_safe)
         lay_footer.addStretch()
         lay_footer.addLayout(lay_ver)
-        parent_layout.addLayout(lay_footer)
+        parent_layout.addWidget(footer_wrapper)
 
     # =========================================================================
     # EVENT HANDLERS

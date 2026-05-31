@@ -26,6 +26,7 @@ from ..menus import AccessibleCenteredMenu, CenteredMenuAction
 from ..buttons import ClearButton, TambahClearSplitButton
 from ..dialogs import ModernMessageBox
 from ..styles import CLR_TEXT_MUTED, muted_label_style, caption_style
+from ..utils import format_file_size
 
 
 class MultiDropFrame(QFrame):
@@ -117,28 +118,13 @@ class TargetListModel(QAbstractListModel):
             typ = "Folder" if self.data(index, TargetListModel.TypeRole) == "folder" else "File"
             size_bytes = self.data(index, TargetListModel.SizeRole)
             if size_bytes >= 0:
-                hsize = self._human_size(size_bytes)
+                hsize = format_file_size(size_bytes)
                 return f"{typ} {basename}, {hsize}. Path: {path}"
             else:
                 return f"{typ} {basename}. Path: {path}"
 
         return None
 
-    def _human_size(self, size_bytes: int) -> str:
-        """Helper ukuran manusiawi (duplikat kecil agar model self-contained)."""
-        if size_bytes < 0:
-            return "Folder"
-        if size_bytes == 0:
-            return "0 B"
-        units = ["B", "KB", "MB", "GB", "TB"]
-        val = float(size_bytes)
-        for u in units:
-            if val < 1024 or u == "TB":
-                if u == "B":
-                    return f"{int(val)} {u}"
-                return f"{val:.1f} {u}"
-            val /= 1024
-        return f"{val:.1f} TB"
 
     def setPaths(self, paths):
         """Ganti seluruh daftar path."""
@@ -210,17 +196,6 @@ class TargetListDelegate(QStyledItemDelegate):
         color = "#FFFFFF" if is_hovered else "#8B95A5"
         return qta.icon("mdi6.close", color=color).pixmap(size, size)
 
-    def _human_size(self, size_bytes: int) -> str:
-        if size_bytes < 0:
-            return "Folder"
-        if size_bytes == 0:
-            return "0 B"
-        val = float(size_bytes)
-        for unit in ["B", "KB", "MB", "GB"]:
-            if val < 1024:
-                return f"{int(val)} {unit}" if unit == "B" else f"{val:.1f} {unit}"
-            val /= 1024
-        return f"{val:.1f} TB"
 
     def paint(self, painter: QPainter, option, index):
         painter.save()
@@ -289,7 +264,7 @@ class TargetListDelegate(QStyledItemDelegate):
             painter.drawPixmap(icon_x, icon_y, del_pix)
 
         # Prepare fonts using the rich IBM Plex Sans family the user added
-        size_str = self._human_size(size_bytes if size_bytes is not None else -1)
+        size_str = format_file_size(size_bytes if size_bytes is not None else -1)
 
         # Name: SemiBold (DemiBold) — strong but not as heavy as Bold
         name_font = QFont(painter.font())
@@ -303,10 +278,10 @@ class TargetListDelegate(QStyledItemDelegate):
         path_font.setPointSize(8)
         fm_path = QFontMetrics(path_font)
 
-        # Size: Regular / slightly lighter presence
+        # Size: Regular / slightly lighter presence (bumped for readability)
         size_font = QFont(painter.font())
         size_font.setWeight(QFont.Weight.Normal)
-        size_font.setPointSize(7.5)
+        size_font.setPointSize(8)
         fm_size = QFontMetrics(size_font)
 
         size_w = fm_size.horizontalAdvance(size_str)
@@ -404,7 +379,7 @@ class DropZoneLock(QWidget):
 
         self.card_target = MultiDropFrame()
         self.card_target.on_paths_dropped = self._add_paths
-        apply_shadow(self.card_target, blur_radius=30, opacity=40)
+        # Shadow sekarang dihandle oleh wrapper di TabKunci (LeftColumn)
 
         lay_target = QVBoxLayout(self.card_target)
         lay_target.setContentsMargins(2, 2, 2, 2)
@@ -450,19 +425,19 @@ class DropZoneLock(QWidget):
         self.lbl_footer_empty.setObjectName("DropZoneFooter")
         self.lbl_footer_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        lay_empty.addStretch(2)
+        lay_empty.addStretch(1)
         lay_empty.addWidget(self.icon_empty, alignment=Qt.AlignmentFlag.AlignHCenter)
-        lay_empty.addSpacing(18)
+        lay_empty.addSpacing(16)
         lay_empty.addWidget(self.lbl_main_empty)
-        lay_empty.addSpacing(3)
+        lay_empty.addSpacing(2)
         lay_empty.addWidget(self.lbl_sub_empty)
-        lay_empty.addSpacing(22)
+        lay_empty.addSpacing(20)
         lay_empty.addWidget(
             self.btn_empty_browse, alignment=Qt.AlignmentFlag.AlignHCenter
         )
-        lay_empty.addSpacing(28)
+        lay_empty.addSpacing(24)
         lay_empty.addWidget(self.lbl_footer_empty)
-        lay_empty.addStretch(2)
+        lay_empty.addStretch(1)
 
         self.stack_target.addWidget(page_empty)
 
@@ -559,27 +534,6 @@ class DropZoneLock(QWidget):
         lay_list.addWidget(self.inner_frame, 1)
         self.stack_target.addWidget(page_list)
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if not hasattr(self, "icon_empty"):
-            return
-
-        win = self.window()
-        win_h = win.height() if win else self.height()
-        compact = win_h <= 690 or self.card_target.height() < 300
-
-        if compact:
-            self.icon_empty.setMaximumHeight(52)
-            self.lbl_main_empty.setObjectName("DropZoneMainText")
-            self.lbl_sub_empty.setObjectName("DropZoneSubText")
-            self.btn_empty_browse.setFixedSize(180, 34)
-            self.lbl_footer_empty.hide()
-        else:
-            self.icon_empty.setMaximumHeight(85)
-            self.lbl_main_empty.setObjectName("DropZoneMainText")
-            self.lbl_sub_empty.setObjectName("DropZoneSubText")
-            self.btn_empty_browse.setFixedSize(220, 42)
-            self.lbl_footer_empty.show()
 
     def _update_card_style(self, is_empty: bool):
         """Update visual state via properties (styled globally in styles.py)."""

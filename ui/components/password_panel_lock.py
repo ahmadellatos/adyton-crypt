@@ -10,13 +10,13 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QLabel,
     QPushButton,
-    QLineEdit,
     QFrame,
+    QLineEdit,
 )
 from PySide6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve, Signal
 
 # Import dari parent project
-from ..widgets import apply_shadow
+from ..widgets import apply_shadow, PasswordLineEdit
 from ..styles import (
     CLR_TEXT_MAIN,
     CLR_DANGER,
@@ -99,33 +99,10 @@ class PasswordPanelLock(QFrame):
         v_pw1_group = QVBoxLayout()
         v_pw1_group.setSpacing(0)
 
-        box_pw1 = QFrame()
-        self.box_pw1 = box_pw1
-        box_pw1.setObjectName("InputBox")
-        lay_box1 = QHBoxLayout(box_pw1)
-        lay_box1.setContentsMargins(12, 0, 6, 0)
-        lay_box1.setSpacing(0)
-
-        self.entry_pw1 = QLineEdit()
-        self.entry_pw1.setObjectName("InputInside")
-        self.entry_pw1.setFixedHeight(45)
-        self.entry_pw1.setEchoMode(QLineEdit.EchoMode.Password)
-        self.entry_pw1.setPlaceholderText("Buat password yang kuat...")
+        self.entry_pw1 = PasswordLineEdit("Buat password yang kuat...")
         self.entry_pw1.setAccessibleName("Password Baru")
         self.entry_pw1.textChanged.connect(self._on_pw_change)
-        lay_box1.addWidget(self.entry_pw1)
-
-        self.btn_toggle_pw1 = QPushButton()
-        self.btn_toggle_pw1.setIcon(qta.icon("mdi6.eye-outline", color=CLR_TEXT_MUTED))
-        self.btn_toggle_pw1.setIconSize(QSize(22, 22))
-        self.btn_toggle_pw1.setObjectName("BtnEye")
-        self.btn_toggle_pw1.setFixedSize(44, 45)   # sedikit lebih lebar untuk keseimbangan visual & target klik
-        self.btn_toggle_pw1.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_toggle_pw1.clicked.connect(
-            lambda: self._toggle_field(self.entry_pw1, self.btn_toggle_pw1)
-        )
-        lay_box1.addWidget(self.btn_toggle_pw1)
-        v_pw1_group.addWidget(box_pw1)
+        v_pw1_group.addWidget(self.entry_pw1)
 
         # Strength bar (animasi collapse)
         self.widget_strength = QWidget()
@@ -210,33 +187,10 @@ class PasswordPanelLock(QFrame):
         lbl_in2.setObjectName("SectionLabel")
         lay_pw.addWidget(lbl_in2)
 
-        box_pw2 = QFrame()
-        self.box_pw2 = box_pw2
-        box_pw2.setObjectName("InputBox")
-        lay_box2 = QHBoxLayout(box_pw2)
-        lay_box2.setContentsMargins(12, 0, 6, 0)
-        lay_box2.setSpacing(0)
-
-        self.entry_pw2 = QLineEdit()
-        self.entry_pw2.setObjectName("InputInside")
-        self.entry_pw2.setFixedHeight(45)
-        self.entry_pw2.setEchoMode(QLineEdit.EchoMode.Password)
-        self.entry_pw2.setPlaceholderText("Ketik ulang password...")
+        self.entry_pw2 = PasswordLineEdit("Ketik ulang password...")
         self.entry_pw2.setAccessibleName("Konfirmasi Password Baru")
         self.entry_pw2.textChanged.connect(self._on_pw_change)
-        lay_box2.addWidget(self.entry_pw2)
-
-        self.btn_toggle_pw2 = QPushButton()
-        self.btn_toggle_pw2.setIcon(qta.icon("mdi6.eye-outline", color=CLR_TEXT_MUTED))
-        self.btn_toggle_pw2.setIconSize(QSize(22, 22))
-        self.btn_toggle_pw2.setObjectName("BtnEye")
-        self.btn_toggle_pw2.setFixedSize(44, 45)   # sedikit lebih lebar untuk keseimbangan visual & target klik
-        self.btn_toggle_pw2.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_toggle_pw2.clicked.connect(
-            lambda: self._toggle_field(self.entry_pw2, self.btn_toggle_pw2)
-        )
-        lay_box2.addWidget(self.btn_toggle_pw2)
-        lay_pw.addWidget(box_pw2)
+        lay_pw.addWidget(self.entry_pw2)
 
         # Indikator match / tidak cocok
         self.lay_match = QHBoxLayout()
@@ -258,33 +212,18 @@ class PasswordPanelLock(QFrame):
     def _setup_accessibility(self):
         self.btn_gen.installEventFilter(self)
         self.entry_pw1.installEventFilter(self)
-        self.btn_toggle_pw1.installEventFilter(self)
         self.entry_pw2.installEventFilter(self)
-        self.btn_toggle_pw2.installEventFilter(self)
 
         self.btn_gen.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setTabOrder(self.btn_gen, self.entry_pw1)
-        self.setTabOrder(self.entry_pw1, self.btn_toggle_pw1)
-        self.setTabOrder(self.btn_toggle_pw1, self.entry_pw2)
-        self.setTabOrder(self.entry_pw2, self.btn_toggle_pw2)
+        self.setTabOrder(self.entry_pw1, self.entry_pw2)
 
     def eventFilter(self, obj, event):
-        if event.type() in (event.Type.FocusIn, event.Type.FocusOut):
-            if (
-                isinstance(obj, QLineEdit)
-                and obj.parent()
-                and obj.parent().objectName() == "InputBox"
-            ):
-                is_focus = event.type() == event.Type.FocusIn
-                box = obj.parent()
-                box.setProperty("focused", is_focus)
-                box.style().unpolish(box)
-                box.style().polish(box)
-
-        elif event.type() == event.Type.KeyPress:
+        # Focus styling is now handled inside PasswordLineEdit
+        if event.type() == event.Type.KeyPress:
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
                 if isinstance(obj, QPushButton):
-                    if obj.objectName() == "BtnEye" or obj == self.btn_gen:
+                    if obj == self.btn_gen:
                         obj.click()
                         return True
 
@@ -306,23 +245,7 @@ class PasswordPanelLock(QFrame):
         self.entry_pw2.setText(pw)
         self.entry_pw1.setEchoMode(QLineEdit.EchoMode.Normal)
         self.entry_pw2.setEchoMode(QLineEdit.EchoMode.Normal)
-        self.btn_toggle_pw1.setIcon(qta.icon("mdi6.eye-off-outline", color=CLR_TEXT_MUTED))
-        self.btn_toggle_pw2.setIcon(qta.icon("mdi6.eye-off-outline", color=CLR_TEXT_MUTED))
 
-    def _toggle_field(self, entry: QLineEdit, btn: QPushButton):
-        mode = (
-            QLineEdit.EchoMode.Normal
-            if entry.echoMode() == QLineEdit.EchoMode.Password
-            else QLineEdit.EchoMode.Password
-        )
-        entry.setEchoMode(mode)
-        color = "#00D2C8" if mode == QLineEdit.EchoMode.Normal else CLR_TEXT_MUTED
-        icon_name = (
-            "mdi6.eye-outline"
-            if mode == QLineEdit.EchoMode.Password
-            else "mdi6.eye-off-outline"
-        )
-        btn.setIcon(qta.icon(icon_name, color=color))
 
     def _on_pw_change(self):
         pw1, pw2 = self.entry_pw1.text(), self.entry_pw2.text()
@@ -427,10 +350,6 @@ class PasswordPanelLock(QFrame):
 
         self.entry_pw1.clear()
         self.entry_pw2.clear()
-        self.entry_pw1.setEchoMode(QLineEdit.EchoMode.Password)
-        self.entry_pw2.setEchoMode(QLineEdit.EchoMode.Password)
-        self.btn_toggle_pw1.setIcon(qta.icon("mdi6.eye-outline", color=CLR_TEXT_MUTED))
-        self.btn_toggle_pw2.setIcon(qta.icon("mdi6.eye-outline", color=CLR_TEXT_MUTED))
 
         self.entry_pw1.blockSignals(False)
         self.entry_pw2.blockSignals(False)

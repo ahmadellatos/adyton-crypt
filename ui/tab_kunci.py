@@ -7,7 +7,7 @@ Deskripsi: Controller utama untuk Tab "Kunci Folder".
 import os
 import time
 from loguru import logger
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFileDialog, QDialog
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFileDialog, QDialog, QFrame
 from PySide6.QtCore import Qt, Signal
 
 from core.vault import kunci_brankas, VaultStatus
@@ -15,6 +15,8 @@ from core.worker import CryptoWorker
 from .widgets import AnimatedNotifBar, apply_shadow
 from .buttons import BigActionBtn
 from .dialogs import ModernMessageBox
+from .constants import APP_NAME
+from .utils import get_eta_string, format_progress_label, apply_cancelling_state, start_crypto_worker
 
 # --- IMPORT SMART COMPONENTS (Sesuai dengan nama asli file lu!) ---
 from .components.drop_zone_lock import DropZoneLock
@@ -52,8 +54,8 @@ class TabKunci(QWidget):
         v_left = QVBoxLayout()
         v_left.addWidget(self.drop_zone, 1)
         v_left.addWidget(self.options_panel)
-        h_cols.addLayout(v_left, 1)
 
+        h_cols.addLayout(v_left, 1)
         h_cols.addWidget(self.password_panel, 1)
         main_layout.addLayout(h_cols)
 
@@ -107,47 +109,16 @@ class TabKunci(QWidget):
 
     def _update_progress(self, val):
         if self.worker and not getattr(self.worker, "_is_cancelled", False):
-            eta_str = self._get_eta_string(val)
+            eta_str = get_eta_string(self._crypto_start_time, val)
+            title, subtitle = format_progress_label(val, "kunci", eta_str)
+            self.btn_aksi.setTextLabels(title, subtitle)
 
-            if val <= 0.85:
-                pct = int(val * 100)
-                self.btn_aksi.setTextLabels(
-                    "MENGUNCI DATA...", f"{pct}%  •  {eta_str}"
-                )
-            else:
-                final_pct = int((val - 0.85) / 0.15 * 100)
-                self.btn_aksi.setTextLabels(
-                    "FINALISASI...", f"{final_pct}%  •  {eta_str}"
-                )
-
-    def _get_eta_string(self, progress: float) -> str:
-        """Hitung estimasi waktu tersisa berdasarkan progress."""
-        if self._crypto_start_time is None or progress <= 0.01:
-            return "Menghitung..."
-
-        elapsed = time.time() - self._crypto_start_time
-        if elapsed < 0.5:
-            return "Menghitung..."
-
-        # Estimasi total waktu berdasarkan progress saat ini
-        estimated_total = elapsed / progress
-        remaining = estimated_total - elapsed
-
-        if remaining < 1:
-            return "Hampir selesai"
-        elif remaining < 60:
-            return f"~{int(remaining)} detik lagi"
-        else:
-            minutes = int(remaining // 60)
-            seconds = int(remaining % 60)
-            return f"~{minutes}m {seconds}s lagi"
 
     def _proses(self):
         if self.worker is not None and self.worker.isRunning():
             self.worker.cancel()
             self._crypto_start_time = None
-            self.btn_aksi.setTextLabels("MEMBATALKAN...", "Harap tunggu...")
-            self.btn_aksi.setEnabled(False)
+            apply_cancelling_state(self.btn_aksi)
             return
 
         paths = self.drop_zone.get_paths()
@@ -188,10 +159,7 @@ class TabKunci(QWidget):
         self.password_panel.reset_fields()
         self._is_password_valid = False
 
-        self.worker.progress.connect(self._update_progress)
-        self.worker.finished.connect(self._on_selesai)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.worker.start()
+        start_crypto_worker(self.worker, self._update_progress, self._on_selesai)
 
     def _set_busy(self, busy: bool):
         self.drop_zone.set_busy(busy)
@@ -225,7 +193,7 @@ class TabKunci(QWidget):
 
             # PANCARKAN SINYAL KE APP.PY UNTUK WINOTIFY
             self.system_notification.emit(
-                "Enkripsi Sukses", "Brankas dikunci dengan aman."
+                APP_NAME, "Brankas dikunci dengan aman."
             )
 
         elif status == VaultStatus.CANCELLED:

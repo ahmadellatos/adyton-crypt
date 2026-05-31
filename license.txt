@@ -1,0 +1,36 @@
+ADYTON CRYPT - END USER LICENSE AGREEMENT
+
+Copyright (c) 2026 Adyton Security
+
+IMPORTANT: READ THIS AGREEMENT CAREFULLY BEFORE INSTALLING OR USING THE SOFTWARE.
+
+By installing, copying, or otherwise using Adyton Crypt ("the Software"), you agree to be bound by the terms of this End User License Agreement ("Agreement").
+
+1. LICENSE GRANT
+Adyton Security grants you a non-exclusive, non-transferable license to use the Software for personal or commercial purposes, subject to the terms of this Agreement.
+
+2. RESTRICTIONS
+You may not:
+- Reverse engineer, decompile, or disassemble the Software.
+- Modify, translate, or create derivative works based on the Software.
+- Rent, lease, lend, sell, sublicense, or otherwise transfer rights to the Software.
+- Use the Software for any illegal purpose or in violation of any applicable laws.
+
+3. PRIVACY & DATA
+The Software is designed to encrypt and protect your files locally. Adyton Crypt does not collect, transmit, or store your files or encryption keys on any server. All cryptographic operations are performed locally on your device.
+
+4. DISCLAIMER OF WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+5. LIMITATION OF LIABILITY
+IN NO EVENT SHALL ADYTON SECURITY BE LIABLE FOR ANY SPECIAL, INCIDENTAL, INDIRECT, OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE THE SOFTWARE.
+
+6. TERMINATION
+This license will terminate automatically if you fail to comply with any term of this Agreement.
+
+7. GOVERNING LAW
+This Agreement shall be governed by the laws of the Republic of Indonesia.
+
+If you do not agree to these terms, do not install or use the Software.
+
+Adyton Security
