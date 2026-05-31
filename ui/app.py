@@ -108,8 +108,8 @@ class AppBrankas(FramelessMainWindow):
         self.stacked_tabs.addWidget(self.tab_kunci)
         self.stacked_tabs.addWidget(self.tab_buka)
 
-        self.tab_kunci.btn_aksi.clicked.connect(self._update_tray_on_busy)
-        self.tab_buka.btn_aksi.clicked.connect(self._update_tray_on_busy)
+        self.tab_kunci.worker_started.connect(self._bind_worker_to_tray)
+        self.tab_buka.worker_started.connect(self._bind_worker_to_tray)
         self.tab_kunci.system_notification.connect(self._show_system_notif)
         self.tab_buka.system_notification.connect(self._show_system_notif)
 
@@ -171,37 +171,18 @@ class AppBrankas(FramelessMainWindow):
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self.showNormal()
 
-    def _update_tray_on_busy(self) -> None:
-        """Update tooltip tray sesuai status worker yang sedang berjalan.
-        Signal progress & finished di-connect ke worker yang baru dibuat,
-        sehingga tidak ada penumpukan listener dari sesi sebelumnya.
+    def _bind_worker_to_tray(self, worker) -> None:
+        """Bind progress/finished signals dari worker baru ke tray tooltip.
+        Dipanggil via worker_started signal, sehingga tidak ada akumulasi koneksi.
         """
-        kunci_busy = (
-            self.tab_kunci.worker is not None and self.tab_kunci.worker.isRunning()
-        )
-        buka_busy = (
-            self.tab_buka.worker is not None and self.tab_buka.worker.isRunning()
-        )
+        if not worker:
+            return
 
-        if kunci_busy:
-            worker = self.tab_kunci.worker
-            self.tray.setToolTip(f"{APP_NAME} — Sedang mengenkripsi...")
-            worker.progress.connect(
-                lambda v: self.tray.setToolTip(
-                    f"{APP_NAME} — Mengenkripsi {int(v * 100)}%"
-                )
-            )
-            worker.finished.connect(lambda: self.tray.setToolTip(APP_NAME))
-
-        elif buka_busy:
-            worker = self.tab_buka.worker
-            self.tray.setToolTip(f"{APP_NAME} — Sedang mendekripsi...")
-            worker.progress.connect(
-                lambda v: self.tray.setToolTip(
-                    f"{APP_NAME} — Mendekripsi {int(v * 100)}%"
-                )
-            )
-            worker.finished.connect(lambda: self.tray.setToolTip(APP_NAME))
+        self.tray.setToolTip(f"{APP_NAME} — Sedang memproses...")
+        worker.progress.connect(
+            lambda v: self.tray.setToolTip(f"{APP_NAME} — Progress {int(v * 100)}%")
+        )
+        worker.finished.connect(lambda: self.tray.setToolTip(APP_NAME))
 
     # =========================================================================
     # NOTIFIKASI

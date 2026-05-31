@@ -30,6 +30,8 @@ from ..utils import format_file_size
 
 
 class MultiDropFrame(QFrame):
+    drag_state_changed = Signal(bool)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("DropArea")
@@ -48,11 +50,7 @@ class MultiDropFrame(QFrame):
         self.setProperty("dragActive", state)
         self.style().unpolish(self)
         self.style().polish(self)
-
-        # Intensify icon glow when dragging (look for icon on parent DropZoneLock)
-        parent = self.parent()
-        if parent and hasattr(parent, "icon_empty") and parent.icon_empty:
-            parent.icon_empty.set_drag_active(state)
+        self.drag_state_changed.emit(state)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -176,6 +174,24 @@ class TargetListDelegate(QStyledItemDelegate):
         super().__init__(parent)
         self._hovered_row = -1
         self._icon_cache = {}
+        self._cached_base_font = None
+
+        # Initialize with safe defaults so paint() never crashes
+        default_font = QFont()
+        self.name_font = QFont(default_font)
+        self.name_font.setWeight(QFont.Weight.DemiBold)
+        self.name_font.setPointSize(9.5)
+        self.fm_name = QFontMetrics(self.name_font)
+
+        self.path_font = QFont(default_font)
+        self.path_font.setWeight(QFont.Weight.Light)
+        self.path_font.setPointSize(8)
+        self.fm_path = QFontMetrics(self.path_font)
+
+        self.size_font = QFont(default_font)
+        self.size_font.setWeight(QFont.Weight.Normal)
+        self.size_font.setPointSize(8)
+        self.fm_size = QFontMetrics(self.size_font)
 
     def _get_icon(self, path: str, size: int = 26):
         key = (path, size)
@@ -196,9 +212,30 @@ class TargetListDelegate(QStyledItemDelegate):
         color = "#FFFFFF" if is_hovered else "#8B95A5"
         return qta.icon("mdi6.close", color=color).pixmap(size, size)
 
+    def _update_font_cache(self, base_font: QFont):
+        """Cache font objects to avoid expensive recreation on every paint() call."""
+        if self._cached_base_font == base_font:
+            return
+        self._cached_base_font = QFont(base_font)
+
+        self.name_font = QFont(base_font)
+        self.name_font.setWeight(QFont.Weight.DemiBold)
+        self.name_font.setPointSize(9.5)
+        self.fm_name = QFontMetrics(self.name_font)
+
+        self.path_font = QFont(base_font)
+        self.path_font.setWeight(QFont.Weight.Light)
+        self.path_font.setPointSize(8)
+        self.fm_path = QFontMetrics(self.path_font)
+
+        self.size_font = QFont(base_font)
+        self.size_font.setWeight(QFont.Weight.Normal)
+        self.size_font.setPointSize(8)
+        self.fm_size = QFontMetrics(self.size_font)
 
     def paint(self, painter: QPainter, option, index):
         painter.save()
+        self._update_font_cache(painter.font())
 
         # Make text crisp (fixes "pecah" / blurry text)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
@@ -263,28 +300,10 @@ class TargetListDelegate(QStyledItemDelegate):
             icon_y = del_y + (del_size - (del_size - 4)) // 2
             painter.drawPixmap(icon_x, icon_y, del_pix)
 
-        # Prepare fonts using the rich IBM Plex Sans family the user added
+        # Use cached fonts (performance optimization)
         size_str = format_file_size(size_bytes if size_bytes is not None else -1)
 
-        # Name: SemiBold (DemiBold) — strong but not as heavy as Bold
-        name_font = QFont(painter.font())
-        name_font.setWeight(QFont.Weight.DemiBold)
-        name_font.setPointSize(9.5)
-        fm_name = QFontMetrics(name_font)
-
-        # Path: Light weight (new fonts) — delicate, secondary info
-        path_font = QFont(painter.font())
-        path_font.setWeight(QFont.Weight.Light)
-        path_font.setPointSize(8)
-        fm_path = QFontMetrics(path_font)
-
-        # Size: Regular / slightly lighter presence (bumped for readability)
-        size_font = QFont(painter.font())
-        size_font.setWeight(QFont.Weight.Normal)
-        size_font.setPointSize(8)
-        fm_size = QFontMetrics(size_font)
-
-        size_w = fm_size.horizontalAdvance(size_str)
+        size_w = self.fm_size.horizontalAdvance(size_str)
 
         # Right reservation: always leave room for size + comfortable gap.
         # When hovering, also reserve space for the delete button.
@@ -305,20 +324,20 @@ class TargetListDelegate(QStyledItemDelegate):
         max_name_w = max(80, (content.right() - name_right_reserve - (del_size + 6 if show_delete else 0)) - text_x)
 
         # === NAME (SemiBold 9.5pt) ===
-        painter.setFont(name_font)
-        elided_name = fm_name.elidedText(name, Qt.TextElideMode.ElideMiddle, max_name_w)
+        painter.setFont(self.name_font)
+        elided_name = self.fm_name.elidedText(name, Qt.TextElideMode.ElideMiddle, max_name_w)
         painter.setPen(QColor("#FFFFFF"))
         name_y = content.top() + 13
         painter.drawText(text_x, name_y, elided_name)
 
-        # === PATH (Light 8pt) + SIZE (Regular 7.5pt) ===
-        painter.setFont(path_font)
+        # === PATH (Light 8pt) + SIZE (Regular 8pt) ===
+        painter.setFont(self.path_font)
         dirname = os.path.dirname(path) or ""
-        path_elided = fm_path.elidedText(dirname, Qt.TextElideMode.ElideMiddle, max_path_w)
+        path_elided = self.fm_path.elidedText(dirname, Qt.TextElideMode.ElideMiddle, max_path_w)
         painter.setPen(QColor("#8B95A5"))
         painter.drawText(text_x, name_y + 15, path_elided)
 
-        painter.setFont(size_font)
+        painter.setFont(self.size_font)
         painter.setPen(QColor("#6B7688"))
         painter.drawText(size_x, name_y + 15, size_str)
 
@@ -401,6 +420,10 @@ class DropZoneLock(QWidget):
 
         self.icon_empty = HeroIconWidget(mode="kunci")
         self.icon_empty.setMaximumHeight(85)
+
+        # Connect drag signal (decoupled - no parent(). access)
+        if hasattr(self, "card_target"):
+            self.card_target.drag_state_changed.connect(self.icon_empty.set_drag_active)
 
         self.lbl_main_empty = QLabel("Drag & drop file atau folder ke sini")
         self.lbl_main_empty.setObjectName("DropZoneMainText")

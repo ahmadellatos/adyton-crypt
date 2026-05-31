@@ -25,6 +25,9 @@ class CryptoWorker(QThread):
     def cancel(self):
         self._is_cancelled = True
 
+    def is_cancelled(self) -> bool:
+        return self._is_cancelled
+
     def run(self):
         try:
             sig = inspect.signature(self.func)

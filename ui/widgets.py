@@ -23,7 +23,7 @@ from PySide6.QtCore import (
     QPoint,
     Signal,
 )
-from PySide6.QtGui import QColor, QCursor, QPixmap
+from PySide6.QtGui import QColor, QCursor, QPixmap, QGuiApplication
 
 from core.paths import get_asset_path
 
@@ -184,8 +184,23 @@ class CustomToolTip(QLabel):
         self.setText(self._pending_text)
         self.adjustSize()
         pos = QCursor.pos()
-        # Offset biar gak nutupin kursor
-        self.move(pos.x() + 15, pos.y() + 15)
+
+        # Clamp to screen to avoid tooltip going off-screen
+        screen = QGuiApplication.screenAt(pos)
+        if screen:
+            geom = screen.availableGeometry()
+            x = pos.x() + 15
+            y = pos.y() + 15
+
+            if x + self.width() > geom.right():
+                x = pos.x() - self.width() - 5
+            if y + self.height() > geom.bottom():
+                y = pos.y() - self.height() - 5
+
+            self.move(max(geom.left(), x), max(geom.top(), y))
+        else:
+            self.move(pos.x() + 15, pos.y() + 15)
+
         self.show()
 
     def hide_tooltip(self):
@@ -471,6 +486,7 @@ class PasswordLineEdit(QFrame):
     """
 
     textChanged = Signal(str)
+    returnPressed = Signal()  # Proper Signal definition (not @property)
 
     def __init__(self, placeholder: str = "", parent=None):
         super().__init__(parent)
@@ -496,6 +512,7 @@ class PasswordLineEdit(QFrame):
         self.btn_toggle.setFixedSize(44, 45)
         self.btn_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_toggle.clicked.connect(self._toggle_visibility)
+        self.line_edit.returnPressed.connect(self.returnPressed)
         lay.addWidget(self.btn_toggle)
 
         # Store reference to styles (imported at top level)
@@ -548,8 +565,3 @@ class PasswordLineEdit(QFrame):
             self.btn_toggle.setIcon(qta.icon("mdi6.eye-outline", color=self._muted_color))
         else:
             self.btn_toggle.setIcon(qta.icon("mdi6.eye-off-outline", color=self._accent_color))
-
-    # Forward common signals
-    @property
-    def returnPressed(self):
-        return self.line_edit.returnPressed

@@ -26,6 +26,7 @@ from .components.password_panel_open import PasswordPanelOpen
 class TabBuka(QWidget):
     # SINYAL NATIVE untuk ditangkap app.py
     system_notification = Signal(str, str)
+    worker_started = Signal(object)  # emits the CryptoWorker instance
 
     def __init__(self):
         super().__init__()
@@ -131,9 +132,10 @@ class TabBuka(QWidget):
         self.password_panel.reset_field()
 
         start_crypto_worker(self.worker, self._update_progress, self._on_selesai)
+        self.worker_started.emit(self.worker)
 
     def _update_progress(self, val):
-        if self.worker and not getattr(self.worker, "_is_cancelled", False):
+        if self.worker and not self.worker.is_cancelled():
             eta_str = get_eta_string(self._crypto_start_time, val)
             title, subtitle = format_progress_label(val, "buka", eta_str)
             self.btn_aksi.setTextLabels(title, subtitle)

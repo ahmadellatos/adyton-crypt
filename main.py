@@ -149,7 +149,8 @@ def handle_wakeup(server: QLocalServer, window: "AppBrankas") -> None:
     try:
         payload = client.readAll().data().decode("utf-8")
         if payload.startswith("WAKEUP|"):
-            _, path = payload.split("|", 1)
+            parts = payload.split("|", 1)
+            path = parts[1] if len(parts) > 1 else ""
             window.showNormal()
             window.activateWindow()
             window.raise_()

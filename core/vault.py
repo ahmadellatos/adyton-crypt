@@ -94,7 +94,7 @@ def hapus_permanen(
 
         if secure_wipe and not path.is_symlink() and file_size > 0:
             try:
-                path.chmod(stat.S_IWRITE)
+                path.chmod(stat.S_IWRITE | stat.S_IREAD)
                 with path.open("r+b") as f:
                     written = 0
                     random_data = os.urandom(CHUNK_SIZE)
@@ -114,7 +114,7 @@ def hapus_permanen(
         try:
             path.unlink(missing_ok=True)
         except PermissionError:
-            path.chmod(stat.S_IWRITE)
+            path.chmod(stat.S_IWRITE | stat.S_IREAD)
             path.unlink(missing_ok=True)
 
     elif path.is_dir():
@@ -134,7 +134,7 @@ def hapus_permanen(
 
             def _remove_readonly(func, p, excinfo):
                 try:
-                    os.chmod(p, stat.S_IWRITE)
+                    os.chmod(p, stat.S_IWRITE | stat.S_IREAD)
                     func(p)
                 except Exception:
                     logger.debug(f"Gagal hapus readonly file saat rmtree: {p}")
@@ -462,10 +462,7 @@ def kunci_brankas(
 
         encryptor = make_encryptor(key, nonce)
 
-        is_single_file = len(valid_paths) == 1 and Path(valid_paths[0]).is_file()
-        is_single_dir = len(valid_paths) == 1 and Path(valid_paths[0]).is_dir()
-
-        if is_single_file or is_single_dir:
+        if len(valid_paths) == 1:
             nama_virtual = Path(valid_paths[0]).name
             target_dir = ""
         else:
@@ -483,7 +480,7 @@ def kunci_brankas(
                 for p in valid_paths:
                     path_item = Path(p)
                     arcname = (
-                        str(Path(target_dir) / path_item.name)
+                        (Path(target_dir) / path_item.name).as_posix()
                         if target_dir
                         else path_item.name
                     )
@@ -521,14 +518,11 @@ def kunci_brankas(
                 total_wipe = _hitung_total_wipe_size(wipe_paths, True)
                 wiped_counter = [0]
 
-                def _wipe_progress(pct: float):
-                    safe_cb(progress_cb, pct)
-
                 for p in wipe_paths:
                     hapus_permanen(
                         p,
                         secure_wipe=True,
-                        progress_cb=_wipe_progress,
+                        progress_cb=progress_cb,
                         wipe_start_pct=0.90,
                         wipe_end_pct=0.98,
                         total_wipe_bytes=total_wipe,

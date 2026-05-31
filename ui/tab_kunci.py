@@ -27,6 +27,7 @@ from .components.options_panel import OptionsPanel
 class TabKunci(QWidget):
     # SINYAL NATIVE untuk ditangkap app.py
     system_notification = Signal(str, str)
+    worker_started = Signal(object)  # emits the CryptoWorker instance
 
     def __init__(self):
         super().__init__()
@@ -108,7 +109,7 @@ class TabKunci(QWidget):
             )
 
     def _update_progress(self, val):
-        if self.worker and not getattr(self.worker, "_is_cancelled", False):
+        if self.worker and not self.worker.is_cancelled():
             eta_str = get_eta_string(self._crypto_start_time, val)
             title, subtitle = format_progress_label(val, "kunci", eta_str)
             self.btn_aksi.setTextLabels(title, subtitle)
@@ -160,6 +161,7 @@ class TabKunci(QWidget):
         self._is_password_valid = False
 
         start_crypto_worker(self.worker, self._update_progress, self._on_selesai)
+        self.worker_started.emit(self.worker)
 
     def _set_busy(self, busy: bool):
         self.drop_zone.set_busy(busy)
