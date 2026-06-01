@@ -14,7 +14,16 @@ from PySide6.QtWidgets import (
     QStyledItemDelegate,
     QStyle,
 )
-from PySide6.QtCore import Qt, Signal, QAbstractListModel, QModelIndex, QEvent, QRect, QSize, QMimeData
+from PySide6.QtCore import (
+    Qt,
+    Signal,
+    QAbstractListModel,
+    QModelIndex,
+    QEvent,
+    QRect,
+    QSize,
+    QMimeData,
+)
 from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPen
 
 from ..widgets import (
@@ -113,7 +122,11 @@ class TargetListModel(QAbstractListModel):
                 return "file"
         elif role in (Qt.AccessibleTextRole, Qt.AccessibleDescriptionRole):
             basename = os.path.basename(path) or path
-            typ = "Folder" if self.data(index, TargetListModel.TypeRole) == "folder" else "File"
+            typ = (
+                "Folder"
+                if self.data(index, TargetListModel.TypeRole) == "folder"
+                else "File"
+            )
             size_bytes = self.data(index, TargetListModel.SizeRole)
             if size_bytes >= 0:
                 hsize = format_file_size(size_bytes)
@@ -122,7 +135,6 @@ class TargetListModel(QAbstractListModel):
                 return f"{typ} {basename}. Path: {path}"
 
         return None
-
 
     def setPaths(self, paths):
         """Ganti seluruh daftar path."""
@@ -249,7 +261,7 @@ class TargetListDelegate(QStyledItemDelegate):
 
         is_selected = bool(option.state & QStyle.State_Selected)
         is_hovered = index.row() == self._hovered_row
-        is_folder = (index.data(TargetListModel.TypeRole) == "folder")
+        is_folder = index.data(TargetListModel.TypeRole) == "folder"
 
         # Background highlight
         if is_selected:
@@ -260,7 +272,12 @@ class TargetListDelegate(QStyledItemDelegate):
             painter.fillRect(rect, QColor("#182033"))
         else:
             painter.setPen(QPen(QColor("#232B3E"), 1))
-            painter.drawLine(rect.left() + 14, rect.bottom() - 1, rect.right() - 14, rect.bottom() - 1)
+            painter.drawLine(
+                rect.left() + 14,
+                rect.bottom() - 1,
+                rect.right() - 14,
+                rect.bottom() - 1,
+            )
 
         # Keyboard focus indicator
         is_focused_item = bool(option.state & QStyle.State_HasFocus)
@@ -321,11 +338,21 @@ class TargetListDelegate(QStyledItemDelegate):
 
         # Name reservation
         name_right_reserve = 6 if show_delete else 2
-        max_name_w = max(80, (content.right() - name_right_reserve - (del_size + 6 if show_delete else 0)) - text_x)
+        max_name_w = max(
+            80,
+            (
+                content.right()
+                - name_right_reserve
+                - (del_size + 6 if show_delete else 0)
+            )
+            - text_x,
+        )
 
         # === NAME (SemiBold 9.5pt) ===
         painter.setFont(self.name_font)
-        elided_name = self.fm_name.elidedText(name, Qt.TextElideMode.ElideMiddle, max_name_w)
+        elided_name = self.fm_name.elidedText(
+            name, Qt.TextElideMode.ElideMiddle, max_name_w
+        )
         painter.setPen(QColor("#FFFFFF"))
         name_y = content.top() + 13
         painter.drawText(text_x, name_y, elided_name)
@@ -333,7 +360,9 @@ class TargetListDelegate(QStyledItemDelegate):
         # === PATH (Light 8pt) + SIZE (Regular 8pt) ===
         painter.setFont(self.path_font)
         dirname = os.path.dirname(path) or ""
-        path_elided = self.fm_path.elidedText(dirname, Qt.TextElideMode.ElideMiddle, max_path_w)
+        path_elided = self.fm_path.elidedText(
+            dirname, Qt.TextElideMode.ElideMiddle, max_path_w
+        )
         painter.setPen(QColor("#8B95A5"))
         painter.drawText(text_x, name_y + 15, path_elided)
 
@@ -350,7 +379,10 @@ class TargetListDelegate(QStyledItemDelegate):
 
     def editorEvent(self, event, model, option, index):
         """Tangani klik pada tombol hapus (hanya muncul saat hover)."""
-        if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+        if (
+            event.type() == QEvent.Type.MouseButtonRelease
+            and event.button() == Qt.MouseButton.LeftButton
+        ):
             rect = option.rect
             pad_x = 14
             pad_y = 8
@@ -479,7 +511,9 @@ class DropZoneLock(QWidget):
         v_hdr_text = QVBoxLayout()
         v_hdr_text.setSpacing(3)
         lbl_target = QLabel("DAFTAR TARGET")
-        lbl_target.setObjectName("TargetHeaderTitle")   # bigger specific title for daftar target
+        lbl_target.setObjectName(
+            "TargetHeaderTitle"
+        )  # bigger specific title for daftar target
         lbl_target_sub = QLabel("Pilih file atau folder yang akan dikunci")
         lbl_target_sub.setObjectName("CardSubtitle")
         v_hdr_text.addWidget(lbl_target)
@@ -529,7 +563,9 @@ class DropZoneLock(QWidget):
         self.list_view.setUniformItemSizes(True)
         self.list_view.setSelectionMode(QListView.SelectionMode.SingleSelection)
         self.list_view.setEditTriggers(QListView.EditTrigger.NoEditTriggers)
-        self.list_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.list_view.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
         self.list_view.setVerticalScrollMode(QListView.ScrollMode.ScrollPerPixel)
 
         # Drag & drop reordering disabled (not needed for encryption use case)
@@ -557,10 +593,11 @@ class DropZoneLock(QWidget):
         lay_list.addWidget(self.inner_frame, 1)
         self.stack_target.addWidget(page_list)
 
-
     def _update_card_style(self, is_empty: bool):
         """Update visual state via properties (styled globally in styles.py)."""
-        if hasattr(self, "card_target") and hasattr(self.card_target, "set_empty_state"):
+        if hasattr(self, "card_target") and hasattr(
+            self.card_target, "set_empty_state"
+        ):
             self.card_target.set_empty_state(is_empty)
 
     def _setup_accessibility(self):
@@ -591,7 +628,10 @@ class DropZoneLock(QWidget):
                         return True
             # Delete key: hapus item terpilih di daftar target (nice-to-have a11y)
             if event.key() == Qt.Key.Key_Delete:
-                if obj in (self.list_view, getattr(self, 'list_view', None) and self.list_view.viewport()):
+                if obj in (
+                    self.list_view,
+                    getattr(self, "list_view", None) and self.list_view.viewport(),
+                ):
                     idx = self.list_view.currentIndex()
                     if idx.isValid():
                         path = idx.data(Qt.UserRole)

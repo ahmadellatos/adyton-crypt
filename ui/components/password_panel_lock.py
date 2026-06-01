@@ -77,7 +77,7 @@ class PasswordPanelLock(QFrame):
 
         self.btn_gen = QPushButton(" Generator")
         self.btn_gen.setIcon(qta.icon("mdi6.creation", color="white"))
-        self.btn_gen.setFixedHeight(36)   # lebih seimbang dengan header & icon 32px
+        self.btn_gen.setFixedHeight(36)  # lebih seimbang dengan header & icon 32px
         self.btn_gen.setObjectName("BtnGen")
         self.btn_gen.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_gen.setAccessibleName("Generate Password Kuat")
@@ -246,7 +246,6 @@ class PasswordPanelLock(QFrame):
         self.entry_pw1.setEchoMode(QLineEdit.EchoMode.Normal)
         self.entry_pw2.setEchoMode(QLineEdit.EchoMode.Normal)
 
-
     def _on_pw_change(self):
         pw1, pw2 = self.entry_pw1.text(), self.entry_pw2.text()
 
@@ -271,11 +270,15 @@ class PasswordPanelLock(QFrame):
                         f"background-color: {STRENGTH_COLORS[score]}; border-radius: 3px;"
                     )
                 else:
-                    bar.setStyleSheet(f"background-color: {CLR_BORDER}; border-radius: 3px;")
+                    bar.setStyleSheet(
+                        f"background-color: {CLR_BORDER}; border-radius: 3px;"
+                    )
 
             if score < 0:
                 self.lbl_str.setText("Kekuatan: -")
-                self.lbl_str.setStyleSheet(muted_label_style("9pt") + " font-weight: 600;")
+                self.lbl_str.setStyleSheet(
+                    muted_label_style("9pt") + " font-weight: 600;"
+                )
             else:
                 self.lbl_str.setText(f"Kekuatan: {STRENGTH_LABELS[score]}")
                 self.lbl_str.setStyleSheet(
@@ -331,9 +334,12 @@ class PasswordPanelLock(QFrame):
             self.lbl_match_txt.setStyleSheet("color: #E74C3C;")
 
         # Evaluasi final state
+        # Tombol kunci hanya aktif jika seluruh checklist yang ditampilkan
+        # kepada user benar-benar terpenuhi, bukan hanya skor zxcvbn.
         score = pw_strength(pw1)
+        rules_ok = all(rule_ok for rule_ok, _, _ in rules)
         is_strong_enough = score >= 1
-        is_valid = bool(pw1) and (pw1 == pw2) and is_strong_enough
+        is_valid = bool(pw1) and (pw1 == pw2) and rules_ok and is_strong_enough
 
         # Pancarkan sinyal ke parent!
         self.valid_state_changed.emit(is_valid)

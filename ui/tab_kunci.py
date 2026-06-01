@@ -5,9 +5,15 @@ Deskripsi: Controller utama untuk Tab "Kunci Folder".
 """
 
 import os
-import time
 from loguru import logger
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFileDialog, QDialog, QFrame
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QFileDialog,
+    QDialog,
+    QFrame,
+)
 from PySide6.QtCore import Qt, Signal
 
 from core.vault import kunci_brankas, VaultStatus
@@ -17,7 +23,13 @@ from .utils import apply_shadow
 from .buttons import BigActionBtn
 from .dialogs import ModernMessageBox
 from .constants import APP_NAME
-from .utils import get_eta_string, format_progress_label, apply_cancelling_state, start_crypto_worker
+from .utils import (
+    ProgressETA,
+    format_progress_label,
+    format_user_error,
+    apply_cancelling_state,
+    start_crypto_worker,
+)
 
 # --- IMPORT SMART COMPONENTS (Sesuai dengan nama asli file lu!) ---
 from .components.drop_zone_lock import DropZoneLock
@@ -35,7 +47,7 @@ class TabKunci(QWidget):
         self.worker: CryptoWorker | None = None
         self._is_password_valid = False
         self._has_files = False
-        self._crypto_start_time: float | None = None
+        self._progress_eta = ProgressETA()
 
         self._build_ui()
         self._connect_signals()
@@ -48,6 +60,7 @@ class TabKunci(QWidget):
         # Inisialisasi sesuai nama Class asli lu
         self.drop_zone = DropZoneLock()
         self.options_panel = OptionsPanel()
+        self.options_panel.hide()
         self.password_panel = PasswordPanelLock()
 
         h_cols = QHBoxLayout()
@@ -67,7 +80,9 @@ class TabKunci(QWidget):
         self.btn_aksi.setAccessibleName("Tombol Kunci Brankas")
         self.btn_aksi.setEnabled(False)
         self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        apply_shadow(self.btn_aksi, blur_radius=24, y_offset=5, opacity=85)  # Option B: sedikit lebih berani
+        apply_shadow(
+            self.btn_aksi, blur_radius=24, y_offset=5, opacity=85
+        )  # Option B: sedikit lebih berani
 
         main_layout.addWidget(self.btn_aksi)
         self.notif = AnimatedNotifBar(self)
@@ -84,6 +99,7 @@ class TabKunci(QWidget):
 
     def _on_paths_changed(self, paths: list):
         self._has_files = len(paths) > 0
+        self.options_panel.setVisible(self._has_files)
         self._validate_state()
 
     def _on_password_valid_changed(self, is_valid: bool):
@@ -111,15 +127,14 @@ class TabKunci(QWidget):
 
     def _update_progress(self, val):
         if self.worker and not self.worker.is_cancelled():
-            eta_str = get_eta_string(self._crypto_start_time, val)
+            eta_str = self._progress_eta.update(val)
             title, subtitle = format_progress_label(val, "kunci", eta_str)
             self.btn_aksi.setTextLabels(title, subtitle)
-
 
     def _proses(self):
         if self.worker is not None and self.worker.isRunning():
             self.worker.cancel()
-            self._crypto_start_time = None
+            self._progress_eta.reset()
             apply_cancelling_state(self.btn_aksi)
             return
 
@@ -131,7 +146,10 @@ class TabKunci(QWidget):
         if hapus_asli:
             dialog = ModernMessageBox(
                 title="Konfirmasi Hapus Asli",
-                message="File atau folder asli akan DIHAPUS PERMANEN setelah berhasil dikunci.\n\nApakah Anda yakin ingin melanjutkan?",
+                message=(
+                    "File atau folder asli akan dihapus setelah brankas berhasil dibuat dan diverifikasi.\n\n"
+                    "Pastikan Anda masih memiliki backup penting sebelum melanjutkan."
+                ),
                 parent=self,
             )
             if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -146,7 +164,7 @@ class TabKunci(QWidget):
         if not path_simpan:
             return
 
-        self._crypto_start_time = time.time()
+        self._progress_eta.reset()
         self._set_busy(True)
         self.worker = CryptoWorker(
             kunci_brankas,
@@ -188,20 +206,19 @@ class TabKunci(QWidget):
             self.options_panel.reset_options()
 
         self._set_busy(False)
-        self._crypto_start_time = None
+        self._progress_eta.reset()
 
         if status == VaultStatus.SUCCESS:
             logger.info(f"Enkripsi sukses: {msg}")
             self.notif.show_msg("ok", f" {msg}", 6000)
 
             # PANCARKAN SINYAL KE APP.PY UNTUK WINOTIFY
-            self.system_notification.emit(
-                APP_NAME, "Brankas dikunci dengan aman."
-            )
+            self.system_notification.emit(APP_NAME, "Brankas dikunci dengan aman.")
 
         elif status == VaultStatus.CANCELLED:
             logger.info("Enkripsi dibatalkan oleh pengguna.")
             self.notif.show_msg("warn", "Proses penguncian dibatalkan.", 4000)
         else:
+            user_msg = format_user_error(status, msg, "kunci")
             logger.error(f"Gagal mengunci: {msg}")
-            self.notif.show_msg("err", f" {msg}", 6000)
+            self.notif.show_msg("err", user_msg, 8000)

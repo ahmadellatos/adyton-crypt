@@ -5,7 +5,6 @@ Deskripsi: Controller utama untuk Tab "Buka Brankas".
 """
 
 import os
-import time
 from loguru import logger
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QDialog
 from PySide6.QtCore import Qt, Signal
@@ -17,7 +16,13 @@ from .utils import apply_shadow
 from .buttons import BigActionBtn
 from .dialogs import ModernMessageBox
 from .constants import APP_NAME
-from .utils import get_eta_string, format_progress_label, apply_cancelling_state, start_crypto_worker
+from .utils import (
+    ProgressETA,
+    format_progress_label,
+    format_user_error,
+    apply_cancelling_state,
+    start_crypto_worker,
+)
 
 # --- IMPORT SMART COMPONENTS (Sesuai dengan nama asli file lu!) ---
 from .components.drop_zone_open import DropZoneOpen
@@ -36,7 +41,7 @@ class TabBuka(QWidget):
         self._cached_pw = None
         self._has_file = False
         self._has_password = False
-        self._crypto_start_time: float | None = None
+        self._progress_eta = ProgressETA()
 
         self._build_ui()
         self._connect_signals()
@@ -53,7 +58,7 @@ class TabBuka(QWidget):
         self.password_panel = PasswordPanelOpen()
 
         h_container = QHBoxLayout()
-        h_container.setSpacing(28)   # More generous separation between columns
+        h_container.setSpacing(28)  # More generous separation between columns
         h_container.addWidget(self.drop_zone, 1)
         h_container.addWidget(self.password_panel, 1)
         main_layout.addLayout(h_container)
@@ -108,7 +113,7 @@ class TabBuka(QWidget):
     def _proses(self):
         if self.worker is not None and self.worker.isRunning():
             self.worker.cancel()
-            self._crypto_start_time = None
+            self._progress_eta.reset()
             apply_cancelling_state(self.btn_aksi)
             return
 
@@ -127,7 +132,7 @@ class TabBuka(QWidget):
         if not path_file or not pw:
             return
 
-        self._crypto_start_time = time.time()
+        self._progress_eta.reset()
         self._set_busy(True)
         self.worker = CryptoWorker(buka_brankas, path_file, pw, force, parent=self)
         self.password_panel.reset_field()
@@ -137,10 +142,9 @@ class TabBuka(QWidget):
 
     def _update_progress(self, val):
         if self.worker and not self.worker.is_cancelled():
-            eta_str = get_eta_string(self._crypto_start_time, val)
+            eta_str = self._progress_eta.update(val)
             title, subtitle = format_progress_label(val, "buka", eta_str)
             self.btn_aksi.setTextLabels(title, subtitle)
-
 
     def _set_busy(self, busy: bool):
         self.drop_zone.set_busy(busy)
@@ -157,14 +161,14 @@ class TabBuka(QWidget):
                 "BUKA BRANKAS", "Masukkan password untuk membuka"
             )
             self._validate_state()
-            self._crypto_start_time = None
+            self._progress_eta.reset()
 
     def _on_selesai(self, result):
         self.worker = None
         status, msg = result
 
         self._set_busy(False)
-        self._crypto_start_time = None
+        self._progress_eta.reset()
 
         if status != VaultStatus.OVERWRITE_NEEDED:
             self._cached_pw = None
@@ -177,9 +181,7 @@ class TabBuka(QWidget):
             )
 
             # PANCARKAN SINYAL KE APP.PY UNTUK WINOTIFY
-            self.system_notification.emit(
-                APP_NAME, f"Brankas '{msg}' berhasil dibuka."
-            )
+            self.system_notification.emit(APP_NAME, f"Brankas '{msg}' berhasil dibuka.")
 
         elif status == VaultStatus.CANCELLED:
             logger.info("Dekripsi dibatalkan pengguna.")
@@ -187,12 +189,16 @@ class TabBuka(QWidget):
 
         elif status == VaultStatus.WRONG_PASSWORD:
             logger.warning("Dekripsi gagal: Password salah.")
-            self.notif.show_msg("err", "Password salah atau file corrupted! Coba lagi.")
+            self.notif.show_msg("err", format_user_error(status, msg, "buka"), 8000)
 
         elif status == VaultStatus.OVERWRITE_NEEDED:
             dialog = ModernMessageBox(
                 title="Konfirmasi Timpa File",
-                message=f"Folder/File bernama '{msg}' sudah ada di lokasi tujuan.\n\nApakah Anda yakin ingin menimpanya? Data lama akan hilang secara permanen.",
+                message=(
+                    f"Folder/file bernama '{msg}' sudah ada di lokasi tujuan.\n\n"
+                    "Adyton akan mengekstrak ke lokasi sementara terlebih dahulu, lalu mengganti data lama hanya setelah proses buka brankas sukses.\n\n"
+                    "Lanjutkan menimpa data lama?"
+                ),
                 icon_name="mdi6.alert-decagram",
                 icon_color="#E74C3C",
                 parent=self,
@@ -209,7 +215,7 @@ class TabBuka(QWidget):
                 logger.info("Dekripsi dibatalkan: User menolak overwrite file asli.")
         else:
             logger.error(f"Dekripsi gagal: {msg}")
-            self.notif.show_msg("err", f"Error: {msg}", 8000)
+            self.notif.show_msg("err", format_user_error(status, msg, "buka"), 8000)
 
     def auto_load_file(self, path: str) -> None:
         self.drop_zone.load_file(path)

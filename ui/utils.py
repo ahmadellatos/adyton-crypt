@@ -6,26 +6,113 @@ Berisi helper untuk progress bar dan estimasi waktu.
 import time
 
 
+def _format_eta_seconds(remaining: float) -> str:
+    """Format ETA dengan pembulatan stabil dan bahasa yang mudah dipahami."""
+    if remaining < 1:
+        return "Hampir selesai"
+    if remaining < 60:
+        return f"~{int(round(remaining))} detik lagi"
+
+    minutes = int(remaining // 60)
+    seconds = int(remaining % 60)
+    if minutes < 60:
+        return f"~{minutes}m {seconds:02d}s lagi"
+
+    hours = minutes // 60
+    minutes = minutes % 60
+    return f"~{hours}j {minutes:02d}m lagi"
+
+
 def get_eta_string(start_time: float | None, progress: float) -> str:
-    """Hitung estimasi waktu tersisa berdasarkan progress."""
+    """Hitung estimasi waktu tersisa sederhana.
+
+    Dipertahankan untuk kompatibilitas lama. Untuk UI live gunakan
+    ``ProgressETA`` karena estimator itu menahan progress mundur dan memakai
+    smoothed transfer rate agar ETA tidak meloncat-loncat.
+    """
     if start_time is None or progress <= 0.01:
         return "Menghitung..."
 
-    elapsed = time.time() - start_time
-    if elapsed < 0.5:
+    elapsed = time.monotonic() - start_time
+    if elapsed < 0.75:
         return "Menghitung..."
 
-    estimated_total = elapsed / progress
-    remaining = estimated_total - elapsed
+    remaining = max((elapsed / max(progress, 1e-6)) - elapsed, 0.0)
+    return _format_eta_seconds(remaining)
 
-    if remaining < 1:
-        return "Hampir selesai"
-    elif remaining < 60:
-        return f"~{int(remaining)} detik lagi"
-    else:
-        minutes = int(remaining // 60)
-        seconds = int(remaining % 60)
-        return f"~{minutes}m {seconds}s lagi"
+
+class ProgressETA:
+    """Estimator ETA stateful untuk progress UI.
+
+    Callback crypto bisa datang dengan jarak tidak rata dan beberapa fase punya
+    bobot berbeda. Estimator ini menjaga progress tetap monotonik, menghaluskan
+    rate memakai exponential moving average, dan menahan display ETA agar tidak
+    berubah terlalu sering.
+    """
+
+    def __init__(self, smoothing: float = 0.25, min_update_interval: float = 0.75):
+        self.smoothing = max(0.01, min(1.0, smoothing))
+        self.min_update_interval = max(0.1, min_update_interval)
+        self.reset()
+
+    def reset(self) -> None:
+        self.start_time: float | None = None
+        self.last_time: float | None = None
+        self.last_display_time: float | None = None
+        self.last_progress = 0.0
+        self.smoothed_rate: float | None = None
+        self.last_eta = "Menghitung..."
+
+    def update(self, progress: float) -> str:
+        now = time.monotonic()
+        progress = max(0.0, min(0.999, float(progress)))
+
+        if self.start_time is None:
+            self.start_time = now
+            self.last_time = now
+            self.last_progress = progress
+            return self.last_eta
+
+        # Jangan biarkan callback fase sebelumnya membuat progress mundur di UI.
+        if progress < self.last_progress:
+            progress = self.last_progress
+
+        elapsed = now - self.start_time
+        if progress <= 0.015 or elapsed < 1.0:
+            self.last_progress = progress
+            self.last_time = now
+            return self.last_eta
+
+        if self.last_time is not None:
+            dt = max(now - self.last_time, 1e-6)
+            dp = max(progress - self.last_progress, 0.0)
+            if dp > 0:
+                instant_rate = dp / dt
+                if self.smoothed_rate is None:
+                    self.smoothed_rate = instant_rate
+                else:
+                    self.smoothed_rate = (
+                        self.smoothing * instant_rate
+                        + (1.0 - self.smoothing) * self.smoothed_rate
+                    )
+
+        self.last_progress = progress
+        self.last_time = now
+
+        if not self.smoothed_rate or self.smoothed_rate <= 1e-9:
+            return self.last_eta
+
+        if (
+            self.last_display_time is not None
+            and now - self.last_display_time < self.min_update_interval
+            and progress < 0.985
+        ):
+            return self.last_eta
+
+        remaining = max((1.0 - progress) / self.smoothed_rate, 0.0)
+        self.last_eta = _format_eta_seconds(remaining)
+        self.last_display_time = now
+        return self.last_eta
 
 
 def format_progress_label(val: float, mode: str, eta_str: str) -> tuple[str, str]:
@@ -46,6 +133,34 @@ def format_progress_label(val: float, mode: str, eta_str: str) -> tuple[str, str
         subtitle = f"{final_pct}%  •  {eta_str}"
 
     return title, subtitle
+
+
+def format_user_error(status, message: str | None, mode: str) -> str:
+    """Ubah status core menjadi pesan UI yang lebih ramah dan actionable."""
+    status_name = getattr(status, "name", str(status)).lower()
+    raw = (message or "").strip()
+
+    if "wrong_password" in status_name:
+        return (
+            "Password tidak cocok, file bukan brankas Adyton yang valid, "
+            "atau isi brankas sudah rusak. Periksa password dan coba lagi."
+        )
+
+    if "cancelled" in status_name:
+        return "Proses dibatalkan. File tujuan belum diganti."
+
+    prefix = (
+        "Tidak bisa membuka brankas"
+        if mode == "buka"
+        else "Tidak bisa mengunci brankas"
+    )
+    if not raw:
+        return f"{prefix}. Coba ulangi proses atau periksa ruang disk."
+
+    # Hindari label teknis seperti “Error:” di UI utama, tapi tetap tampilkan detail
+    # yang memang sudah dibuat aman oleh core.
+    raw = raw.removeprefix("Error:").strip()
+    return f"{prefix}. {raw}"
 
 
 def format_file_size(n: int) -> str:

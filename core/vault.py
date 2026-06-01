@@ -12,23 +12,51 @@ import uuid
 import tarfile
 import stat
 import time
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from enum import Enum
 from typing import Callable
 from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from loguru import logger
-from .crypto import derive_key, make_encryptor, make_decryptor, safe_cb
+from .crypto import (
+    derive_key,
+    derive_key_argon2id,
+    derive_key_for_kdf,
+    make_encryptor,
+    make_decryptor,
+    safe_cb,
+)
 from .constants import (
     MAGIC_BYTES,
     VERSION,
+    VERSION_V1,
+    VERSION_V2,
     HEADER_SIZE,
+    HEADER_SIZE_V1,
+    HEADER_SIZE_V2,
     TAG_SIZE,
     OVERHEAD,
+    OVERHEAD_V1,
     CHUNK_SIZE,
+    CHUNK_RECORD_HEADER_SIZE,
+    CHUNK_RECORD_OVERHEAD,
     DISK_OVERHEAD_BYTES,
     OLD_TEMP_MAX_AGE_SECONDS,
     MAX_VIRTUAL_NAME_LENGTH,
     FIRST_DECRYPT_CHUNK_SIZE,
+    RECORD_TYPE_METADATA,
+    RECORD_TYPE_DATA,
+    RECORD_TYPE_FINAL,
+    V2_FLAG_NONE,
+    V2_FLAG_KDF_PARAMS,
+    V2_SUPPORTED_FLAGS,
+    V2_KDF_SECTION_HEADER_SIZE,
+    KDF_ID_PBKDF2_SHA256,
+    KDF_ID_ARGON2ID,
+    ARGON2ID_ITERATIONS,
+    ARGON2ID_LANES,
+    ARGON2ID_MEMORY_COST_KIB,
+    ARGON2ID_PARAMS_SIZE,
 )
 
 
@@ -104,9 +132,15 @@ def hapus_permanen(
                         written += chunk
 
                         # Laporkan sub-progress jika diminta
-                        if progress_cb and total_wipe_bytes > 0 and wiped_bytes is not None:
+                        if (
+                            progress_cb
+                            and total_wipe_bytes > 0
+                            and wiped_bytes is not None
+                        ):
                             wiped_bytes[0] += chunk
-                            pct = wipe_start_pct + (wiped_bytes[0] / total_wipe_bytes) * (wipe_end_pct - wipe_start_pct)
+                            pct = wipe_start_pct + (
+                                wiped_bytes[0] / total_wipe_bytes
+                            ) * (wipe_end_pct - wipe_start_pct)
                             safe_cb(progress_cb, min(wipe_end_pct, pct))
 
                     f.flush()
@@ -221,9 +255,87 @@ def _hitung_total_size(paths: list[str]) -> int:
     return total or 1
 
 
-def _hitung_kebutuhan_disk(total_payload_size: int) -> int:
-    """Hitung kebutuhan ruang disk termasuk overhead."""
-    return total_payload_size + DISK_OVERHEAD_BYTES
+def _round_up_tar_block(size: int) -> int:
+    """Bulatkan ukuran payload member tar ke blok 512 byte."""
+    return ((size + 511) // 512) * 512
+
+
+def _estimate_tar_member_size(path: Path) -> int:
+    """Estimasi konservatif ukuran satu member tar beserta payload-nya."""
+    size = 512  # header tar per member
+    try:
+        if path.is_file() and not path.is_symlink():
+            size += _round_up_tar_block(path.stat().st_size)
+    except OSError:
+        pass
+    return size
+
+
+def _estimate_tar_plaintext_size(paths: list[str], target_dir: str = "") -> int:
+    """Estimasi ukuran plaintext tar yang akan dienkripsi.
+
+    Estimasi ini sengaja konservatif agar pemeriksaan ruang disk tidak terlalu
+    optimistis pada folder dengan banyak file kecil. Tar menambah header 512
+    byte untuk tiap member dan membulatkan payload file ke kelipatan 512 byte.
+    """
+    total = 1024  # dua blok kosong penutup arsip tar
+
+    for p in paths:
+        root_path = Path(p)
+        if not root_path.exists():
+            continue
+
+        total += _estimate_tar_member_size(root_path)
+
+        if root_path.is_dir() and not root_path.is_symlink():
+            for current_root, dirs, files in os.walk(root_path):
+                current = Path(current_root)
+
+                for dirname in dirs:
+                    total += _estimate_tar_member_size(current / dirname)
+
+                for filename in files:
+                    total += _estimate_tar_member_size(current / filename)
+
+    return max(total, 1024)
+
+
+def _hitung_kebutuhan_disk_kunci(
+    paths: list[str],
+    virtual_name: str,
+    target_dir: str = "",
+) -> int:
+    """Hitung kebutuhan ruang disk saat membuat vault v2 chunked AEAD.
+
+    AES-GCM per record menambah 16-byte tag per metadata/data/final record,
+    ditambah header record 13 byte. Estimasi plaintext tar tetap konservatif
+    untuk banyak file kecil.
+    """
+    metadata_size = 2 + len(virtual_name.encode("utf-8"))
+    estimated_tar_size = _estimate_tar_plaintext_size(paths, target_dir)
+    data_records = max(1, (estimated_tar_size + CHUNK_SIZE - 1) // CHUNK_SIZE)
+    return (
+        HEADER_SIZE_V2
+        + V2_KDF_SECTION_HEADER_SIZE
+        + ARGON2ID_PARAMS_SIZE
+        + CHUNK_RECORD_OVERHEAD  # metadata record
+        + metadata_size
+        + (data_records * CHUNK_RECORD_OVERHEAD)
+        + estimated_tar_size
+        + CHUNK_RECORD_OVERHEAD  # final record
+        + DISK_OVERHEAD_BYTES
+    )
+
+
+def _hitung_kebutuhan_disk_buka(cipher_len: int) -> int:
+    """Hitung kebutuhan ruang disk saat membuka vault.
+
+    Setelah tag GCM valid, proses buka menyimpan temporary tar plaintext dan
+    mengekstraknya ke folder sementara sebelum dipindahkan ke lokasi akhir.
+    Karena itu kebutuhan ruang bisa mendekati 2x payload, bukan hanya ukuran
+    ciphertext.
+    """
+    return (cipher_len * 2) + DISK_OVERHEAD_BYTES
 
 
 def _is_safe_tar_member(member_name: str, target_dir: Path) -> bool:
@@ -239,10 +351,9 @@ def _is_safe_tar_member(member_name: str, target_dir: Path) -> bool:
         if hasattr(member_path, "is_relative_to"):
             return member_path.is_relative_to(target_resolved)
         else:
-            return (
-                str(member_path) == str(target_resolved)
-                or str(member_path).startswith(str(target_resolved) + os.sep)
-            )
+            return str(member_path) == str(target_resolved) or str(
+                member_path
+            ).startswith(str(target_resolved) + os.sep)
     except Exception:
         return False
 
@@ -254,15 +365,328 @@ def _write_vault_header(
     nonce: bytes,
     virtual_name: str,
 ) -> None:
-    """Tulis header standar Adyton (magic, version, salt, nonce, encrypted name)."""
+    """Tulis header Adyton v1 lama (dipertahankan untuk kompatibilitas internal)."""
     file_handle.write(MAGIC_BYTES)
-    file_handle.write(VERSION)
+    file_handle.write(VERSION_V1)
     file_handle.write(salt)
     file_handle.write(nonce)
 
     nama_bytes = virtual_name.encode("utf-8")
     panjang_nama = len(nama_bytes).to_bytes(2, byteorder="big")
     file_handle.write(encryptor.update(panjang_nama + nama_bytes))
+
+
+def _v2_header_context(
+    salt: bytes,
+    file_id: bytes,
+    chunk_size: int,
+    flags: int = V2_FLAG_NONE,
+    kdf_section: bytes = b"",
+) -> bytes:
+    """Bytes header v2 yang juga dipakai sebagai konteks AAD setiap record.
+
+    Untuk v2 legacy, ``kdf_section`` kosong dan KDF dianggap PBKDF2.
+    Untuk vault baru, ``flags`` memuat ``V2_FLAG_KDF_PARAMS`` dan section ini
+    menyimpan ``kdf_id + kdf_params``. Seluruh header, termasuk parameter KDF,
+    diikat ke AAD setiap record agar tidak bisa ditukar diam-diam.
+    """
+    return (
+        MAGIC_BYTES
+        + VERSION_V2
+        + salt
+        + file_id
+        + chunk_size.to_bytes(4, byteorder="big")
+        + flags.to_bytes(4, byteorder="big")
+        + kdf_section
+    )
+
+
+def _encode_argon2id_params(
+    iterations: int = ARGON2ID_ITERATIONS,
+    lanes: int = ARGON2ID_LANES,
+    memory_cost: int = ARGON2ID_MEMORY_COST_KIB,
+) -> bytes:
+    """Encode parameter Argon2id ke format header v2 extended."""
+    for value in (iterations, lanes, memory_cost):
+        if value <= 0 or value >= 2**32:
+            raise ValueError("Parameter Argon2id di luar rentang.")
+
+    return (
+        iterations.to_bytes(4, byteorder="big")
+        + lanes.to_bytes(4, byteorder="big")
+        + memory_cost.to_bytes(4, byteorder="big")
+    )
+
+
+def _decode_argon2id_params(params: bytes) -> dict[str, int]:
+    """Decode parameter Argon2id dari header v2 extended."""
+    if len(params) != ARGON2ID_PARAMS_SIZE:
+        raise ValueError("Ukuran parameter Argon2id tidak valid.")
+
+    iterations = int.from_bytes(params[0:4], byteorder="big")
+    lanes = int.from_bytes(params[4:8], byteorder="big")
+    memory_cost = int.from_bytes(params[8:12], byteorder="big")
+
+    if iterations <= 0 or lanes <= 0 or memory_cost <= 0:
+        raise ValueError("Parameter Argon2id tidak valid.")
+
+    return {
+        "iterations": iterations,
+        "lanes": lanes,
+        "memory_cost": memory_cost,
+    }
+
+
+def _v2_kdf_section(kdf_id: int, params: bytes) -> bytes:
+    """Bangun section KDF untuk header v2 extended."""
+    if not 0 <= kdf_id <= 255:
+        raise ValueError("kdf_id di luar rentang")
+    if len(params) >= 2**16:
+        raise ValueError("Parameter KDF terlalu panjang")
+    return bytes([kdf_id]) + len(params).to_bytes(2, byteorder="big") + params
+
+
+def _v2_parse_kdf_section(
+    file_handle,
+    flags: int,
+) -> tuple[int, dict[str, int], bytes]:
+    """Parse KDF section dari v2 header.
+
+    Mengembalikan ``(kdf_id, params_dict, kdf_section_raw)``. Vault v2 lama
+    tidak memiliki section ini dan diperlakukan sebagai PBKDF2 legacy.
+    """
+    if flags & ~V2_SUPPORTED_FLAGS:
+        raise ValueError("Flag vault tidak didukung oleh versi aplikasi ini.")
+
+    if not (flags & V2_FLAG_KDF_PARAMS):
+        return KDF_ID_PBKDF2_SHA256, {}, b""
+
+    raw_header = _v2_read_exact(file_handle, V2_KDF_SECTION_HEADER_SIZE)
+    kdf_id = raw_header[0]
+    params_len = int.from_bytes(raw_header[1:3], byteorder="big")
+    params_raw = _v2_read_exact(file_handle, params_len)
+    kdf_section = raw_header + params_raw
+
+    if kdf_id == KDF_ID_ARGON2ID:
+        return kdf_id, _decode_argon2id_params(params_raw), kdf_section
+
+    if kdf_id == KDF_ID_PBKDF2_SHA256:
+        # Reserved for future explicit PBKDF2 headers. Current legacy v2 uses no section.
+        if len(params_raw) != 4:
+            raise ValueError("Parameter PBKDF2 tidak valid.")
+        iterations = int.from_bytes(params_raw, byteorder="big")
+        if iterations <= 0:
+            raise ValueError("Parameter PBKDF2 tidak valid.")
+        return kdf_id, {"iterations": iterations}, kdf_section
+
+    raise ValueError("KDF vault tidak didukung oleh versi aplikasi ini.")
+
+
+def _v2_record_header(record_type: int, record_index: int, plaintext_len: int) -> bytes:
+    if not 0 <= record_type <= 255:
+        raise ValueError("record_type di luar rentang")
+    if record_index < 0 or record_index >= 2**64:
+        raise ValueError("record_index di luar rentang")
+    if plaintext_len < 0 or plaintext_len >= 2**32:
+        raise ValueError("plaintext_len di luar rentang")
+    return (
+        record_type.to_bytes(1, byteorder="big")
+        + record_index.to_bytes(8, byteorder="big")
+        + plaintext_len.to_bytes(4, byteorder="big")
+    )
+
+
+def _v2_nonce(record_index: int) -> bytes:
+    """Nonce AES-GCM 96-bit deterministik per record.
+
+    Aman karena key setiap vault unik dari salt+password, dan setiap record
+    dalam vault yang sama memakai indeks unik yang diverifikasi berurutan.
+    """
+    if record_index < 0 or record_index >= 2**96:
+        raise ValueError("record_index di luar rentang nonce")
+    return record_index.to_bytes(12, byteorder="big")
+
+
+def _v2_aad(header_context: bytes, record_header: bytes) -> bytes:
+    return header_context + record_header
+
+
+def _v2_write_record(
+    file_handle,
+    aesgcm: AESGCM,
+    header_context: bytes,
+    record_type: int,
+    record_index: int,
+    plaintext: bytes,
+) -> None:
+    record_header = _v2_record_header(record_type, record_index, len(plaintext))
+    ciphertext = aesgcm.encrypt(
+        _v2_nonce(record_index),
+        plaintext,
+        _v2_aad(header_context, record_header),
+    )
+    file_handle.write(record_header)
+    file_handle.write(ciphertext)
+
+
+def _v2_read_exact(file_handle, size: int) -> bytes:
+    data = file_handle.read(size)
+    if len(data) != size:
+        raise InvalidTag
+    return data
+
+
+def _v2_read_record_header(file_handle) -> tuple[int, int, int, bytes]:
+    raw = _v2_read_exact(file_handle, CHUNK_RECORD_HEADER_SIZE)
+    record_type = raw[0]
+    record_index = int.from_bytes(raw[1:9], byteorder="big")
+    plaintext_len = int.from_bytes(raw[9:13], byteorder="big")
+    return record_type, record_index, plaintext_len, raw
+
+
+class ChunkedAEADEncryptingStream:
+    """File-like writer untuk tarfile yang mengenkripsi output sebagai record v2.
+
+    Setiap data chunk dienkripsi dengan AES-GCM sendiri. Saat dibuka, setiap
+    chunk harus lolos verifikasi tag sebelum plaintext chunk itu boleh ditulis
+    ke disk. Ini menghindari two-pass decrypt tanpa kembali ke plaintext
+    unauthenticated.
+    """
+
+    def __init__(
+        self,
+        target_file,
+        aesgcm: AESGCM,
+        header_context: bytes,
+        progress_cb,
+        total_bytes: int,
+        is_cancelled: Callable[[], bool] = None,
+        chunk_size: int = CHUNK_SIZE,
+    ):
+        self.target_file = target_file
+        self.aesgcm = aesgcm
+        self.header_context = header_context
+        self.progress_cb = progress_cb
+        self.total_bytes = total_bytes
+        self.chunk_size = chunk_size
+        self.is_cancelled = is_cancelled
+        self.buffer = bytearray()
+        self.bytes_written = 0
+        self.record_index = 1  # index 0 dipakai metadata
+        self._last_pct = 0.0
+        self._finished = False
+
+    def write(self, data: bytes):
+        if self.is_cancelled and self.is_cancelled():
+            raise InterruptedError("Operasi dibatalkan oleh pengguna.")
+
+        self.buffer.extend(data)
+        self.bytes_written += len(data)
+
+        while len(self.buffer) >= self.chunk_size:
+            self._emit_data_record(bytes(self.buffer[: self.chunk_size]))
+            del self.buffer[: self.chunk_size]
+
+        if self.total_bytes > 0:
+            pct = min(0.85, 0.05 + 0.80 * (self.bytes_written / self.total_bytes))
+            if pct - self._last_pct >= 0.005:
+                safe_cb(self.progress_cb, pct)
+                self._last_pct = pct
+
+        return len(data)
+
+    def _emit_data_record(self, plaintext: bytes) -> None:
+        _v2_write_record(
+            self.target_file,
+            self.aesgcm,
+            self.header_context,
+            RECORD_TYPE_DATA,
+            self.record_index,
+            plaintext,
+        )
+        self.record_index += 1
+
+    def flush(self):
+        # Jangan flush buffer parsial di sini; tarfile bisa memanggil flush() untuk
+        # sinkronisasi, bukan sebagai akhir stream. Record parsial ditutup di finish().
+        return
+
+    def close(self):
+        return
+
+    def finish(self) -> None:
+        if self._finished:
+            return
+        if self.buffer:
+            self._emit_data_record(bytes(self.buffer))
+            self.buffer.clear()
+        _v2_write_record(
+            self.target_file,
+            self.aesgcm,
+            self.header_context,
+            RECORD_TYPE_FINAL,
+            self.record_index,
+            b"",
+        )
+        self._finished = True
+
+
+def _verify_gcm_before_plaintext_write(
+    input_file,
+    key: bytes,
+    nonce: bytes,
+    tag: bytes,
+    cipher_len: int,
+    progress_cb,
+    is_cancelled: Callable[[], bool],
+) -> bytes:
+    """
+    Verifikasi seluruh ciphertext AES-GCM sebelum plaintext ditulis ke disk.
+
+    Fungsi ini melakukan pass pertama dekripsi ke memori/sink saja, lalu memanggil
+    ``finalize()``. Output plaintext tidak pernah ditulis ke file pada fase ini.
+    Setelah fungsi ini sukses, caller boleh melakukan pass kedua untuk menulis
+    plaintext ke temporary tar.
+    """
+    input_file.seek(HEADER_SIZE)
+    decryptor = make_decryptor(key, nonce, tag)
+
+    first_sz = min(FIRST_DECRYPT_CHUNK_SIZE, cipher_len)
+    first_chunk = input_file.read(first_sz)
+    if len(first_chunk) != first_sz:
+        raise InvalidTag
+
+    first_plaintext = decryptor.update(first_chunk)
+
+    remaining_bytes = cipher_len - first_sz
+    bytes_verified = first_sz
+    _last_pct = 0.0
+
+    while remaining_bytes > 0:
+        if is_cancelled and is_cancelled():
+            raise InterruptedError("Operasi dibatalkan oleh pengguna.")
+
+        chunk_sz = min(CHUNK_SIZE, remaining_bytes)
+        chunk = input_file.read(chunk_sz)
+        if not chunk:
+            raise InvalidTag
+
+        remaining_bytes -= len(chunk)
+        bytes_verified += len(chunk)
+
+        # Plaintext sengaja dibuang. Tujuannya hanya autentikasi GCM.
+        decryptor.update(chunk)
+
+        # Verification phase: 5% → 45%
+        pct = min(0.45, 0.05 + 0.40 * (bytes_verified / max(cipher_len, 1)))
+        if pct - _last_pct >= 0.005:
+            safe_cb(progress_cb, pct)
+            _last_pct = pct
+
+    # Titik keamanan utama: tag GCM harus valid sebelum ada plaintext di disk.
+    first_plaintext += decryptor.finalize()
+    safe_cb(progress_cb, 0.45)
+    return first_plaintext
 
 
 def _write_decrypted_to_temp_tar(
@@ -275,8 +699,12 @@ def _write_decrypted_to_temp_tar(
     is_cancelled: Callable[[], bool],
 ) -> None:
     """
-    Melakukan dekripsi penuh dari posisi saat ini ke file temporary .tar.
-    Akan me-raise InvalidTag jika autentikasi gagal (password salah / data rusak).
+    Melakukan pass kedua dekripsi ke file temporary .tar.
+
+    PRECONDITION: seluruh ciphertext dari vault yang sama sudah lolos
+    autentikasi GCM lewat ``_verify_gcm_before_plaintext_write``. Karena itu
+    plaintext baru ditulis ke disk setelah tag GCM valid pada pass pertama.
+    Pass kedua tetap memanggil ``finalize()`` sebagai guard tambahan.
     """
     with temp_tar_path.open("wb") as ftar:
         ftar.write(initial_plaintext_after_name)
@@ -291,20 +719,20 @@ def _write_decrypted_to_temp_tar(
 
             chunk_sz = min(CHUNK_SIZE, remaining_bytes)
             chunk = input_file.read(chunk_sz)
+            if not chunk:
+                raise InvalidTag
             remaining_bytes -= len(chunk)
 
             ftar.write(decryptor.update(chunk))
 
             bytes_read_so_far += len(chunk)
-            # Data decryption phase: 5% → 85%
-            pct = min(
-                0.85, 0.05 + 0.80 * (bytes_read_so_far / (total_to_read or 1))
-            )
+            # Authenticated plaintext write phase: 45% → 85%
+            pct = min(0.85, 0.45 + 0.40 * (bytes_read_so_far / (total_to_read or 1)))
             if pct - _last_pct >= 0.005:
                 safe_cb(progress_cb, pct)
                 _last_pct = pct
 
-        # Verifikasi Authentication Tag GCM
+        # Guard tambahan: memastikan pass kedua membaca ciphertext yang konsisten.
         ftar.write(decryptor.finalize())
 
 
@@ -341,10 +769,12 @@ def _extract_and_place_vault(
                 # Ekstraksi manual file reguler secara bertahap (chunking)
                 member_path.parent.mkdir(parents=True, exist_ok=True)
 
-                with tar.extractfile(member) as source, open(member_path, "wb") as target:
+                with tar.extractfile(member) as source, open(
+                    member_path, "wb"
+                ) as target:
                     while True:
                         if is_cancelled and is_cancelled():
-                            raise InterruptedError("Operasi dibatalkan.")
+                            raise InterruptedError("Operasi dibatalkan oleh pengguna.")
 
                         chunk = source.read(CHUNK_SIZE)
                         if not chunk:
@@ -352,7 +782,10 @@ def _extract_and_place_vault(
                         target.write(chunk)
 
                         extracted_bytes += len(chunk)
-                        pct = min(0.99, 0.85 + 0.14 * (extracted_bytes / max(total_tar_size, 1)))
+                        pct = min(
+                            0.99,
+                            0.85 + 0.14 * (extracted_bytes / max(total_tar_size, 1)),
+                        )
                         safe_cb(progress_cb, pct)
 
                 # Kembalikan metadata dasar
@@ -376,10 +809,32 @@ def _extract_and_place_vault(
     if not src.exists():
         raise ValueError("Isi brankas tidak sesuai format ekspektasi.")
 
+    backup_existing: Path | None = None
     if path_tujuan.exists():
-        hapus_permanen(path_tujuan)
+        # Force-overwrite dibuat transactional: data lama dipindahkan dulu ke
+        # staging backup di direktori yang sama, hasil ekstraksi dipasang ke
+        # path final, lalu backup lama baru dihapus setelah move sukses.
+        backup_existing = _make_unique_replace_backup_path(path_tujuan)
+        path_tujuan.rename(backup_existing)
 
-    shutil.move(src, path_tujuan)
+    try:
+        shutil.move(src, path_tujuan)
+    except Exception:
+        # Jangan biarkan data lama hilang jika pemindahan hasil ekstraksi gagal.
+        # Jika move meninggalkan target parsial, singkirkan dulu sebelum restore.
+        if path_tujuan.exists():
+            try:
+                hapus_permanen(path_tujuan)
+            except Exception:
+                logger.warning(
+                    "Gagal membersihkan target parsial saat rollback overwrite."
+                )
+        if backup_existing and backup_existing.exists() and not path_tujuan.exists():
+            backup_existing.rename(path_tujuan)
+        raise
+
+    if backup_existing and backup_existing.exists():
+        hapus_permanen(backup_existing)
 
 
 def _quick_verify_vault(path: Path) -> bool:
@@ -387,18 +842,287 @@ def _quick_verify_vault(path: Path) -> bool:
     Sanity check kilat: verifikasi magic bytes, version, dan ukuran file minimum.
 
     os.fsync() di kunci_brankas sudah menjamin data tersimpan ke hardware.
-    AES-GCM encryptor.finalize() sudah menjamin integritas kriptografis.
-    Fungsi ini hanya memastikan file tidak kosong/truncated secara tidak sengaja.
-    I/O: ~5 byte vs 20GB pada fungsi lama.
+    Untuk v2 chunked AEAD, setiap record sudah mendapat tag GCM sendiri saat
+    ditulis. Fungsi ini tetap hanya sanity check cepat, bukan full read-back.
     """
     try:
-        if path.stat().st_size < OVERHEAD:
-            return False
+        size = path.stat().st_size
         with path.open("rb") as f:
-            return f.read(4) == MAGIC_BYTES and f.read(1) == VERSION
+            if f.read(4) != MAGIC_BYTES:
+                return False
+            version = f.read(1)
+
+        if version == VERSION_V1:
+            return size >= OVERHEAD_V1
+        if version == VERSION_V2:
+            # Header v2 legacy + minimal metadata record + final record.
+            # Extended Argon2id header is larger, so this remains a safe lower bound.
+            return size >= HEADER_SIZE_V2 + (2 * CHUNK_RECORD_OVERHEAD)
+        return False
     except Exception as e:
         logger.error(f"Quick verify gagal: {e}")
         return False
+
+
+def _target_conflicts_with_source(target_path: Path, source_path: Path) -> bool:
+    """Return True if target vault would be written over/inside a source item.
+
+    This prevents data loss when ``hapus_asli=True``: a vault saved inside a
+    selected folder would be deleted together with the original folder after a
+    successful lock operation. The check is kept unconditional because writing
+    the output into the input tree can also make tar include a partial vault.
+    """
+    target_resolved = target_path.resolve(strict=False)
+    source_resolved = source_path.resolve(strict=False)
+
+    if target_resolved == source_resolved:
+        return True
+
+    if source_path.is_dir() and target_resolved.is_relative_to(source_resolved):
+        return True
+
+    return False
+
+
+def _make_unique_backup_path(target_path: Path) -> Path:
+    """Buat path backup unik tanpa menimpa file backup yang sudah ada."""
+    for _ in range(100):
+        candidate = target_path.with_name(
+            f"{target_path.name}.bak-{uuid.uuid4().hex[:8]}"
+        )
+        if not candidate.exists():
+            return candidate
+    raise FileExistsError("Tidak bisa membuat nama backup unik untuk vault lama.")
+
+
+def _make_unique_replace_backup_path(target_path: Path) -> Path:
+    """Buat path staging backup untuk force-overwrite tanpa menimpa data lama."""
+    for _ in range(100):
+        candidate = target_path.with_name(
+            f"{target_path.name}.replace-{uuid.uuid4().hex[:8]}"
+        )
+        if not candidate.exists():
+            return candidate
+    raise FileExistsError("Tidak bisa membuat staging backup unik untuk data lama.")
+
+
+def _validate_virtual_folder_name(name: str) -> str:
+    """Validasi nama root hasil dekripsi sebelum dipakai sebagai path tujuan."""
+    if not name or name in {".", ".."}:
+        raise ValueError("invalid_virtual_name")
+
+    if len(name.encode("utf-8")) > MAX_VIRTUAL_NAME_LENGTH:
+        raise ValueError("invalid_virtual_name")
+
+    if any(ord(ch) < 32 for ch in name):
+        raise ValueError("invalid_virtual_name")
+
+    if "/" in name or "\\" in name:
+        raise ValueError("invalid_virtual_name")
+
+    if Path(name).is_absolute() or PureWindowsPath(name).is_absolute():
+        raise ValueError("invalid_virtual_name")
+
+    if any(ch in name for ch in '<>:"|?*'):
+        raise ValueError("invalid_virtual_name")
+
+    stripped = name.rstrip(" .")
+    if stripped != name or not stripped:
+        raise ValueError("invalid_virtual_name")
+
+    windows_reserved = {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *(f"COM{i}" for i in range(1, 10)),
+        *(f"LPT{i}" for i in range(1, 10)),
+    }
+    windows_basename = stripped.split(".", 1)[0].upper()
+    if windows_basename in windows_reserved:
+        raise ValueError("invalid_virtual_name")
+
+    # Hindari benturan dengan pola direktori temp internal yang dibersihkan otomatis.
+    if name.startswith("._dec_"):
+        raise ValueError("invalid_virtual_name")
+
+    return name
+
+
+def _buka_brankas_v2_from_open_file(
+    fk,
+    target_path: Path,
+    total_size: int,
+    password: str,
+    force: bool,
+    progress_cb,
+    is_cancelled: Callable[[], bool] | None,
+) -> tuple[VaultStatus, str | None]:
+    """Buka vault format v2 chunked AEAD.
+
+    Security invariant v2:
+    - Setiap plaintext chunk hanya ditulis ke temp tar setelah tag AEAD record itu valid.
+    - Prompt overwrite baru dikembalikan setelah seluruh record, termasuk FINAL, valid.
+    - Data tujuan lama tidak disentuh sebelum tar sudah terdekripsi dan diverifikasi penuh.
+    """
+    base_dir = target_path.parent
+    temp_ext_dir: Path | None = None
+
+    try:
+        if total_size < HEADER_SIZE_V2 + (2 * CHUNK_RECORD_OVERHEAD):
+            return VaultStatus.ERROR, "File brankas terlalu kecil atau tidak lengkap."
+
+        salt = _v2_read_exact(fk, 16)
+        file_id = _v2_read_exact(fk, 16)
+        stored_chunk_size = int.from_bytes(_v2_read_exact(fk, 4), byteorder="big")
+        flags = int.from_bytes(_v2_read_exact(fk, 4), byteorder="big")
+
+        if stored_chunk_size <= 0 or stored_chunk_size > CHUNK_SIZE:
+            return (
+                VaultStatus.ERROR,
+                "Parameter chunk brankas tidak valid atau file sudah rusak.",
+            )
+
+        try:
+            kdf_id, kdf_params, kdf_section = _v2_parse_kdf_section(fk, flags)
+        except ValueError as exc:
+            return VaultStatus.ERROR, str(exc)
+
+        header_context = _v2_header_context(
+            salt,
+            file_id,
+            stored_chunk_size,
+            flags,
+            kdf_section,
+        )
+
+        safe_cb(progress_cb, 0.02)
+        try:
+            key = derive_key_for_kdf(password, salt, kdf_id, kdf_params)
+        except ValueError as exc:
+            return VaultStatus.ERROR, str(exc)
+        aesgcm = AESGCM(key)
+        safe_cb(progress_cb, 0.04)
+
+        # Record 0 wajib metadata terenkripsi: panjang nama + nama virtual.
+        record_type, record_index, plaintext_len, record_header = (
+            _v2_read_record_header(fk)
+        )
+        if (
+            record_type != RECORD_TYPE_METADATA
+            or record_index != 0
+            or plaintext_len < 2
+            or plaintext_len > 2 + MAX_VIRTUAL_NAME_LENGTH
+        ):
+            raise InvalidTag
+
+        metadata_ciphertext = _v2_read_exact(fk, plaintext_len + TAG_SIZE)
+        metadata_plaintext = aesgcm.decrypt(
+            _v2_nonce(record_index),
+            metadata_ciphertext,
+            _v2_aad(header_context, record_header),
+        )
+
+        try:
+            nama_folder, name_offset = _parse_virtual_folder_name(metadata_plaintext)
+            if name_offset != len(metadata_plaintext):
+                raise ValueError("metadata ekstra tidak valid")
+        except ValueError:
+            return VaultStatus.WRONG_PASSWORD, None
+
+        temp_ext_dir, temp_tar_path = _create_temp_decrypt_paths(base_dir)
+        expected_index = 1
+        last_pct = 0.0
+
+        with temp_tar_path.open("wb") as ftar:
+            while True:
+                if is_cancelled and is_cancelled():
+                    raise InterruptedError("Operasi dibatalkan oleh pengguna.")
+
+                record_type, record_index, plaintext_len, record_header = (
+                    _v2_read_record_header(fk)
+                )
+                if record_index != expected_index:
+                    raise InvalidTag
+
+                if record_type == RECORD_TYPE_DATA:
+                    if plaintext_len <= 0 or plaintext_len > stored_chunk_size:
+                        raise InvalidTag
+
+                    ciphertext = _v2_read_exact(fk, plaintext_len + TAG_SIZE)
+                    plaintext = aesgcm.decrypt(
+                        _v2_nonce(record_index),
+                        ciphertext,
+                        _v2_aad(header_context, record_header),
+                    )
+                    if len(plaintext) != plaintext_len:
+                        raise InvalidTag
+
+                    # Aman: plaintext record ini sudah terautentikasi.
+                    ftar.write(plaintext)
+                    expected_index += 1
+
+                    pct = min(0.85, 0.05 + 0.80 * (fk.tell() / max(total_size, 1)))
+                    if pct - last_pct >= 0.005:
+                        safe_cb(progress_cb, pct)
+                        last_pct = pct
+
+                elif record_type == RECORD_TYPE_FINAL:
+                    if plaintext_len != 0:
+                        raise InvalidTag
+                    ciphertext = _v2_read_exact(fk, TAG_SIZE)
+                    final_plaintext = aesgcm.decrypt(
+                        _v2_nonce(record_index),
+                        ciphertext,
+                        _v2_aad(header_context, record_header),
+                    )
+                    if final_plaintext != b"":
+                        raise InvalidTag
+                    expected_index += 1
+                    break
+                else:
+                    raise InvalidTag
+
+            ftar.flush()
+            os.fsync(ftar.fileno())
+
+        if fk.tell() != total_size:
+            # Jangan izinkan trailing bytes yang tidak ikut diautentikasi.
+            raise InvalidTag
+
+        safe_cb(progress_cb, 0.85)
+
+        path_tujuan = base_dir / nama_folder
+        if path_tujuan.exists() and not force:
+            return VaultStatus.OVERWRITE_NEEDED, nama_folder
+
+        _extract_and_place_vault(
+            temp_tar_path,
+            temp_ext_dir,
+            nama_folder,
+            path_tujuan,
+            progress_cb,
+            is_cancelled,
+        )
+
+        safe_cb(progress_cb, 1.0)
+        return VaultStatus.SUCCESS, nama_folder
+
+    except InvalidTag:
+        return VaultStatus.WRONG_PASSWORD, None
+    except tarfile.ReadError:
+        return VaultStatus.WRONG_PASSWORD, None
+    except InterruptedError:
+        return (
+            VaultStatus.CANCELLED,
+            "Proses dibatalkan. Tidak ada data lama yang diganti.",
+        )
+    except Exception as exc:
+        logger.exception("Gagal membuka brankas v2 chunked AEAD.")
+        return VaultStatus.ERROR, f"Terjadi kesalahan internal: {str(exc)}"
+    finally:
+        if temp_ext_dir and temp_ext_dir.exists():
+            _cleanup_temp_decrypt_dir(temp_ext_dir)
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -435,13 +1159,33 @@ def kunci_brankas(
         return VaultStatus.ERROR, "Password tidak boleh kosong."
 
     target_path = Path(path_simpan)
-    backup_path = target_path.with_suffix(".adtn.bak")
+
+    for source in valid_paths:
+        source_path = Path(source)
+        if _target_conflicts_with_source(target_path, source_path):
+            return (
+                VaultStatus.ERROR,
+                "Lokasi penyimpanan vault tidak boleh sama dengan atau berada di dalam "
+                "file/folder yang sedang dikunci. Pilih lokasi lain agar vault tidak ikut "
+                "terhapus atau ikut masuk ke arsip.",
+            )
+
+    if len(valid_paths) == 1:
+        nama_virtual = Path(valid_paths[0]).name
+        target_dir = ""
+    else:
+        nama_virtual = target_path.stem or "Brankas_Rahasia"
+        target_dir = nama_virtual
+
+    backup_path: Path | None = None
     backup_dibuat = False
 
     try:
         free_space = shutil.disk_usage(target_path.parent).free
         total_size = _hitung_total_size(valid_paths)
-        required_space = _hitung_kebutuhan_disk(total_size)
+        required_space = _hitung_kebutuhan_disk_kunci(
+            valid_paths, nama_virtual, target_dir
+        )
 
         if free_space < required_space:
             req_mb = required_space / (1024 * 1024)
@@ -452,28 +1196,45 @@ def kunci_brankas(
             )
 
         if target_path.exists():
+            backup_path = _make_unique_backup_path(target_path)
             target_path.replace(backup_path)
             backup_dibuat = True
 
         salt = os.urandom(16)
-        nonce = os.urandom(12)
-        key = derive_key(password, salt)
+        file_id = os.urandom(16)
+        argon2_params_raw = _encode_argon2id_params()
+        kdf_section = _v2_kdf_section(KDF_ID_ARGON2ID, argon2_params_raw)
+        flags = V2_FLAG_KDF_PARAMS
+        header_context = _v2_header_context(
+            salt,
+            file_id,
+            CHUNK_SIZE,
+            flags,
+            kdf_section,
+        )
+
+        key = derive_key_argon2id(password, salt)
+        aesgcm = AESGCM(key)
         safe_cb(progress_cb, 0.03)  # Key derivation done
 
-        encryptor = make_encryptor(key, nonce)
-
-        if len(valid_paths) == 1:
-            nama_virtual = Path(valid_paths[0]).name
-            target_dir = ""
-        else:
-            nama_virtual = target_path.stem or "Brankas_Rahasia"
-            target_dir = nama_virtual
-
         with target_path.open("wb") as fk:
-            _write_vault_header(fk, encryptor, salt, nonce, nama_virtual)
+            fk.write(header_context)
 
-            out_stream = EncryptingStream(
-                fk, encryptor, progress_cb, total_size, is_cancelled
+            nama_bytes = nama_virtual.encode("utf-8")
+            metadata_plaintext = (
+                len(nama_bytes).to_bytes(2, byteorder="big") + nama_bytes
+            )
+            _v2_write_record(
+                fk,
+                aesgcm,
+                header_context,
+                RECORD_TYPE_METADATA,
+                0,
+                metadata_plaintext,
+            )
+
+            out_stream = ChunkedAEADEncryptingStream(
+                fk, aesgcm, header_context, progress_cb, total_size, is_cancelled
             )
 
             with tarfile.open(fileobj=out_stream, mode="w|") as tar:
@@ -486,9 +1247,7 @@ def kunci_brankas(
                     )
                     tar.add(path_item, arcname=arcname)
 
-            out_stream.flush()
-            fk.write(encryptor.finalize())
-            fk.write(encryptor.tag)
+            out_stream.finish()
 
             # Paksa OS flush disk buffer cache ke hardware fisik.
             # Ini satu-satunya cara memastikan data benar-benar tersimpan
@@ -500,7 +1259,7 @@ def kunci_brankas(
         # Data encryption complete → end of data phase (85%)
         safe_cb(progress_cb, 0.85)
 
-        if backup_dibuat and backup_path.exists():
+        if backup_dibuat and backup_path and backup_path.exists():
             backup_path.unlink()
 
         if hapus_asli:
@@ -544,13 +1303,16 @@ def kunci_brankas(
     except InterruptedError:
         if target_path.exists():
             target_path.unlink(missing_ok=True)
-        if backup_dibuat and backup_path.exists():
+        if backup_dibuat and backup_path and backup_path.exists():
             backup_path.replace(target_path)
-        return VaultStatus.CANCELLED, "Proses dibatalkan."
+        return (
+            VaultStatus.CANCELLED,
+            "Proses dibatalkan. Tidak ada data lama yang diganti.",
+        )
     except Exception as exc:
         if target_path.exists():
             target_path.unlink(missing_ok=True)
-        if backup_dibuat and backup_path.exists():
+        if backup_dibuat and backup_path and backup_path.exists():
             backup_path.replace(target_path)
         return VaultStatus.ERROR, str(exc)
 
@@ -583,13 +1345,13 @@ def buka_brankas(
     try:
         total_size = target_path.stat().st_size
         if total_size < OVERHEAD:
-            return VaultStatus.ERROR, "File terlalu kecil/rusak."
+            return VaultStatus.ERROR, "File brankas terlalu kecil atau tidak lengkap."
 
         cipher_len = total_size - OVERHEAD
         base_dir = target_path.parent
 
         free_space = shutil.disk_usage(base_dir).free
-        required_space = _hitung_kebutuhan_disk(cipher_len)
+        required_space = _hitung_kebutuhan_disk_buka(cipher_len)
 
         if free_space < required_space:
             req_mb = required_space / (1024 * 1024)
@@ -622,17 +1384,26 @@ def buka_brankas(
 
             # 2. Validasi Versi
             version = fk.read(1)
-            if version == b"\x01":
-                # Versi 1: PBKDF2 600k iterasi
+            if version == VERSION_V2:
+                return _buka_brankas_v2_from_open_file(
+                    fk,
+                    target_path,
+                    total_size,
+                    password,
+                    force,
+                    progress_cb,
+                    is_cancelled,
+                )
+            if version == VERSION_V1:
+                # Versi 1: AES-GCM monolitik lama, dibuka via two-pass.
                 pass
             else:
-                # Jika di masa depan ada versi 2 (misal Scrypt)
                 return (
                     VaultStatus.ERROR,
                     "Versi brankas ini terlalu baru. Silakan update aplikasi Adyton Crypt Anda.",
                 )
 
-            # 3. Baca Salt dan Nonce (seperti biasa)
+            # 3. Baca Salt dan Nonce (format v1)
             salt = fk.read(16)
             nonce = fk.read(12)
 
@@ -644,20 +1415,33 @@ def buka_brankas(
 
             safe_cb(progress_cb, 0.02)  # Header dibaca
 
-            # Lanjut derive_key dan proses dekripsi...
+            # Lanjut derive_key dan verifikasi autentikasi sebelum plaintext ditulis.
             key = derive_key(password, salt)
-            decryptor = make_decryptor(key, nonce, tag)
 
             safe_cb(progress_cb, 0.04)  # Key derivation selesai (PBKDF2)
 
-            first_sz = min(FIRST_DECRYPT_CHUNK_SIZE, cipher_len)
-            first_chunk = fk.read(first_sz)
-            bytes_remaining = cipher_len - first_sz
+            try:
+                # FASE 1: AUTHENTICATION-ONLY PASS
+                # Decryptor menghasilkan plaintext di memori, tetapi output dibuang
+                # dan tidak ditulis ke disk sebelum finalize() memverifikasi tag GCM.
+                decrypted_first = _verify_gcm_before_plaintext_write(
+                    fk,
+                    key,
+                    nonce,
+                    tag,
+                    cipher_len,
+                    progress_cb,
+                    is_cancelled,
+                )
+            except InvalidTag:
+                return VaultStatus.WRONG_PASSWORD, None
+            except InterruptedError:
+                return (
+                    VaultStatus.CANCELLED,
+                    "Proses dibatalkan. Tidak ada data lama yang diganti.",
+                )
 
-            decrypted_first = decryptor.update(first_chunk)
-
-            # Parse nama folder virtual dari chunk pertama yang sudah didekripsi.
-            # Jika gagal (kemungkinan besar karena password salah), kembalikan WRONG_PASSWORD.
+            # Parse nama folder dan prompt overwrite hanya setelah tag GCM valid.
             try:
                 nama_folder, name_offset = _parse_virtual_folder_name(decrypted_first)
             except ValueError:
@@ -669,21 +1453,33 @@ def buka_brankas(
                 return VaultStatus.OVERWRITE_NEEDED, nama_folder
 
             temp_ext_dir, temp_tar_path = _create_temp_decrypt_paths(base_dir)
-            safe_cb(progress_cb, 0.05)  # Persiapan selesai, mulai dekripsi data
+            safe_cb(
+                progress_cb, 0.46
+            )  # Aman menulis plaintext terautentikasi ke temp tar
 
             try:
-                # FASE 1: DEKRIPSI KE FILE TEMP
+                # FASE 2: AUTHENTICATED PLAINTEXT WRITE PASS
+                fk.seek(HEADER_SIZE)
+                decryptor_for_write = make_decryptor(key, nonce, tag)
+                first_sz = min(FIRST_DECRYPT_CHUNK_SIZE, cipher_len)
+                first_chunk = fk.read(first_sz)
+                if len(first_chunk) != first_sz:
+                    raise InvalidTag
+
+                decrypted_first_for_write = decryptor_for_write.update(first_chunk)
+                bytes_remaining = cipher_len - first_sz
+
                 _write_decrypted_to_temp_tar(
                     temp_tar_path,
-                    decryptor,
-                    decrypted_first[name_offset:],
+                    decryptor_for_write,
+                    decrypted_first_for_write[name_offset:],
                     bytes_remaining,
                     fk,
                     progress_cb,
                     is_cancelled,
                 )
 
-                # FASE 2 + FASE 3: Ekstraksi tar + pindah ke lokasi akhir
+                # FASE 3 + FASE 4: Ekstraksi tar + pindah ke lokasi akhir
                 # (diekstrak ke helper)
                 _extract_and_place_vault(
                     temp_tar_path,
@@ -699,7 +1495,10 @@ def buka_brankas(
             except InvalidTag:
                 return VaultStatus.WRONG_PASSWORD, None
             except InterruptedError:
-                return VaultStatus.CANCELLED, "Proses dibatalkan."
+                return (
+                    VaultStatus.CANCELLED,
+                    "Proses dibatalkan. Tidak ada data lama yang diganti.",
+                )
 
         safe_cb(progress_cb, 1.0)
         return VaultStatus.SUCCESS, nama_folder
@@ -722,10 +1521,14 @@ def _parse_virtual_folder_name(decrypted_first: bytes) -> tuple[str, int]:
     """
     try:
         panjang_nama = int.from_bytes(decrypted_first[:2], byteorder="big")
-        if panjang_nama > MAX_VIRTUAL_NAME_LENGTH or len(decrypted_first) < 2 + panjang_nama:
+        if (
+            panjang_nama > MAX_VIRTUAL_NAME_LENGTH
+            or len(decrypted_first) < 2 + panjang_nama
+        ):
             raise ValueError("wrong_password")
 
         nama_folder = decrypted_first[2 : 2 + panjang_nama].decode("utf-8")
+        nama_folder = _validate_virtual_folder_name(nama_folder)
         return nama_folder, 2 + panjang_nama
     except UnicodeDecodeError:
         raise ValueError("wrong_password")

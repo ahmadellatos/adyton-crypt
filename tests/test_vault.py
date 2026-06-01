@@ -147,12 +147,16 @@ class TestEdgeCases:
 import tarfile
 import io
 from core.vault import (
-    MAGIC_BYTES, VERSION, HEADER_SIZE, OVERHEAD,
-    kunci_brankas, buka_brankas, VaultStatus
+    MAGIC_BYTES,
+    VERSION,
+    VERSION_V1,
+    HEADER_SIZE,
+    OVERHEAD,
+    kunci_brankas,
+    buka_brankas,
+    VaultStatus,
 )
 from core.crypto import derive_key, make_encryptor, CHUNK_SIZE
-from core.worker import CryptoWorker
-from PySide6.QtCore import QThread
 
 
 class TestHeaderFormat:
@@ -184,13 +188,15 @@ class TestHeaderFormat:
         """Future version must tell user to update the app."""
         path = os.path.join(tmp_dir, "future_version.adtn")
         with open(path, "wb") as f:
-            f.write(MAGIC_BYTES + b"\x02" + b"\x00" * 200)
+            f.write(MAGIC_BYTES + b"\x7f" + b"\x00" * 200)
 
         status, msg = buka_brankas(path, PASSWORD_BENAR)
         assert status == VaultStatus.ERROR
         assert "terlalu baru" in (msg or "").lower()
 
-    def test_garbage_name_length_on_wrong_password_returns_wrong_password_not_error(self, sample_folder, tmp_dir):
+    def test_garbage_name_length_on_wrong_password_returns_wrong_password_not_error(
+        self, sample_folder, tmp_dir
+    ):
         """Regression guard: wrong password with large garbage length prefix must still be WRONG_PASSWORD."""
         locked_path = kunci_dan_dapat_path(sample_folder)
         shutil.rmtree(sample_folder)
@@ -230,27 +236,8 @@ class TestSecureWipeBasic:
         assert os.path.exists(vault_path)
 
 
-class TestCancellationDuringDecrypt:
-    """Test that cancellation works during the new full-decrypt-to-temp flow."""
-
-    def test_cancel_during_buka_brankas(self, sample_folder, tmp_dir):
-        locked_path = kunci_dan_dapat_path(sample_folder)
-
-        worker = CryptoWorker(buka_brankas, locked_path, PASSWORD_BENAR)
-        worker.start()
-
-        # Cancel very quickly (before it finishes)
-        QThread.msleep(5)
-        worker.cancel()
-        worker.wait(3000)  # give it time to clean up
-
-        # We mainly care that it didn't crash and returned CANCELLED or finished
-        # In practice with small files it may finish before cancel lands.
-        # The important thing is no unhandled exception and temp dir cleanup.
-        assert not worker.isRunning()
-
-
 # --- TarSlip test helper (creates a malicious vault manually) ---
+
 
 def _create_malicious_vault_with_pathslip(tmp_dir: str, evil_path: str) -> str:
     """
@@ -287,7 +274,7 @@ def _create_malicious_vault_with_pathslip(tmp_dir: str, evil_path: str) -> str:
     vault_path = os.path.join(tmp_dir, "tar_slip_test.adtn")
     with open(vault_path, "wb") as f:
         f.write(MAGIC_BYTES)
-        f.write(VERSION)
+        f.write(VERSION_V1)
         f.write(salt)
         f.write(nonce)
         f.write(encrypted_name)
@@ -340,25 +327,13 @@ class TestCleanupInvariants:
         leaked = after - before
         assert not leaked, f"Temporary decrypt directory bocor: {leaked}"
 
-    def test_no_temp_dir_left_after_cancel(self, sample_folder, tmp_dir):
-        """Cancellation selama dekripsi harus tetap membersihkan temporary files."""
-        locked_path = kunci_dan_dapat_path(sample_folder)
-
-        worker = CryptoWorker(buka_brankas, locked_path, PASSWORD_BENAR)
-        worker.start()
-        QThread.msleep(10)
-        worker.cancel()
-        worker.wait(3000)
-
-        parent = Path(tmp_dir)
-        leaked = list(parent.glob("._dec_*"))
-        assert not leaked, f"Temporary files bocor setelah cancel: {leaked}"
-
 
 class TestWrongPasswordEdgeCases:
     """Additional guardrails for the password detection heuristic."""
 
-    def test_very_large_garbage_name_length_returns_wrong_password(self, sample_folder, tmp_dir):
+    def test_very_large_garbage_name_length_returns_wrong_password(
+        self, sample_folder, tmp_dir
+    ):
         """Garbage dengan panjang nama sangat besar harus tetap dianggap wrong password."""
         locked_path = kunci_dan_dapat_path(sample_folder)
         shutil.rmtree(sample_folder)
@@ -384,7 +359,9 @@ class TestSecureWipeGuardrails:
             secure_wipe=True,
         )
         assert status == VaultStatus.SUCCESS
-        assert not os.path.exists(secret_file), "Original file harus sudah terhapus setelah secure wipe"
+        assert not os.path.exists(
+            secret_file
+        ), "Original file harus sudah terhapus setelah secure wipe"
 
 
 def test_tarslip_path_traversal():

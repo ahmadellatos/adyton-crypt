@@ -152,7 +152,7 @@ class DropZoneOpen(QWidget):
         """
         page = QWidget()
         lay = QVBoxLayout(page)
-        lay.setContentsMargins(20, 10, 20, 14)   # Reduced top padding
+        lay.setContentsMargins(20, 10, 20, 14)  # Reduced top padding
         lay.setSpacing(10)
 
         # Header
@@ -160,20 +160,22 @@ class DropZoneOpen(QWidget):
         header.setObjectName("CardTitle")
         lay.addWidget(header)
 
-        lay.addSpacing(0)   # No gap between title and subtitle
+        lay.addSpacing(0)  # No gap between title and subtitle
 
         sub = QLabel("Pilih file brankas yang ingin Anda buka.")
         sub.setObjectName("CardSubtitle")
-        sub.setStyleSheet("margin-top: -2px; padding-top: 0px;")  # Force tighter to title
+        sub.setStyleSheet(
+            "margin-top: -2px; padding-top: 0px;"
+        )  # Force tighter to title
         lay.addWidget(sub)
 
-        lay.addSpacing(6)   # Breathing after subtitle
+        lay.addSpacing(6)  # Breathing after subtitle
 
         # === Main File Info Card ===
         info_card = QFrame()
         info_card.setObjectName("FileInfoCard")
         card_lay = QVBoxLayout(info_card)
-        card_lay.setContentsMargins(14, 11, 14, 12)   # Slightly tighter top padding
+        card_lay.setContentsMargins(14, 11, 14, 12)  # Slightly tighter top padding
         card_lay.setSpacing(7)
 
         # Top row: icon + (filename + ready text + path) + VALID badge + clear
@@ -187,7 +189,9 @@ class DropZoneOpen(QWidget):
         top_row.addWidget(self.icon_file, 0, Qt.AlignmentFlag.AlignTop)
 
         name_col = QVBoxLayout()
-        name_col.setSpacing(1)   # Tightened gap between filename and text below (Siap + path)
+        name_col.setSpacing(
+            1
+        )  # Tightened gap between filename and text below (Siap + path)
 
         # Use ElidedLabel for long filenames (middle elide) — prevents clipping/wrapping issues
         self.lbl_filename = ElidedLabel("...", mode=Qt.TextElideMode.ElideMiddle)
@@ -223,7 +227,7 @@ class DropZoneOpen(QWidget):
 
         card_lay.addLayout(top_row)
 
-        card_lay.addSpacing(4)   # Extra breathing between top info and metadata
+        card_lay.addSpacing(4)  # Extra breathing between top info and metadata
 
         # 4-col metadata — tighter but safe to avoid clipping
         meta_row = QHBoxLayout()
@@ -242,7 +246,7 @@ class DropZoneOpen(QWidget):
 
         lay.addWidget(info_card)
 
-        lay.addSpacing(8)   # Clear separation before Ganti button
+        lay.addSpacing(8)  # Clear separation before Ganti button
 
         # Ganti button
         self.btn_ganti = QPushButton("  Ganti File Brankas")
@@ -253,23 +257,23 @@ class DropZoneOpen(QWidget):
         self.btn_ganti.clicked.connect(self._pilih_file)
         lay.addWidget(self.btn_ganti)
 
-        lay.addSpacing(14)   # Clear separation before ENKRIPSI section
+        lay.addSpacing(14)  # Clear separation before ENKRIPSI section
 
         # INFORMASI ENKRIPSI section (bordered container)
         enc_section = QFrame()
         enc_section.setObjectName("EncInfoSection")
 
         enc_lay = QVBoxLayout(enc_section)
-        enc_lay.setContentsMargins(14, 11, 14, 11)   # More generous padding
+        enc_lay.setContentsMargins(14, 11, 14, 11)  # More generous padding
         enc_lay.setSpacing(7)
 
         enc_title = QLabel("INFORMASI ENKRIPSI")
         enc_title.setObjectName("EncSectionTitle")
         enc_lay.addWidget(enc_title)
-        enc_lay.addSpacing(3)   # Extra breathing after title
+        enc_lay.addSpacing(3)  # Extra breathing after title
 
         enc_row = QHBoxLayout()
-        enc_row.setSpacing(10)   # Better spacing between the 3 items
+        enc_row.setSpacing(10)  # Better spacing between the 3 items
         self.enc_items = []
         enc_defs = [
             ("mdi6.shield-lock", "Algoritma", "AES-256 + GCM"),
@@ -277,7 +281,9 @@ class DropZoneOpen(QWidget):
             ("mdi6.fingerprint", "Integrity Check", "Terverifikasi"),
         ]
         for icon_name, label_text, initial_value in enc_defs:
-            item = self._create_encryption_info_item(icon_name, label_text, initial_value)
+            item = self._create_encryption_info_item(
+                icon_name, label_text, initial_value
+            )
             enc_row.addWidget(item, 1)
         enc_lay.addLayout(enc_row)
 
@@ -323,7 +329,7 @@ class DropZoneOpen(QWidget):
 
         h = QHBoxLayout(container)
         h.setContentsMargins(0, 0, 0, 0)
-        h.setSpacing(10)   # Increased for 32px icons
+        h.setSpacing(10)  # Increased for 32px icons
 
         # Icon on the left side (32px as requested, vertically centered)
         ic = QLabel()
@@ -334,7 +340,7 @@ class DropZoneOpen(QWidget):
         # Text column on the right
         v = QVBoxLayout()
         v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(2)   # Slightly more breathing between label and value
+        v.setSpacing(2)  # Slightly more breathing between label and value
 
         lbl = QLabel(label_text)
         lbl.setStyleSheet("color: #8B95A5; font-size: 8pt; font-weight: 400;")
@@ -403,8 +409,7 @@ class DropZoneOpen(QWidget):
         if len(self.enc_items) >= 3:
             self.enc_items[0]._enc_val.setText("AES-256 + GCM")
             self.enc_items[1]._enc_val.setText(date_str)
-            self.enc_items[2]._enc_val.setText("Terverifikasi")
-
+            self.enc_items[2]._enc_val.setText("Belum diverifikasi")
 
     def _update_card_style(self, is_empty: bool):
         # Use property-based styling for empty state (same system as DropZoneLock)
