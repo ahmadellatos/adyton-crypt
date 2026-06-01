@@ -108,10 +108,15 @@ class AppBrankas(FramelessMainWindow):
         self.stacked_tabs.addWidget(self.tab_kunci)
         self.stacked_tabs.addWidget(self.tab_buka)
 
-        self.tab_kunci.worker_started.connect(self._bind_worker_to_tray)
-        self.tab_buka.worker_started.connect(self._bind_worker_to_tray)
+        self.tab_kunci.worker_started.connect(
+            lambda worker: self._bind_worker_to_tray(worker, "kunci")
+        )
+        self.tab_buka.worker_started.connect(
+            lambda worker: self._bind_worker_to_tray(worker, "buka")
+        )
         self.tab_kunci.system_notification.connect(self._show_system_notif)
         self.tab_buka.system_notification.connect(self._show_system_notif)
+        self.tab_buka.status_changed.connect(self._set_header_security_status)
 
         content_lay.addWidget(self.stacked_tabs, 1)
 
@@ -171,9 +176,11 @@ class AppBrankas(FramelessMainWindow):
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self.showNormal()
 
-    def _bind_worker_to_tray(self, worker) -> None:
+    def _bind_worker_to_tray(self, worker, source_tab: str) -> None:
         """Bind progress/finished signals dari worker baru ke tray tooltip.
-        Dipanggil via worker_started signal, sehingga tidak ada akumulasi koneksi.
+
+        Navigasi tab tetap aktif agar UI tidak terasa freeze. Yang dikunci
+        hanyalah aksi memulai operasi crypto lain di tab sebelah.
         """
         if not worker:
             return
@@ -182,7 +189,63 @@ class AppBrankas(FramelessMainWindow):
         worker.progress.connect(
             lambda v: self.tray.setToolTip(f"{APP_NAME} — Progress {int(v * 100)}%")
         )
+        self._set_operation_lock(source_tab, True)
         worker.finished.connect(lambda: self.tray.setToolTip(APP_NAME))
+        worker.finished.connect(lambda: self._set_operation_lock(source_tab, False))
+
+    def _set_navigation_busy(self, busy: bool) -> None:
+        """Kompatibilitas lama: navigasi tidak lagi dikunci saat proses.
+
+        User tetap boleh pindah tab untuk melihat UI. Operasi baru dikunci
+        lewat _set_operation_lock().
+        """
+        self.btn_nav_kunci.setEnabled(True)
+        self.btn_nav_buka.setEnabled(True)
+
+    def _set_operation_lock(self, source_tab: str, busy: bool) -> None:
+        """Kunci aksi crypto di tab lain tanpa mematikan navigasi tab."""
+        self.btn_nav_kunci.setEnabled(True)
+        self.btn_nav_buka.setEnabled(True)
+        if busy:
+            self.btn_nav_kunci.setToolTip(
+                "Bisa pindah tab, tetapi operasi baru dikunci sampai proses selesai."
+            )
+            self.btn_nav_buka.setToolTip(
+                "Bisa pindah tab, tetapi operasi baru dikunci sampai proses selesai."
+            )
+        else:
+            self.btn_nav_kunci.setToolTip("")
+            self.btn_nav_buka.setToolTip("")
+
+        self.tab_kunci.set_external_busy(busy and source_tab != "kunci")
+        self.tab_buka.set_external_busy(busy and source_tab != "buka")
+
+    def _set_header_security_status(
+        self, title: str, subtitle: str, state: str = "idle"
+    ) -> None:
+        """Update status keamanan kanan atas sesuai state Tab Buka."""
+        colors = {
+            "idle": "#00D2C8",
+            "ready": "#00D2C8",
+            "busy": "#F1C40F",
+            "success": "#2ECC71",
+            "warn": "#F1C40F",
+            "error": "#E74C3C",
+        }
+        icons = {
+            "idle": "mdi6.shield-check",
+            "ready": "mdi6.shield-search",
+            "busy": "mdi6.shield-sync",
+            "success": "mdi6.shield-check",
+            "warn": "mdi6.alert-circle",
+            "error": "mdi6.shield-alert",
+        }
+        color = colors.get(state, "#00D2C8")
+        icon_name = icons.get(state, "mdi6.shield-check")
+        self.lbl_status_icon.setPixmap(qta.icon(icon_name, color=color).pixmap(28, 28))
+        self.lbl_stat_title.setText(title)
+        self.lbl_stat_sub.setText(subtitle)
+        self.lbl_stat_sub.setStyleSheet(f"color: {color}; font-weight: 600;")
 
     # =========================================================================
     # NOTIFIKASI
@@ -276,7 +339,9 @@ class AppBrankas(FramelessMainWindow):
         pixmap = QPixmap(get_asset_path("assets/logo_adyton2.png"))
         if not pixmap.isNull():
             lbl_logo.setPixmap(
-                pixmap.scaledToHeight(40, Qt.TransformationMode.SmoothTransformation)  # sedikit lebih kecil untuk balance
+                pixmap.scaledToHeight(
+                    40, Qt.TransformationMode.SmoothTransformation
+                )  # sedikit lebih kecil untuk balance
             )
         else:
             lbl_logo.setText("LOGO NOT FOUND")
@@ -316,22 +381,22 @@ class AppBrankas(FramelessMainWindow):
         lay_kanan = QHBoxLayout()
         lay_kanan.setSpacing(12)
 
-        lbl_shield = QLabel()
-        lbl_shield.setPixmap(
+        self.lbl_status_icon = QLabel()
+        self.lbl_status_icon.setPixmap(
             qta.icon("mdi6.shield-check", color="#00D2C8").pixmap(28, 28)
         )
 
         lay_status = QVBoxLayout()
         lay_status.setSpacing(1)
         lay_status.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        lbl_stat_title = QLabel("AES-256 • GCM")
-        lbl_stat_title.setObjectName("MutedText")
-        lbl_stat_sub = QLabel("Data Anda aman")
-        lbl_stat_sub.setObjectName("AccentText")
-        lay_status.addWidget(lbl_stat_title)
-        lay_status.addWidget(lbl_stat_sub)
+        self.lbl_stat_title = QLabel("AES-256 • GCM")
+        self.lbl_stat_title.setObjectName("MutedText")
+        self.lbl_stat_sub = QLabel("Enkripsi lokal aktif")
+        self.lbl_stat_sub.setObjectName("AccentText")
+        lay_status.addWidget(self.lbl_stat_title)
+        lay_status.addWidget(self.lbl_stat_sub)
 
-        lay_kanan.addWidget(lbl_shield)
+        lay_kanan.addWidget(self.lbl_status_icon)
         lay_kanan.addLayout(lay_status)
         header_layout.addLayout(lay_kanan)
 
@@ -361,7 +426,7 @@ class AppBrankas(FramelessMainWindow):
         lbl_safe_icon.setPixmap(
             qta.icon("mdi6.shield-check", color=CLR_TEXT_MUTED).pixmap(15, 15)
         )
-        lbl_safe_text = QLabel("Semua operasi aman dan terenkripsi")
+        lbl_safe_text = QLabel("Password tidak dikirim ke mana pun")
         lbl_safe_text.setObjectName("MutedText")
         lay_safe.addWidget(lbl_safe_icon)
         lay_safe.addWidget(lbl_safe_text)

@@ -18,8 +18,10 @@ from .dialogs import ModernMessageBox
 from .constants import APP_NAME
 from .utils import (
     ProgressETA,
+    format_file_size,
     format_progress_label,
     format_user_error,
+    progress_stage_label,
     apply_cancelling_state,
     start_crypto_worker,
 )
@@ -33,6 +35,7 @@ class TabBuka(QWidget):
     # SINYAL NATIVE untuk ditangkap app.py
     system_notification = Signal(str, str)
     worker_started = Signal(object)  # emits the CryptoWorker instance
+    status_changed = Signal(str, str, str)  # title, subtitle, state
 
     def __init__(self):
         super().__init__()
@@ -42,9 +45,11 @@ class TabBuka(QWidget):
         self._has_file = False
         self._has_password = False
         self._progress_eta = ProgressETA()
+        self._external_busy = False
 
         self._build_ui()
         self._connect_signals()
+        self.status_changed.emit("AES-256 • GCM", "Enkripsi lokal aktif", "idle")
 
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
@@ -83,10 +88,17 @@ class TabBuka(QWidget):
         self.password_panel.attach_return_event(self._proses)
         self.drop_zone.file_changed.connect(self._on_file_changed)
         self.password_panel.valid_state_changed.connect(self._on_password_valid_changed)
+        self.password_panel.retry_requested.connect(self._retry_after_error)
+        self.password_panel.pick_file_requested.connect(self.drop_zone.choose_file)
 
     def _on_file_changed(self, path: str):
         self._has_file = bool(path)
         self._reset_timpa()
+        self.password_panel.set_idle_state()
+        if path:
+            self.status_changed.emit("Vault siap dibuka", "Belum diverifikasi", "ready")
+        else:
+            self.status_changed.emit("AES-256 • GCM", "Enkripsi lokal aktif", "idle")
         self._validate_state()
 
     def _on_password_valid_changed(self, is_valid: bool):
@@ -97,6 +109,10 @@ class TabBuka(QWidget):
     def _validate_state(self):
         if self.worker is not None:
             return
+        if self._external_busy:
+            self.btn_aksi.setEnabled(False)
+            self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            return
         if not self._konfirmasi_timpa:
             enabled = self._has_file and self._has_password
             self.btn_aksi.setEnabled(enabled)
@@ -106,11 +122,41 @@ class TabBuka(QWidget):
 
     def _reset_timpa(self):
         self._konfirmasi_timpa = False
+        self.btn_aksi.resetVisualIcons("mdi6.lock-open-variant")
+        self.btn_aksi.setProgressVisible(False)
         self.btn_aksi.setTextLabels(
-            "BUKA BRANKAS", "Masukkan password untuk membuka kunci"
+            "Buka Brankas", "Masukkan password untuk membuka kunci"
         )
 
+    def set_external_busy(self, busy: bool) -> None:
+        """Kunci aksi buka saat tab lain sedang menjalankan operasi crypto.
+
+        Navigasi tab tetap dibiarkan aktif, tapi memulai operasi baru dikunci
+        agar tidak ada dua worker crypto berjalan bersamaan.
+        """
+        self._external_busy = bool(busy)
+        if self.worker is not None:
+            return
+        if busy:
+            self.btn_aksi.setProgressVisible(False)
+            self.btn_aksi.setEnabled(False)
+            self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            self.btn_aksi.setTextLabels(
+                "Operasi lain berjalan", "Tunggu atau batalkan proses saat ini"
+            )
+        else:
+            self._reset_timpa()
+            self._validate_state()
+
     def _proses(self):
+        if self._external_busy and self.worker is None:
+            self.notif.show_msg(
+                "warn",
+                "Operasi lain sedang berjalan. Tunggu selesai atau batalkan proses saat ini.",
+                4000,
+            )
+            return
+
         if self.worker is not None and self.worker.isRunning():
             self.worker.cancel()
             self._progress_eta.reset()
@@ -143,23 +189,57 @@ class TabBuka(QWidget):
     def _update_progress(self, val):
         if self.worker and not self.worker.is_cancelled():
             eta_str = self._progress_eta.update(val)
+            stage = progress_stage_label(val, "buka")
+            self.password_panel.update_processing_stage(stage)
             title, subtitle = format_progress_label(val, "buka", eta_str)
             self.btn_aksi.setTextLabels(title, subtitle)
+            self.btn_aksi.setProgressAnimated(val)
+
+    def _current_file_summary(self) -> tuple[str, str]:
+        path_file = self.drop_zone.get_file()
+        file_name = os.path.basename(path_file) if path_file else "—"
+        try:
+            size_text = (
+                format_file_size(os.path.getsize(path_file)) if path_file else "—"
+            )
+        except OSError:
+            size_text = "—"
+        return file_name, size_text
 
     def _set_busy(self, busy: bool):
         self.drop_zone.set_busy(busy)
-        self.password_panel.setEnabled(not busy)
 
         if busy:
+            file_name, size_text = self._current_file_summary()
+            self.password_panel.set_processing_state(
+                file_name, size_text, "Memverifikasi password"
+            )
+            self.status_changed.emit(
+                "Memverifikasi vault", "Jangan tutup aplikasi", "busy"
+            )
+            self.btn_aksi.setVisualIcons("mdi6.close-circle", "mdi6.close")
+            self.btn_aksi.setProgressVisible(True, 0.0)
             self.btn_aksi.setTextLabels(
-                "MEMBUKA BRANKAS...", "Mempersiapkan dekripsi..."
+                "Membuka brankas", "Menyiapkan vault • Klik untuk membatalkan"
             )
             self.btn_aksi.setEnabled(True)
             self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         else:
+            self.btn_aksi.resetVisualIcons("mdi6.lock-open-variant")
+            self.btn_aksi.setProgressVisible(False)
             self.btn_aksi.setTextLabels(
-                "BUKA BRANKAS", "Masukkan password untuk membuka"
+                "Buka Brankas", "Masukkan password untuk membuka"
             )
+            if self._has_file:
+                self.password_panel.set_idle_state()
+                self.status_changed.emit(
+                    "Vault siap dibuka", "Belum diverifikasi", "ready"
+                )
+            else:
+                self.password_panel.set_idle_state()
+                self.status_changed.emit(
+                    "AES-256 • GCM", "Enkripsi lokal aktif", "idle"
+                )
             self._validate_state()
             self._progress_eta.reset()
 
@@ -175,6 +255,7 @@ class TabBuka(QWidget):
 
         if status == VaultStatus.SUCCESS:
             self.drop_zone.reset_zone()
+            self.status_changed.emit("Terverifikasi", "Data berhasil dibuka", "success")
             logger.info(f"Dekripsi sukses: {msg}")
             self.notif.show_msg(
                 "ok", f"Folder/File '{msg}' berhasil dikembalikan!", 6000
@@ -185,11 +266,19 @@ class TabBuka(QWidget):
 
         elif status == VaultStatus.CANCELLED:
             logger.info("Dekripsi dibatalkan pengguna.")
+            self.status_changed.emit(
+                "Proses dibatalkan", "File sementara dibersihkan", "warn"
+            )
             self.notif.show_msg("warn", "Dekripsi dibatalkan pengguna.", 4000)
 
         elif status == VaultStatus.WRONG_PASSWORD:
             logger.warning("Dekripsi gagal: Password salah.")
-            self.notif.show_msg("err", format_user_error(status, msg, "buka"), 8000)
+            user_msg = format_user_error(status, msg, "buka")
+            self.status_changed.emit(
+                "Gagal diverifikasi", "Password salah atau file rusak", "error"
+            )
+            self.password_panel.set_error_state(user_msg)
+            self.notif.show_msg("err", user_msg, 8000)
 
         elif status == VaultStatus.OVERWRITE_NEEDED:
             dialog = ModernMessageBox(
@@ -215,7 +304,16 @@ class TabBuka(QWidget):
                 logger.info("Dekripsi dibatalkan: User menolak overwrite file asli.")
         else:
             logger.error(f"Dekripsi gagal: {msg}")
-            self.notif.show_msg("err", format_user_error(status, msg, "buka"), 8000)
+            user_msg = format_user_error(status, msg, "buka")
+            self.status_changed.emit(
+                "Gagal membuka", "Periksa file, izin, atau ruang disk", "error"
+            )
+            self.password_panel.set_error_state(user_msg)
+            self.notif.show_msg("err", user_msg, 8000)
+
+    def _retry_after_error(self) -> None:
+        self.password_panel.set_idle_state()
+        self._validate_state()
 
     def auto_load_file(self, path: str) -> None:
         self.drop_zone.load_file(path)

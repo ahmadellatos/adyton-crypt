@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QGraphicsDropShadowEffect,
 )
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve, Property
 from PySide6.QtGui import QColor
 
 
@@ -22,15 +22,24 @@ class BigActionBtn(QPushButton):
     def __init__(self, title, subtitle, icon_name="mdi6.lock", parent=None):
         super().__init__(parent)
         self.setObjectName("BtnAksiBesar")
-        self.setFixedHeight(82)   # Option B: sedikit lebih tinggi & berani
+        self.setFixedHeight(82)  # Option B: sedikit lebih tinggi & berani
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.icon_name = icon_name
+        self._right_icon_name = "mdi6.chevron-right"
+        self._right_icon_size = 27
+        self._progress_visible = False
+        self._display_progress = 0.0
+        self._progress_anim = QPropertyAnimation(self, b"progressFill", self)
+        self._progress_anim.setDuration(260)
+        self._progress_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
 
         lay = QHBoxLayout(self)
         lay.setContentsMargins(28, 12, 28, 12)  # Proporsi lebih baik untuk tinggi 82px
 
         self.lbl_icon = QLabel()
-        self.lbl_icon.setPixmap(qta.icon(self.icon_name, color="white").pixmap(34, 34))  # Sedikit lebih besar (Option B)
+        self.lbl_icon.setPixmap(
+            qta.icon(self.icon_name, color="white").pixmap(34, 34)
+        )  # Sedikit lebih besar (Option B)
 
         v_lay = QVBoxLayout()
         v_lay.setSpacing(2)
@@ -46,12 +55,16 @@ class BigActionBtn(QPushButton):
         v_lay.addWidget(self.lbl_sub)
 
         # Refined typography for Option B (minimalist premium + sedikit berani)
-        self.lbl_title.setStyleSheet("font-size: 14pt; font-weight: 600; color: white; letter-spacing: 0.2px;")
+        self.lbl_title.setStyleSheet(
+            "font-size: 14pt; font-weight: 600; color: white; letter-spacing: 0.2px;"
+        )
         self.lbl_sub.setStyleSheet("font-size: 9.5pt; color: rgba(255,255,255,0.82);")
 
         self.lbl_arrow = QLabel()
         self.lbl_arrow.setPixmap(
-            qta.icon("mdi6.chevron-right", color="white").pixmap(27, 27)  # Sedikit lebih tegas (Option B)
+            qta.icon(self._right_icon_name, color="white").pixmap(
+                self._right_icon_size, self._right_icon_size
+            )
         )
 
         lay.addWidget(self.lbl_icon)
@@ -76,7 +89,9 @@ class BigActionBtn(QPushButton):
             qta.icon(self.icon_name, color=color_val).pixmap(34, 34)
         )
         self.lbl_arrow.setPixmap(
-            qta.icon("mdi6.chevron-right", color=color_val).pixmap(27, 27)
+            qta.icon(self._right_icon_name, color=color_val).pixmap(
+                self._right_icon_size, self._right_icon_size
+            )
         )
 
         # Refined typography with proper hierarchy for Option B
@@ -97,9 +112,102 @@ class BigActionBtn(QPushButton):
                 "font-size: 9.5pt; color: rgba(255,255,255,0.35);"
             )
 
+        self._apply_progress_style()
+
     def setTextLabels(self, title, subtitle=""):
         self.lbl_title.setText(title)
         self.lbl_sub.setText(subtitle)
+
+    def _get_progress_fill(self) -> float:
+        return self._display_progress
+
+    def _set_progress_fill(self, value: float) -> None:
+        self._display_progress = max(0.0, min(1.0, float(value)))
+        self._apply_progress_style()
+
+    progressFill = Property(float, _get_progress_fill, _set_progress_fill)
+
+    def setProgressVisible(self, visible: bool, initial_value: float = 0.0) -> None:
+        """Aktifkan visual progress fill di tombol aksi besar.
+
+        Progress fill memakai property animation agar perubahan progress terasa
+        hidup walaupun callback worker datang tidak rata. Saat nonaktif, styling
+        tombol kembali ke stylesheet global.
+        """
+        self._progress_visible = bool(visible)
+        self._progress_anim.stop()
+        self._display_progress = max(0.0, min(1.0, float(initial_value)))
+        self._apply_progress_style()
+
+    def setProgressAnimated(self, value: float, duration_ms: int = 260) -> None:
+        """Animasi progress fill ke nilai baru secara smooth."""
+        if not self._progress_visible:
+            return
+        target = max(0.0, min(1.0, float(value)))
+        if target < self._display_progress:
+            # Jangan mundurkan progress visual; ini menghindari kesan glitch.
+            target = self._display_progress
+        self._progress_anim.stop()
+        self._progress_anim.setDuration(max(80, int(duration_ms)))
+        self._progress_anim.setStartValue(self._display_progress)
+        self._progress_anim.setEndValue(target)
+        self._progress_anim.start()
+
+    def _apply_progress_style(self) -> None:
+        if not self._progress_visible:
+            self.setStyleSheet("")
+            return
+
+        p = max(0.0, min(1.0, self._display_progress))
+        # Split stops dibuat sangat dekat agar sisi fill terlihat tajam tapi
+        # tetap smooth karena nilai p dianimasikan.
+        left_stop = max(0.0, p - 0.010)
+        right_stop = min(1.0, p + 0.002)
+        self.setStyleSheet(f"""
+            QPushButton#BtnAksiBesar {{
+                background-color: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #00D2C8,
+                    stop:{left_stop:.4f} #00B7AE,
+                    stop:{p:.4f} #009E96,
+                    stop:{right_stop:.4f} #172033,
+                    stop:1 #111625
+                );
+                border: 1px solid #00EFE5;
+                border-radius: 12px;
+                padding: 13px 34px;
+            }}
+            QPushButton#BtnAksiBesar:hover {{
+                border: 1px solid #FFFFFF;
+            }}
+            QPushButton#BtnAksiBesar:focus {{
+                border: 2px solid #FFFFFF;
+            }}
+            QPushButton#BtnAksiBesar:disabled {{
+                background-color: #151C2C;
+                border: 1px solid #232B3E;
+            }}
+        """)
+
+    def setVisualIcons(
+        self, left_icon_name: str | None = None, right_icon_name: str | None = None
+    ):
+        """Update ikon aksi tanpa membuat ulang tombol.
+
+        Dipakai untuk membuat tombol proses lebih jelas sebagai tombol cancel.
+        """
+        if left_icon_name:
+            self.icon_name = left_icon_name
+        if right_icon_name:
+            self._right_icon_name = right_icon_name
+        self.setEnabled(self.isEnabled())
+
+    def resetVisualIcons(self, left_icon_name: str | None = None):
+        if left_icon_name:
+            self.icon_name = left_icon_name
+        self._right_icon_name = "mdi6.chevron-right"
+        self._right_icon_size = 27
+        self.setEnabled(self.isEnabled())
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -133,7 +241,7 @@ class BigActionBtn(QPushButton):
         # Switch to a nice teal glow
         effect.setColor(QColor(0, 210, 200, 120))
         effect.setBlurRadius(30)
-        effect.setYOffset(0)   # centered glow
+        effect.setYOffset(0)  # centered glow
 
     def _restore_normal_shadow(self):
         effect = self.graphicsEffect()

@@ -48,6 +48,7 @@ class TabKunci(QWidget):
         self._is_password_valid = False
         self._has_files = False
         self._progress_eta = ProgressETA()
+        self._external_busy = False
 
         self._build_ui()
         self._connect_signals()
@@ -109,6 +110,10 @@ class TabKunci(QWidget):
     def _validate_state(self):
         if self.worker is not None:
             return
+        if self._external_busy:
+            self.btn_aksi.setEnabled(False)
+            self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            return
         enabled = self._has_files and self._is_password_valid
         self.btn_aksi.setEnabled(enabled)
         self.btn_aksi.setFocusPolicy(
@@ -116,6 +121,11 @@ class TabKunci(QWidget):
         )
 
     def _update_btn_label(self, is_hapus_asli: bool):
+        if self._external_busy and self.worker is None:
+            self.btn_aksi.setTextLabels(
+                "Operasi lain berjalan", "Tunggu atau batalkan proses saat ini"
+            )
+            return
         if is_hapus_asli:
             self.btn_aksi.setTextLabels(
                 "ENKRIPSI & HAPUS ASLI", "File asli akan dihapus setelah dikunci"
@@ -125,13 +135,39 @@ class TabKunci(QWidget):
                 "KUNCI SEKARANG", "Proses penguncian akan dimulai"
             )
 
+    def set_external_busy(self, busy: bool) -> None:
+        """Kunci aksi kunci saat tab lain sedang menjalankan operasi crypto."""
+        self._external_busy = bool(busy)
+        if self.worker is not None:
+            return
+        if busy:
+            self.btn_aksi.setProgressVisible(False)
+            self.btn_aksi.setEnabled(False)
+            self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            self.btn_aksi.setTextLabels(
+                "Operasi lain berjalan", "Tunggu atau batalkan proses saat ini"
+            )
+        else:
+            self.btn_aksi.setProgressVisible(False)
+            self._update_btn_label(self.options_panel.is_hapus_asli())
+            self._validate_state()
+
     def _update_progress(self, val):
         if self.worker and not self.worker.is_cancelled():
             eta_str = self._progress_eta.update(val)
             title, subtitle = format_progress_label(val, "kunci", eta_str)
             self.btn_aksi.setTextLabels(title, subtitle)
+            self.btn_aksi.setProgressAnimated(val)
 
     def _proses(self):
+        if self._external_busy and self.worker is None:
+            self.notif.show_msg(
+                "warn",
+                "Operasi lain sedang berjalan. Tunggu selesai atau batalkan proses saat ini.",
+                4000,
+            )
+            return
+
         if self.worker is not None and self.worker.isRunning():
             self.worker.cancel()
             self._progress_eta.reset()
@@ -188,12 +224,14 @@ class TabKunci(QWidget):
         self.password_panel.setEnabled(not busy)
 
         if busy:
+            self.btn_aksi.setProgressVisible(True, 0.0)
             self.btn_aksi.setTextLabels(
-                "MENGUNCI BRANKAS...", "Harap tunggu, proses sedang berjalan"
+                "Mengunci brankas", "Menyiapkan data • Klik untuk membatalkan"
             )
             self.btn_aksi.setEnabled(True)
             self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         else:
+            self.btn_aksi.setProgressVisible(False)
             self._update_btn_label(self.options_panel.is_hapus_asli())
             self._validate_state()
 

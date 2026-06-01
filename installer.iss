@@ -15,7 +15,7 @@
 ; ═════════════════════════════════════════════════════════════════════════════
 
 [Setup]
-AppId={{A3D9B5E6-7D42-4A21-B861-C3F982ADTN99}
+AppId={{A3D9B5E6-7D42-4A21-B861-C3F982AD7999}
 AppName=Adyton Crypt
 AppVersion=1.0.0
 AppPublisher=Adyton Security
@@ -42,8 +42,15 @@ DefaultDirName={localappdata}\Adyton Crypt
 DefaultGroupName=Adyton Crypt
 AllowNoIcons=yes
 
-; Mencegah dua installer berjalan bersamaan
-AppMutex=AdytonCrypt_SingleInstance_Installer
+; Mencegah dua installer berjalan bersamaan.
+; Catatan: aplikasi saat ini memakai Qt LocalServer untuk single-instance,
+; bukan Win32 mutex, jadi proses aplikasi berjalan ditangani lewat [Code].
+SetupMutex=AdytonCrypt_Setup_Mutex
+
+; Jangan biarkan installer/uninstaller menutup aplikasi otomatis.
+; Jika aplikasi sedang memproses vault, penutupan paksa bisa menyebabkan data hilang.
+CloseApplications=no
+RestartApplications=no
 
 OutputDir=release_build
 OutputBaseFilename=Adyton_Crypt_Setup_v1.0.0
@@ -97,10 +104,6 @@ Root: HKA; Subkey: "Software\Classes\AdytonCryptFile"; ValueType: string; ValueN
 Root: HKA; Subkey: "Software\Classes\AdytonCryptFile\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\assets\icon_adyton.ico"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\AdytonCryptFile\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\AdytonCrypt.exe"" ""%1"""; Flags: uninsdeletekey
 
-[UninstallRun]
-; Matikan aplikasi sebelum uninstall
-Filename: "{cmd}"; Parameters: "/C taskkill /F /IM AdytonCrypt.exe /T"; Flags: runhidden
-
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\*"
 Type: dirifempty; Name: "{app}"
@@ -109,6 +112,45 @@ Type: dirifempty; Name: "{app}"
 ; PASCAL SCRIPT
 ; ═════════════════════════════════════════════════════════════════════════════
 [Code]
+
+// =============================================
+// RUNNING APP DETECTION
+// =============================================
+
+function IsAdytonCryptRunning(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  // Deteksi non-destruktif. Tidak memakai taskkill /F.
+  if Exec(
+    ExpandConstant('{cmd}'),
+    '/C tasklist /FI "IMAGENAME eq AdytonCrypt.exe" /NH | find /I "AdytonCrypt.exe" >NUL',
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode
+  ) then
+    Result := ResultCode = 0
+  else
+    Result := False;
+end;
+
+function BlockIfAdytonCryptRunning(ActionName: String): Boolean;
+begin
+  Result := True;
+
+  if IsAdytonCryptRunning() then
+  begin
+    MsgBox(
+      'Adyton Crypt masih berjalan.'#13#13 +
+      'Sebelum ' + ActionName + ', tutup aplikasi Adyton Crypt secara manual dan pastikan tidak ada proses kunci/buka vault yang sedang berjalan.'#13#13 +
+      'Installer tidak akan menutup aplikasi secara paksa agar data vault tidak berisiko rusak atau hilang.',
+      mbError,
+      MB_OK
+    );
+    Result := False;
+  end;
+end;
 
 // =============================================
 // VC++ REDISTRIBUTABLE DETECTION
@@ -149,13 +191,12 @@ end;
 // UNINSTALL PREVIOUS VERSION (ROBUST HYBRID FIX)
 // =============================================
 
-function GetPreviousUninstallString(): String;
+function QueryUninstallString(UninstallAppId: String): String;
 var
-  AppId, UninstallKey, UnInstPath: String;
+  UninstallKey, UnInstPath: String;
 begin
   UnInstPath := '';
-  AppId := '{#SetupSetting("AppId")}_is1';
-  UninstallKey := 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\' + AppId;
+  UninstallKey := 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\' + UninstallAppId;
 
   // Cek HKLM (All Users) lalu HKCU (Per-User)
   if not RegQueryStringValue(HKEY_LOCAL_MACHINE, UninstallKey, 'QuietUninstallString', UnInstPath) then
@@ -167,7 +208,17 @@ begin
     end;
   end;
 
-  Result := RemoveQuotes(UnInstPath);
+  Result := UnInstPath;
+end;
+
+function GetPreviousUninstallString(): String;
+begin
+  // AppId baru memakai GUID valid.
+  Result := QueryUninstallString('{A3D9B5E6-7D42-4A21-B861-C3F982AD7999}_is1');
+
+  // Fallback untuk build lama yang memakai AppId non-GUID sebelum release publik.
+  if Result = '' then
+    Result := QueryUninstallString('{A3D9B5E6-7D42-4A21-B861-C3F982ADTN99}_is1');
 end;
 
 function InitializeSetup(): Boolean;
@@ -176,6 +227,13 @@ var
   UninstallString: String;
 begin
   Result := True;
+
+  if not BlockIfAdytonCryptRunning('melanjutkan instalasi atau update') then
+  begin
+    Result := False;
+    Exit;
+  end;
+
   UninstallString := GetPreviousUninstallString();
 
   if UninstallString <> '' then
@@ -184,7 +242,7 @@ begin
               'Dianjurkan untuk menghapus versi lama sebelum melanjutkan instalasi.'#13#13 +
               'Hapus versi lama sekarang?', mbConfirmation, MB_YESNO) = IDYES then
     begin
-      if not Exec(UninstallString, '/SILENT', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+      if not Exec(ExpandConstant('{cmd}'), '/C ""' + UninstallString + '""', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
       begin
         MsgBox('Gagal menghapus versi lama secara otomatis. ' +
                'Instalasi akan tetap dilanjutkan, namun disarankan untuk ' +
@@ -193,6 +251,11 @@ begin
       end;
     end;
   end;
+end;
+
+function InitializeUninstall(): Boolean;
+begin
+  Result := BlockIfAdytonCryptRunning('menghapus aplikasi');
 end;
 
 // =============================================

@@ -11,16 +11,16 @@ def _format_eta_seconds(remaining: float) -> str:
     if remaining < 1:
         return "Hampir selesai"
     if remaining < 60:
-        return f"~{int(round(remaining))} detik lagi"
+        return f"sekitar {int(round(remaining))} detik lagi"
 
     minutes = int(remaining // 60)
     seconds = int(remaining % 60)
     if minutes < 60:
-        return f"~{minutes}m {seconds:02d}s lagi"
+        return f"sekitar {minutes}m {seconds:02d}s lagi"
 
     hours = minutes // 60
     minutes = minutes % 60
-    return f"~{hours}j {minutes:02d}m lagi"
+    return f"sekitar {hours}j {minutes:02d}m lagi"
 
 
 def get_eta_string(start_time: float | None, progress: float) -> str:
@@ -115,22 +115,48 @@ class ProgressETA:
         return self.last_eta
 
 
+def progress_stage_label(val: float, mode: str) -> str:
+    """Label tahap proses yang mudah dipahami user.
+
+    Nilai progress dari core merepresentasikan beberapa fase internal. UI tidak
+    perlu memaparkan detail teknis; cukup beri konteks supaya proses besar
+    terasa transparan dan tidak seperti macet.
+    """
+    val = max(0.0, min(1.0, float(val)))
+
+    if mode == "buka":
+        if val < 0.08:
+            return "Memverifikasi password"
+        if val < 0.88:
+            return "Mengekstrak data"
+        if val < 0.97:
+            return "Memindahkan hasil"
+        return "Membersihkan file sementara"
+
+    if val < 0.08:
+        return "Menyiapkan data"
+    if val < 0.88:
+        return "Mengenkripsi data"
+    if val < 0.97:
+        return "Menulis brankas"
+    return "Finalisasi"
+
+
 def format_progress_label(val: float, mode: str, eta_str: str) -> tuple[str, str]:
     """
     Return (title, subtitle) untuk BigActionBtn.setTextLabels
     berdasarkan progress dan mode ('buka' atau 'kunci').
     """
-    if val <= 0.85:
-        pct = int(val * 100)
-        if mode == "buka":
-            title = "MEMBUKA DATA..."
-        else:  # kunci
-            title = "MENGUNCI DATA..."
-        subtitle = f"{pct}%  •  {eta_str}"
+    val = max(0.0, min(1.0, float(val)))
+    pct = int(val * 100)
+    stage = progress_stage_label(val, mode)
+
+    if mode == "buka":
+        title = "Membuka brankas"
+        subtitle = f"{pct}% • {eta_str} • {stage} • Klik untuk membatalkan"
     else:
-        final_pct = int((val - 0.85) / 0.15 * 100)
-        title = "FINALISASI..."
-        subtitle = f"{final_pct}%  •  {eta_str}"
+        title = "Mengunci brankas"
+        subtitle = f"{pct}% • {eta_str} • {stage} • Klik untuk membatalkan"
 
     return title, subtitle
 
@@ -195,7 +221,7 @@ def apply_shadow(widget, blur_radius=20, y_offset=6, opacity=60):
 
 def apply_cancelling_state(button) -> None:
     """Set tombol aksi ke state 'sedang membatalkan'."""
-    button.setTextLabels("MEMBATALKAN...", "Harap tunggu...")
+    button.setTextLabels("Membatalkan proses", "Membersihkan file sementara...")
     button.setEnabled(False)
 
 

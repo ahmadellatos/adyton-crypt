@@ -1,6 +1,16 @@
 @echo off
+setlocal EnableExtensions EnableDelayedExpansion
+
 title Nuitka Compiler - Adyton Crypt
 color 0B
+
+:: ═════════════════════════════════════════════════════════════════════════════
+:: ADYTON CRYPT BUILD SCRIPT
+:: ═════════════════════════════════════════════════════════════════════════════
+:: Build standalone Windows executable with Nuitka.
+:: This script intentionally cleans stale bytecode/build output first so the
+:: installer does not accidentally package __pycache__ or old artifacts.
+:: ═════════════════════════════════════════════════════════════════════════════
 
 echo ===================================================
 echo   MEMULAI KOMPILASI ADYTON CRYPT
@@ -8,31 +18,46 @@ echo ===================================================
 echo.
 
 :: ====================== PENGATURAN ======================
-set BUILD_MODE=release
+set "BUILD_MODE=release"
+set "APP_VERSION=1.0.0"
+set "APP_EXE=AdytonCrypt.exe"
+set "BUILD_DIR=release_build"
+set "DIST_DIR=%BUILD_DIR%\main.dist"
 :: Untuk testing error, ubah sementara ke "debug"
-:: set BUILD_MODE=debug
+:: set "BUILD_MODE=debug"
 :: ========================================================
 
-if "%BUILD_MODE%"=="debug" (
+if /I "%BUILD_MODE%"=="debug" (
     echo [MODE] DEBUG - Console akan ditampilkan
-    set CONSOLE_FLAG=--windows-console-mode=attach
+    set "CONSOLE_FLAG=--windows-console-mode=attach"
 ) else (
     echo [MODE] RELEASE - Console dinonaktifkan
-    set CONSOLE_FLAG=--windows-console-mode=disable
+    set "CONSOLE_FLAG=--windows-console-mode=disable"
 )
 
 echo.
 echo Kompilasi mode: %BUILD_MODE%
+echo Versi aplikasi: %APP_VERSION%
+echo.
+
+call :check_prerequisites
+if errorlevel 1 goto :fail
+
+call :clean_artifacts
+if errorlevel 1 goto :fail
+
+echo.
+echo [BUILD] Menjalankan Nuitka...
 echo.
 
 python -m nuitka ^
     --standalone ^
     %CONSOLE_FLAG% ^
-    --output-filename=AdytonCrypt.exe ^
+    --output-filename=%APP_EXE% ^
     --windows-icon-from-ico=assets\icon_adyton.ico ^
     --windows-company-name="Adyton Security" ^
     --windows-product-name="Adyton Crypt" ^
-    --windows-product-version="1.0.0" ^
+    --windows-product-version="%APP_VERSION%" ^
     --enable-plugin=pyside6 ^
     --include-qt-plugins=platforms,styles,iconengines,imageformats ^
     --noinclude-qt-translations ^
@@ -44,29 +69,96 @@ python -m nuitka ^
     --include-package=core ^
     --include-package=ui ^
     --include-package=cryptography ^
+    --include-module=cryptography.hazmat.primitives.kdf.argon2 ^
     --include-data-dir=assets=assets ^
     --noinclude-pytest-mode=nofollow ^
     --nofollow-import-to=tests ^
+    --nofollow-import-to=pytest ^
     --assume-yes-for-downloads ^
-    --output-dir=release_build ^
+    --output-dir=%BUILD_DIR% ^
     main.py
 
-echo.
-if %ERRORLEVEL% == 0 (
-    color 0A
-    echo ===================================================
-    echo   KOMPILASI BERHASIL!
-    echo ===================================================
+if errorlevel 1 goto :fail
+
+if not exist "%DIST_DIR%\%APP_EXE%" (
     echo.
-    echo Hasil build ada di: release_build\main.dist\
-    echo.
-    echo Selanjutnya: Gunakan Inno Setup untuk membuat installer.
-) else (
-    color 0C
-    echo ===================================================
-    echo   KOMPILASI GAGAL!
-    echo ===================================================
-    echo Periksa error di atas.
+    echo [ERROR] Build selesai tetapi executable tidak ditemukan:
+    echo         %DIST_DIR%\%APP_EXE%
+    goto :fail
 )
+
+color 0A
+echo.
+echo ===================================================
+echo   KOMPILASI BERHASIL!
+echo ===================================================
+echo.
+echo Hasil build ada di: %DIST_DIR%\
+echo Executable: %DIST_DIR%\%APP_EXE%
+echo.
+echo Selanjutnya: buka installer.iss dengan Inno Setup untuk membuat installer.
 echo.
 pause
+exit /b 0
+
+:check_prerequisites
+echo [CHECK] Memeriksa Python dan dependency build...
+
+where python >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] Python tidak ditemukan di PATH.
+    exit /b 1
+)
+
+python -m nuitka --version >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] Nuitka belum tersedia. Install dependency dari requirements.txt terlebih dahulu.
+    echo         python -m pip install -r requirements.txt nuitka
+    exit /b 1
+)
+
+if not exist "assets\icon_adyton.ico" (
+    echo [ERROR] Icon aplikasi tidak ditemukan: assets\icon_adyton.ico
+    exit /b 1
+)
+
+python -c "import PySide6, qframelesswindow, qtawesome, loguru, winotify, zxcvbn, cryptography; from cryptography.hazmat.primitives.kdf.argon2 import Argon2id" >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] Dependency runtime belum lengkap atau cryptography belum mendukung Argon2id.
+    echo         Jalankan: python -m pip install -r requirements.txt nuitka
+    exit /b 1
+)
+
+echo [OK] Dependency build siap.
+exit /b 0
+
+:clean_artifacts
+echo [CLEAN] Membersihkan output build dan bytecode lama...
+
+if exist "%BUILD_DIR%" (
+    rmdir /s /q "%BUILD_DIR%"
+    if exist "%BUILD_DIR%" (
+        echo [ERROR] Gagal menghapus folder build lama: %BUILD_DIR%
+        exit /b 1
+    )
+)
+
+for /d /r %%D in (__pycache__) do (
+    if exist "%%D" rmdir /s /q "%%D" >nul 2>nul
+)
+
+del /s /q *.pyc *.pyo >nul 2>nul
+
+echo [OK] Cleanup selesai.
+exit /b 0
+
+:fail
+color 0C
+echo.
+echo ===================================================
+echo   KOMPILASI GAGAL!
+echo ===================================================
+echo Periksa error di atas.
+echo.
+pause
+exit /b 1

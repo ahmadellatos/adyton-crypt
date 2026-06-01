@@ -171,7 +171,7 @@ def load_stylesheet() -> str:
         font-size: 12pt;
         font-weight: 600;
         color: {CLR_TEXT_MAIN};
-        letter-spacing: 0.5px;
+        letter-spacing: 0.1px;
     }}
 
     /* Specific bigger title for "DAFTAR TARGET" header (user request) */
@@ -545,10 +545,10 @@ def load_stylesheet() -> str:
 
     /* Valid badge */
     QLabel#ValidBadge {{
-        background-color: #1E3A2F;
-        color: #2ECC71;
+        background-color: #173240;
+        color: {CLR_ACCENT};
         font-size: 7.5pt;
-        font-weight: 600;
+        font-weight: 700;
         padding: 2px 9px;
         border-radius: 5px;
     }}
@@ -581,10 +581,10 @@ def load_stylesheet() -> str:
 
     /* Encryption info section header — more presence */
     QLabel#EncSectionTitle {{
-        font-size: 9.5pt;
+        font-size: 10pt;
         font-weight: 600;
-        color: #A3ACBD;
-        letter-spacing: 0.5px;
+        color: #D7DCE6;
+        letter-spacing: 0.1px;
     }}
 
     /* Bordered container for INFORMASI ENKRIPSI section */
@@ -611,6 +611,70 @@ def load_stylesheet() -> str:
         font-size: 8pt;
         color: {CLR_TEXT_MUTED};
         opacity: 0.65;
+    }}
+
+
+
+    /* Open vault process / error state */
+    QFrame#ProcessStatusBox {{
+        background-color: #0B1F25;
+        border: 1px solid rgba(0, 210, 200, 0.22);
+        border-radius: 10px;
+    }}
+
+    QLabel#ProcessText {{
+        color: #A8B2C1;
+        font-size: 9pt;
+        font-weight: 400;
+    }}
+
+    QLabel#ProcessLabel {{
+        color: #8B95A5;
+        font-size: 8.5pt;
+        font-weight: 500;
+    }}
+
+    QLabel#ProcessValue {{
+        color: #E8ECF3;
+        font-size: 9pt;
+        font-weight: 600;
+    }}
+
+    QFrame#OpenErrorBox {{
+        background-color: rgba(231, 76, 60, 0.08);
+        border: 1px solid rgba(231, 76, 60, 0.35);
+        border-radius: 10px;
+    }}
+
+    QLabel#OpenErrorText {{
+        color: #F2B8B5;
+        font-size: 9pt;
+        font-weight: 500;
+    }}
+
+    QPushButton#BtnInlinePrimary {{
+        background-color: {CLR_ACCENT};
+        color: #071015;
+        border: none;
+        border-radius: 7px;
+        padding: 7px 14px;
+        font-weight: 700;
+    }}
+    QPushButton#BtnInlinePrimary:hover {{
+        background-color: {CLR_ACCENT_HOVER};
+    }}
+
+    QPushButton#BtnInlineSecondary {{
+        background-color: transparent;
+        color: {CLR_TEXT_MAIN};
+        border: 1px solid {CLR_BORDER};
+        border-radius: 7px;
+        padding: 7px 14px;
+        font-weight: 600;
+    }}
+    QPushButton#BtnInlineSecondary:hover {{
+        border-color: {CLR_ACCENT};
+        color: {CLR_ACCENT};
     }}
 
     /* --- TOOLTIPS, ALERTS, & TITLE BAR --- */

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QStackedWidget,
+    QGridLayout,
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -20,6 +21,16 @@ from ..widgets import (
 )
 from ..utils import format_file_size
 from ..buttons import ClearButton
+from core.constants import (
+    MAGIC_BYTES,
+    VERSION_V1,
+    VERSION_V2,
+    SALT_SIZE,
+    FILE_ID_SIZE,
+    V2_FLAG_KDF_PARAMS,
+    KDF_ID_ARGON2ID,
+    KDF_ID_PBKDF2_SHA256,
+)
 
 
 class DropTargetFrame(QFrame):
@@ -152,24 +163,25 @@ class DropZoneOpen(QWidget):
         """
         page = QWidget()
         lay = QVBoxLayout(page)
-        lay.setContentsMargins(20, 10, 20, 14)  # Reduced top padding
-        lay.setSpacing(10)
+        lay.setContentsMargins(20, 12, 20, 14)
+        lay.setSpacing(0)
 
-        # Header
-        header = QLabel("FILE BRANKAS (.ADTN)")
+        # Header group: title + helper text harus terasa sebagai satu grup visual.
+        header_group = QWidget()
+        header_lay = QVBoxLayout(header_group)
+        header_lay.setContentsMargins(0, 0, 0, 0)
+        header_lay.setSpacing(6)
+
+        header = QLabel("File Brankas (.adtn)")
         header.setObjectName("CardTitle")
-        lay.addWidget(header)
-
-        lay.addSpacing(0)  # No gap between title and subtitle
+        header_lay.addWidget(header)
 
         sub = QLabel("Pilih file brankas yang ingin Anda buka.")
         sub.setObjectName("CardSubtitle")
-        sub.setStyleSheet(
-            "margin-top: -2px; padding-top: 0px;"
-        )  # Force tighter to title
-        lay.addWidget(sub)
+        header_lay.addWidget(sub)
 
-        lay.addSpacing(6)  # Breathing after subtitle
+        lay.addWidget(header_group)
+        lay.addSpacing(24)
 
         # === Main File Info Card ===
         info_card = QFrame()
@@ -178,7 +190,7 @@ class DropZoneOpen(QWidget):
         card_lay.setContentsMargins(14, 11, 14, 12)  # Slightly tighter top padding
         card_lay.setSpacing(7)
 
-        # Top row: icon + (filename + ready text + path) + VALID badge + clear
+        # Top row: icon + (filename + ready text + path) + format badge + clear
         top_row = QHBoxLayout()
         top_row.setSpacing(8)
 
@@ -196,12 +208,12 @@ class DropZoneOpen(QWidget):
         # Use ElidedLabel for long filenames (middle elide) — prevents clipping/wrapping issues
         self.lbl_filename = ElidedLabel("...", mode=Qt.TextElideMode.ElideMiddle)
         self.lbl_filename.setStyleSheet(
-            "color: white; font-weight: 600; font-size: 10pt; background: transparent;"
+            "color: white; font-weight: 700; font-size: 10.5pt; background: transparent;"
         )
         name_col.addWidget(self.lbl_filename)
 
         # "Siap untuk didekripsi" — matches reference exactly
-        self.lbl_ready = QLabel("Siap untuk didekripsi")
+        self.lbl_ready = QLabel("Siap dibuka")
         self.lbl_ready.setObjectName("FileReadySubtitle")
         name_col.addWidget(self.lbl_ready)
 
@@ -213,8 +225,8 @@ class DropZoneOpen(QWidget):
 
         top_row.addLayout(name_col, 1)
 
-        # VALID badge
-        self.valid_badge = QLabel("VALID ✓")
+        # Format badge — bukan verifikasi kriptografis penuh.
+        self.valid_badge = QLabel("FORMAT OK")
         self.valid_badge.setObjectName("ValidBadge")
         self.valid_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.valid_badge.setFixedHeight(18)
@@ -236,8 +248,8 @@ class DropZoneOpen(QWidget):
         meta_defs = [
             ("mdi6.file-outline", "Ukuran File", "—"),
             ("mdi6.file-document", "Tipe File", "File Brankas (.adtn)"),
-            ("mdi6.calendar", "Dibuat", "—"),
-            ("mdi6.shield-lock", "Enkripsi", "AES-256 + GCM"),
+            ("mdi6.calendar", "Tanggal File", "—"),
+            ("mdi6.shield-lock", "Enkripsi", "AES-256-GCM"),
         ]
         for icon_name, label_text, initial_value in meta_defs:
             item = self._create_meta_item(icon_name, label_text, initial_value)
@@ -246,7 +258,7 @@ class DropZoneOpen(QWidget):
 
         lay.addWidget(info_card)
 
-        lay.addSpacing(8)  # Clear separation before Ganti button
+        lay.addSpacing(16)
 
         # Ganti button
         self.btn_ganti = QPushButton("  Ganti File Brankas")
@@ -257,35 +269,37 @@ class DropZoneOpen(QWidget):
         self.btn_ganti.clicked.connect(self._pilih_file)
         lay.addWidget(self.btn_ganti)
 
-        lay.addSpacing(14)  # Clear separation before ENKRIPSI section
+        lay.addSpacing(24)
 
-        # INFORMASI ENKRIPSI section (bordered container)
+        # Detail Keamanan section (bordered container)
         enc_section = QFrame()
         enc_section.setObjectName("EncInfoSection")
 
         enc_lay = QVBoxLayout(enc_section)
-        enc_lay.setContentsMargins(14, 11, 14, 11)  # More generous padding
-        enc_lay.setSpacing(7)
+        enc_lay.setContentsMargins(14, 12, 14, 12)
+        enc_lay.setSpacing(8)
 
-        enc_title = QLabel("INFORMASI ENKRIPSI")
+        enc_title = QLabel("Detail Keamanan")
         enc_title.setObjectName("EncSectionTitle")
         enc_lay.addWidget(enc_title)
-        enc_lay.addSpacing(3)  # Extra breathing after title
+        enc_lay.addSpacing(4)
 
-        enc_row = QHBoxLayout()
-        enc_row.setSpacing(10)  # Better spacing between the 3 items
+        enc_grid = QGridLayout()
+        enc_grid.setHorizontalSpacing(16)
+        enc_grid.setVerticalSpacing(10)
         self.enc_items = []
         enc_defs = [
-            ("mdi6.shield-lock", "Algoritma", "AES-256 + GCM"),
-            ("mdi6.calendar", "Dibuat Pada", "—"),
-            ("mdi6.fingerprint", "Integrity Check", "Terverifikasi"),
+            ("mdi6.shield-lock", "Enkripsi", "AES-256-GCM"),
+            ("mdi6.key-variant", "KDF", "—"),
+            ("mdi6.package-variant-closed", "Format", "—"),
+            ("mdi6.fingerprint", "Integritas", "Belum diverifikasi"),
         ]
-        for icon_name, label_text, initial_value in enc_defs:
+        for idx, (icon_name, label_text, initial_value) in enumerate(enc_defs):
             item = self._create_encryption_info_item(
                 icon_name, label_text, initial_value
             )
-            enc_row.addWidget(item, 1)
-        enc_lay.addLayout(enc_row)
+            enc_grid.addWidget(item, idx // 2, idx % 2)
+        enc_lay.addLayout(enc_grid)
 
         lay.addWidget(enc_section)
 
@@ -323,31 +337,31 @@ class DropZoneOpen(QWidget):
     def _create_encryption_info_item(
         self, icon_name: str, label_text: str, value_text: str
     ) -> QWidget:
-        """Horizontal item (icon on the side) for INFORMASI ENKRIPSI section."""
+        """Horizontal item for Detail Keamanan section."""
         container = QFrame()
         container.setStyleSheet("background: transparent; border: none;")
 
         h = QHBoxLayout(container)
         h.setContentsMargins(0, 0, 0, 0)
-        h.setSpacing(10)  # Increased for 32px icons
+        h.setSpacing(9)
 
         # Icon on the left side (32px as requested, vertically centered)
         ic = QLabel()
-        ic.setPixmap(qta.icon(icon_name, color="#00D2C8").pixmap(32, 32))
-        ic.setFixedSize(32, 32)
+        ic.setPixmap(qta.icon(icon_name, color="#00D2C8").pixmap(26, 26))
+        ic.setFixedSize(26, 26)
         h.addWidget(ic, 0, Qt.AlignmentFlag.AlignVCenter)
 
         # Text column on the right
         v = QVBoxLayout()
         v.setContentsMargins(0, 0, 0, 0)
-        v.setSpacing(2)  # Slightly more breathing between label and value
+        v.setSpacing(2)
 
         lbl = QLabel(label_text)
         lbl.setStyleSheet("color: #8B95A5; font-size: 8pt; font-weight: 400;")
         v.addWidget(lbl)
 
         val = QLabel(value_text)
-        val.setStyleSheet("color: #E8ECF3; font-size: 9pt; font-weight: 500;")
+        val.setStyleSheet("color: #E8ECF3; font-size: 9pt; font-weight: 600;")
         v.addWidget(val)
 
         h.addLayout(v, 1)
@@ -394,22 +408,87 @@ class DropZoneOpen(QWidget):
             filename = os.path.basename(path) if path else "..."
             fullpath = path or "..."
 
+        vault_info = self._read_vault_display_info(path)
+
         # Update widgets
         self.lbl_filename.setText(filename)
         self.lbl_fullpath.setText(fullpath)
+        self.valid_badge.setText(vault_info["badge"])
 
         # 4 metadata columns
         if len(self.meta_items) >= 4:
             self.meta_items[0]._meta_value.setText(size_str)
             self.meta_items[1]._meta_value.setText("File Brankas (.adtn)")
             self.meta_items[2]._meta_value.setText(date_str)
-            self.meta_items[3]._meta_value.setText("AES-256 + GCM")
+            self.meta_items[3]._meta_value.setText(vault_info["encryption"])
 
-        # Bottom encryption info row (Algoritma static, Dibuat Pada = same date, Integrity static)
-        if len(self.enc_items) >= 3:
-            self.enc_items[0]._enc_val.setText("AES-256 + GCM")
-            self.enc_items[1]._enc_val.setText(date_str)
-            self.enc_items[2]._enc_val.setText("Belum diverifikasi")
+        # Detail keamanan: Enkripsi, KDF, Format, Integritas.
+        if len(self.enc_items) >= 4:
+            self.enc_items[0]._enc_val.setText(vault_info["encryption"])
+            self.enc_items[1]._enc_val.setText(vault_info["kdf"])
+            self.enc_items[2]._enc_val.setText(vault_info["format"])
+            self.enc_items[3]._enc_val.setText("Belum diverifikasi")
+
+    def _read_vault_display_info(self, path: str) -> dict[str, str]:
+        """Baca metadata header ringan untuk display UI.
+
+        Ini bukan verifikasi integritas kriptografis. Status tetap "Belum
+        diverifikasi" sampai proses buka brankas selesai dengan sukses.
+        """
+        info = {
+            "badge": "FORMAT OK",
+            "encryption": "AES-256-GCM",
+            "kdf": "—",
+            "format": "—",
+        }
+
+        try:
+            with open(path, "rb") as f:
+                if f.read(4) != MAGIC_BYTES:
+                    info.update({"badge": "FORMAT ?", "format": "Tidak dikenali"})
+                    return info
+
+                version = f.read(1)
+                if version == VERSION_V1:
+                    info.update({"kdf": "PBKDF2", "format": "Vault v1 / Legacy"})
+                    return info
+
+                if version != VERSION_V2:
+                    info.update({"badge": "FORMAT ?", "format": "Versi tidak didukung"})
+                    return info
+
+                # v2: salt + file_id + chunk_size + flags
+                f.read(SALT_SIZE + FILE_ID_SIZE)
+                f.read(4)
+                flags_raw = f.read(4)
+                if len(flags_raw) != 4:
+                    info.update({"badge": "FORMAT ?", "format": "Header tidak lengkap"})
+                    return info
+
+                flags = int.from_bytes(flags_raw, byteorder="big")
+                kdf = "PBKDF2 Legacy"
+                if flags & V2_FLAG_KDF_PARAMS:
+                    section = f.read(3)
+                    if len(section) != 3:
+                        info.update(
+                            {"badge": "FORMAT ?", "format": "Header tidak lengkap"}
+                        )
+                        return info
+                    kdf_id = section[0]
+                    params_len = int.from_bytes(section[1:3], byteorder="big")
+                    f.read(params_len)
+                    if kdf_id == KDF_ID_ARGON2ID:
+                        kdf = "Argon2id"
+                    elif kdf_id == KDF_ID_PBKDF2_SHA256:
+                        kdf = "PBKDF2"
+                    else:
+                        kdf = "Tidak didukung"
+
+                info.update({"kdf": kdf, "format": "Vault v2"})
+                return info
+        except Exception:
+            info.update({"badge": "FORMAT ?", "format": "Tidak terbaca"})
+            return info
 
     def _update_card_style(self, is_empty: bool):
         # Use property-based styling for empty state (same system as DropZoneLock)
@@ -492,6 +571,9 @@ class DropZoneOpen(QWidget):
     # --- PUBLIC API ---
     def load_file(self, path: str) -> None:
         self._set_file(path)
+
+    def choose_file(self) -> None:
+        self._pilih_file()
 
     def get_file(self) -> str:
         return self._path_file
