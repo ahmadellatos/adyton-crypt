@@ -35,10 +35,12 @@ python -m nuitka ^
     --windows-product-version="1.0.0" ^
     --enable-plugin=pyside6 ^
     --include-qt-plugins=platforms,styles,iconengines,imageformats ^
+    --noinclude-qt-translations ^
     --include-package=qframelesswindow ^
     --include-package=qtawesome ^
     --include-package=loguru ^
     --include-package=winotify ^
+    --include-package=zxcvbn ^
     --include-package=core ^
     --include-package=ui ^
     --include-package=cryptography ^

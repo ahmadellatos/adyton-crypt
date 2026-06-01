@@ -146,25 +146,49 @@ begin
 end;
 
 // =============================================
-// UNINSTALL PREVIOUS VERSION
+// UNINSTALL PREVIOUS VERSION (ROBUST HYBRID FIX)
 // =============================================
+
+function GetPreviousUninstallString(): String;
+var
+  AppId, UninstallKey, UnInstPath: String;
+begin
+  UnInstPath := '';
+  AppId := '{#SetupSetting("AppId")}_is1';
+  UninstallKey := 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\' + AppId;
+
+  // Cek HKLM (All Users) lalu HKCU (Per-User)
+  if not RegQueryStringValue(HKEY_LOCAL_MACHINE, UninstallKey, 'QuietUninstallString', UnInstPath) then
+  begin
+    if not RegQueryStringValue(HKEY_CURRENT_USER, UninstallKey, 'QuietUninstallString', UnInstPath) then
+    begin
+      if not RegQueryStringValue(HKEY_LOCAL_MACHINE, UninstallKey, 'UninstallString', UnInstPath) then
+        RegQueryStringValue(HKEY_CURRENT_USER, UninstallKey, 'UninstallString', UnInstPath);
+    end;
+  end;
+
+  Result := RemoveQuotes(UnInstPath);
+end;
 
 function InitializeSetup(): Boolean;
 var
   ResultCode: Integer;
+  UninstallString: String;
 begin
   Result := True;
+  UninstallString := GetPreviousUninstallString();
 
-  // Cek apakah ada versi lama yang terinstall
-  if RegKeyExists(HKEY_LOCAL_MACHINE, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\' + ExpandConstant('{{A3D9B5E6-7D42-4A21-B861-C3F982ADTN99}_is1') then
+  if UninstallString <> '' then
   begin
-    if MsgBox('Versi lama Adyton Crypt terdeteksi.'#13#13 +
-              'Apakah Anda ingin menghapus versi lama sebelum melanjutkan instalasi?',
-              mbConfirmation, MB_YESNO) = IDYES then
+    if MsgBox('Versi Adyton Crypt sebelumnya terdeteksi di sistem Anda.'#13#13 +
+              'Dianjurkan untuk menghapus versi lama sebelum melanjutkan instalasi.'#13#13 +
+              'Hapus versi lama sekarang?', mbConfirmation, MB_YESNO) = IDYES then
     begin
-      if not Exec(ExpandConstant('{uninstallexe}'), '/SILENT', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+      if not Exec(UninstallString, '/SILENT', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
       begin
-        MsgBox('Gagal menghapus versi lama. Silakan uninstall secara manual melalui Control Panel.',
+        MsgBox('Gagal menghapus versi lama secara otomatis. ' +
+               'Instalasi akan tetap dilanjutkan, namun disarankan untuk ' +
+               'membersihkannya nanti via Control Panel.',
                mbError, MB_OK);
       end;
     end;
