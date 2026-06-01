@@ -12,7 +12,8 @@ from PySide6.QtCore import Qt, Signal
 
 from core.vault import buka_brankas, VaultStatus
 from core.worker import CryptoWorker
-from .widgets import AnimatedNotifBar, apply_shadow
+from .widgets import AnimatedNotifBar
+from .utils import apply_shadow
 from .buttons import BigActionBtn
 from .dialogs import ModernMessageBox
 from .constants import APP_NAME

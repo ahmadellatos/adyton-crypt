@@ -108,6 +108,9 @@ def hapus_permanen(
                             wiped_bytes[0] += chunk
                             pct = wipe_start_pct + (wiped_bytes[0] / total_wipe_bytes) * (wipe_end_pct - wipe_start_pct)
                             safe_cb(progress_cb, min(wipe_end_pct, pct))
+
+                    f.flush()
+                    os.fsync(f.fileno())
             except Exception:
                 logger.debug("Secure wipe overwrite gagal (file akan tetap dihapus)")
 
@@ -219,8 +222,8 @@ def _hitung_total_size(paths: list[str]) -> int:
 
 
 def _hitung_kebutuhan_disk(total_payload_size: int) -> int:
-    """Hitung kebutuhan ruang disk termasuk overhead (50 MB buffer)."""
-    return total_payload_size + (50 * 1024 * 1024)
+    """Hitung kebutuhan ruang disk termasuk overhead."""
+    return total_payload_size + DISK_OVERHEAD_BYTES
 
 
 def _is_safe_tar_member(member_name: str, target_dir: Path) -> bool:
@@ -349,11 +352,8 @@ def _extract_and_place_vault(
                         target.write(chunk)
 
                         extracted_bytes += len(chunk)
-                        pct = 0.92 + 0.07 * (
-                            extracted_bytes / max(total_tar_size, 1)
-                        )
-                        # Extraction is part of finalization (85-100%)
-                        safe_cb(progress_cb, min(0.99, 0.85 + 0.14 * (extracted_bytes / max(total_tar_size, 1))))
+                        pct = min(0.99, 0.85 + 0.14 * (extracted_bytes / max(total_tar_size, 1)))
+                        safe_cb(progress_cb, pct)
 
                 # Kembalikan metadata dasar
                 try:

@@ -8,7 +8,7 @@ import shutil
 import pytest
 from pathlib import Path
 
-from core.vault import kunci_brankas, buka_brankas, VaultStatus
+from core.vault import kunci_brankas, buka_brankas, VaultStatus, _is_safe_tar_member
 from tests.conftest import folder_checksum
 
 PASSWORD_BENAR = "P@ssw0rd!Kuat123"
@@ -385,3 +385,18 @@ class TestSecureWipeGuardrails:
         )
         assert status == VaultStatus.SUCCESS
         assert not os.path.exists(secret_file), "Original file harus sudah terhapus setelah secure wipe"
+
+
+def test_tarslip_path_traversal():
+    """Memastikan _is_safe_tar_member memblokir upaya eksploitasi Path Traversal."""
+    target = Path("/tmp/safe_dir")
+
+    # Kasus berbahaya — harus False
+    assert not _is_safe_tar_member("../escape.txt", target)
+    assert not _is_safe_tar_member("../../etc/passwd", target)
+    assert not _is_safe_tar_member("subdir/../../../Windows/System32/cmd.exe", target)
+    assert not _is_safe_tar_member("/absolute/path/hacked.txt", target)
+
+    # Kasus aman — harus True
+    assert _is_safe_tar_member("file_aman.txt", target)
+    assert _is_safe_tar_member("folder/subfolder/file_aman.txt", target)
