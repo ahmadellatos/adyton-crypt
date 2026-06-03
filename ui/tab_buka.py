@@ -92,11 +92,18 @@ class TabBuka(QWidget):
         self.password_panel.pick_file_requested.connect(self.drop_zone.choose_file)
 
     def _on_file_changed(self, path: str):
-        self._has_file = bool(path)
+        self._has_file = bool(path) and self.drop_zone.can_open_file()
         self._reset_timpa()
         self.password_panel.set_idle_state()
         if path:
-            self.status_changed.emit("Vault siap dibuka", "Belum diverifikasi", "ready")
+            if self._has_file:
+                self.status_changed.emit(
+                    "Vault siap dibuka", "Format valid • Belum diverifikasi", "ready"
+                )
+            else:
+                self.status_changed.emit(
+                    "File tidak valid", self.drop_zone.get_format_status(), "error"
+                )
         else:
             self.status_changed.emit("AES-256 • GCM", "Enkripsi lokal aktif", "idle")
         self._validate_state()
@@ -210,6 +217,7 @@ class TabBuka(QWidget):
         self.drop_zone.set_busy(busy)
 
         if busy:
+            self.drop_zone.set_verification_state("checking")
             file_name, size_text = self._current_file_summary()
             self.password_panel.set_processing_state(
                 file_name, size_text, "Memverifikasi password"
@@ -254,6 +262,7 @@ class TabBuka(QWidget):
             self._cached_pw = None
 
         if status == VaultStatus.SUCCESS:
+            self.drop_zone.set_verification_state("verified")
             self.drop_zone.reset_zone()
             self.status_changed.emit("Terverifikasi", "Data berhasil dibuka", "success")
             logger.info(f"Dekripsi sukses: {msg}")
@@ -266,6 +275,7 @@ class TabBuka(QWidget):
 
         elif status == VaultStatus.CANCELLED:
             logger.info("Dekripsi dibatalkan pengguna.")
+            self.drop_zone.set_verification_state("pending", "Menunggu password")
             self.status_changed.emit(
                 "Proses dibatalkan", "File sementara dibersihkan", "warn"
             )
@@ -274,6 +284,7 @@ class TabBuka(QWidget):
         elif status == VaultStatus.WRONG_PASSWORD:
             logger.warning("Dekripsi gagal: Password salah.")
             user_msg = format_user_error(status, msg, "buka")
+            self.drop_zone.set_verification_state("failed")
             self.status_changed.emit(
                 "Gagal diverifikasi", "Password salah atau file rusak", "error"
             )
@@ -281,6 +292,9 @@ class TabBuka(QWidget):
             self.notif.show_msg("err", user_msg, 8000)
 
         elif status == VaultStatus.OVERWRITE_NEEDED:
+            self.drop_zone.set_verification_state(
+                "verified", "Terverifikasi, menunggu konfirmasi"
+            )
             dialog = ModernMessageBox(
                 title="Konfirmasi Timpa File",
                 message=(
@@ -305,6 +319,7 @@ class TabBuka(QWidget):
         else:
             logger.error(f"Dekripsi gagal: {msg}")
             user_msg = format_user_error(status, msg, "buka")
+            self.drop_zone.set_verification_state("failed", "Gagal membuka file")
             self.status_changed.emit(
                 "Gagal membuka", "Periksa file, izin, atau ruang disk", "error"
             )
@@ -313,6 +328,7 @@ class TabBuka(QWidget):
 
     def _retry_after_error(self) -> None:
         self.password_panel.set_idle_state()
+        self.drop_zone.set_verification_state("pending", "Menunggu password")
         self._validate_state()
 
     def auto_load_file(self, path: str) -> None:

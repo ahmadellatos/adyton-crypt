@@ -522,8 +522,93 @@ def load_stylesheet() -> str:
         border-radius: 14px;
     }}
 
-    /* --- DROP ZONE FILLED STATE (Buka) - reference matched --- */
-    /* Metadata labels (used in 4-col grid inside FileInfoCard) */
+    /* --- DROP ZONE FILLED STATE (Buka) - selected file card like reference --- */
+    QFrame#FileInfoCard {{
+        background-color: #181F32;
+        border: 1px solid #232B3E;
+        border-radius: 11px;
+    }}
+
+    QLabel#SelectedFileIcon {{
+        background-color: rgba(0, 210, 200, 0.08);
+        border: none;
+        border-radius: 8px;
+    }}
+
+    QLabel#SelectedFileName {{
+        color: {CLR_TEXT_MAIN};
+        font-size: 10pt;
+        font-weight: 700;
+        letter-spacing: 0.05px;
+    }}
+
+    QLabel#FileReadySubtitle {{
+        color: #D7DCE6;
+        font-size: 8.5pt;
+        font-weight: 500;
+    }}
+
+    QLabel#SelectedFilePath {{
+        color: #8B95A5;
+        font-size: 8pt;
+        font-weight: 300;
+    }}
+
+    QLabel#ValidBadge {{
+        background-color: rgba(40, 199, 93, 0.12);
+        color: #28C75D;
+        border: 1px solid rgba(40, 199, 93, 0.22);
+        font-size: 7.5pt;
+        font-weight: 700;
+        border-radius: 5px;
+        padding: 0px 8px;
+    }}
+
+    QLabel#ValidBadge[state="ok"] {{
+        background-color: rgba(40, 199, 93, 0.12);
+        color: #28C75D;
+        border: 1px solid rgba(40, 199, 93, 0.22);
+    }}
+
+    QLabel#ValidBadge[state="verified"] {{
+        background-color: rgba(0, 210, 200, 0.14);
+        color: {CLR_ACCENT};
+        border: 1px solid rgba(0, 210, 200, 0.36);
+    }}
+
+    QLabel#ValidBadge[state="busy"] {{
+        background-color: rgba(0, 210, 200, 0.10);
+        color: #8DEDE8;
+        border: 1px solid rgba(0, 210, 200, 0.22);
+    }}
+
+    QLabel#ValidBadge[state="warn"], QLabel#ValidBadge[valid="false"] {{
+        background-color: rgba(243, 156, 18, 0.12);
+        color: {CLR_WARN};
+        border: 1px solid rgba(243, 156, 18, 0.24);
+    }}
+
+    QLabel#ValidBadge[state="error"] {{
+        background-color: rgba(231, 76, 60, 0.12);
+        color: #FF8A80;
+        border: 1px solid rgba(231, 76, 60, 0.32);
+    }}
+
+    QFrame#FileCardDivider {{
+        background-color: #232B3E;
+        border: none;
+    }}
+
+    QFrame#MetaItem {{
+        background-color: transparent;
+        border: none;
+    }}
+
+    QFrame#MetaSeparator {{
+        background-color: rgba(35, 43, 62, 0.75);
+        border: none;
+    }}
+
     QLabel#MetaLabel {{
         color: #8B95A5;
         font-size: 7.5pt;
@@ -532,32 +617,8 @@ def load_stylesheet() -> str:
 
     QLabel#MetaValue {{
         color: #E8ECF3;
-        font-size: 8pt;
-        font-weight: 500;
-    }}
-
-    /* New rich info card for redesigned DropZoneOpen filled state */
-    QFrame#FileInfoCard {{
-        background-color: #181F32;
-        border: 1px solid #232B3E;
-        border-radius: 12px;
-    }}
-
-    /* Valid badge */
-    QLabel#ValidBadge {{
-        background-color: #173240;
-        color: {CLR_ACCENT};
-        font-size: 7.5pt;
-        font-weight: 700;
-        padding: 2px 9px;
-        border-radius: 5px;
-    }}
-
-    /* "Siap untuk didekripsi" subtitle under filename */
-    QLabel#FileReadySubtitle {{
-        color: #8B95A5;
-        font-size: 8pt;
-        font-weight: 400;
+        font-size: 8.2pt;
+        font-weight: 600;
     }}
 
     /* Valid banner "File brankas valid dan siap untuk dibuka" — kept for compatibility but not primary anymore */

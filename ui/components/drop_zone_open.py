@@ -22,14 +22,24 @@ from ..widgets import (
 from ..utils import format_file_size
 from ..buttons import ClearButton
 from core.constants import (
+    ARGON2ID_PARAMS_SIZE,
+    CHUNK_RECORD_HEADER_SIZE,
+    CHUNK_RECORD_OVERHEAD,
+    CHUNK_SIZE,
+    HEADER_SIZE_V2,
     MAGIC_BYTES,
     VERSION_V1,
     VERSION_V2,
+    OVERHEAD_V1,
+    RECORD_TYPE_METADATA,
+    TAG_SIZE,
     SALT_SIZE,
     FILE_ID_SIZE,
     V2_FLAG_KDF_PARAMS,
+    V2_SUPPORTED_FLAGS,
     KDF_ID_ARGON2ID,
     KDF_ID_PBKDF2_SHA256,
+    MAX_VIRTUAL_NAME_LENGTH,
 )
 
 
@@ -82,6 +92,9 @@ class DropZoneOpen(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._path_file = ""
+        self._file_format_openable = False
+        self._format_status_text = "—"
+        self._format_badge_state = "idle"
         self._custom_tooltip = CustomToolTip(self)
         self._build_ui()
         self._setup_accessibility()
@@ -184,76 +197,82 @@ class DropZoneOpen(QWidget):
         lay.addSpacing(24)
 
         # === Main File Info Card ===
+        # Dibuat mengikuti reference: top area lapang + divider + metadata 4 kolom.
         info_card = QFrame()
         info_card.setObjectName("FileInfoCard")
-        card_lay = QVBoxLayout(info_card)
-        card_lay.setContentsMargins(14, 11, 14, 12)  # Slightly tighter top padding
-        card_lay.setSpacing(7)
+        info_card.setMinimumHeight(126)
 
-        # Top row: icon + (filename + ready text + path) + format badge + clear
+        card_lay = QVBoxLayout(info_card)
+        card_lay.setContentsMargins(0, 0, 0, 0)
+        card_lay.setSpacing(0)
+
+        # Top row: icon besar + filename/status/path + VALID badge + clear.
         top_row = QHBoxLayout()
-        top_row.setSpacing(8)
+        top_row.setContentsMargins(14, 14, 12, 12)
+        top_row.setSpacing(12)
 
         self.icon_file = QLabel()
+        self.icon_file.setObjectName("SelectedFileIcon")
         self.icon_file.setPixmap(
-            qta.icon("mdi6.file-lock", color="#00D2C8").pixmap(22, 22)
+            qta.icon("mdi6.file-lock", color="#00D2C8").pixmap(38, 38)
         )
+        self.icon_file.setFixedSize(44, 44)
+        self.icon_file.setAlignment(Qt.AlignmentFlag.AlignCenter)
         top_row.addWidget(self.icon_file, 0, Qt.AlignmentFlag.AlignTop)
 
         name_col = QVBoxLayout()
-        name_col.setSpacing(
-            1
-        )  # Tightened gap between filename and text below (Siap + path)
+        name_col.setContentsMargins(0, 0, 0, 0)
+        name_col.setSpacing(3)
 
-        # Use ElidedLabel for long filenames (middle elide) — prevents clipping/wrapping issues
         self.lbl_filename = ElidedLabel("...", mode=Qt.TextElideMode.ElideMiddle)
-        self.lbl_filename.setStyleSheet(
-            "color: white; font-weight: 700; font-size: 10.5pt; background: transparent;"
-        )
+        self.lbl_filename.setObjectName("SelectedFileName")
         name_col.addWidget(self.lbl_filename)
 
-        # "Siap untuk didekripsi" — matches reference exactly
         self.lbl_ready = QLabel("Siap dibuka")
         self.lbl_ready.setObjectName("FileReadySubtitle")
         name_col.addWidget(self.lbl_ready)
 
         self.lbl_fullpath = ElidedLabel("...", mode=Qt.TextElideMode.ElideMiddle)
-        self.lbl_fullpath.setStyleSheet(
-            "color: #8B95A5; font-size: 8pt; font-weight: 300; background: transparent;"
-        )
+        self.lbl_fullpath.setObjectName("SelectedFilePath")
         name_col.addWidget(self.lbl_fullpath)
 
         top_row.addLayout(name_col, 1)
 
-        # Format badge — bukan verifikasi kriptografis penuh.
-        self.valid_badge = QLabel("FORMAT OK")
+        self.valid_badge = QLabel("FORMAT  ✓")
         self.valid_badge.setObjectName("ValidBadge")
         self.valid_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.valid_badge.setFixedHeight(18)
+        self.valid_badge.setFixedSize(88, 23)
         top_row.addWidget(self.valid_badge, 0, Qt.AlignmentFlag.AlignTop)
 
-        # Clear X
         self.btn_clear = ClearButton()
         self.btn_clear.clicked.connect(self._clear_file)
         top_row.addWidget(self.btn_clear, 0, Qt.AlignmentFlag.AlignTop)
 
         card_lay.addLayout(top_row)
 
-        card_lay.addSpacing(4)  # Extra breathing between top info and metadata
+        divider = QFrame()
+        divider.setObjectName("FileCardDivider")
+        divider.setFixedHeight(1)
+        card_lay.addWidget(divider)
 
-        # 4-col metadata — tighter but safe to avoid clipping
         meta_row = QHBoxLayout()
-        meta_row.setSpacing(6)
+        meta_row.setContentsMargins(14, 9, 14, 10)
+        meta_row.setSpacing(0)
         self.meta_items = []
         meta_defs = [
-            ("mdi6.file-outline", "Ukuran File", "—"),
-            ("mdi6.file-document", "Tipe File", "File Brankas (.adtn)"),
-            ("mdi6.calendar", "Tanggal File", "—"),
-            ("mdi6.shield-lock", "Enkripsi", "AES-256-GCM"),
+            ("Ukuran File", "—"),
+            ("Dibuat", "—"),
+            ("Enkripsi", "AES-256-GCM"),
+            ("Status", "Menunggu password"),
         ]
-        for icon_name, label_text, initial_value in meta_defs:
-            item = self._create_meta_item(icon_name, label_text, initial_value)
+        for idx, (label_text, initial_value) in enumerate(meta_defs):
+            item = self._create_meta_item(label_text, initial_value)
             meta_row.addWidget(item, 1)
+            if idx < len(meta_defs) - 1:
+                sep = QFrame()
+                sep.setObjectName("MetaSeparator")
+                sep.setFixedWidth(1)
+                meta_row.addWidget(sep)
         card_lay.addLayout(meta_row)
 
         lay.addWidget(info_card)
@@ -305,30 +324,26 @@ class DropZoneOpen(QWidget):
 
         return page
 
-    def _create_meta_item(
-        self, icon_name: str, label_text: str, value_text: str
-    ) -> QWidget:
-        """Create one metadata column (compact, reference style)."""
+    def _create_meta_item(self, label_text: str, value_text: str) -> QWidget:
+        """Create one metadata column like the reference card."""
         container = QFrame()
-        container.setStyleSheet("background: transparent; border: none;")
+        container.setObjectName("MetaItem")
         v = QVBoxLayout(container)
-        v.setContentsMargins(3, 1, 3, 1)
-        v.setSpacing(1)
-
-        ic = QLabel()
-        ic.setPixmap(qta.icon(icon_name, color="#00D2C8").pixmap(13, 13))
-        v.addWidget(ic, 0, Qt.AlignmentFlag.AlignLeft)
+        v.setContentsMargins(10, 0, 10, 0)
+        v.setSpacing(3)
 
         lbl = QLabel(label_text)
         lbl.setObjectName("MetaLabel")
+        lbl.setAlignment(Qt.AlignmentFlag.AlignLeft)
         v.addWidget(lbl)
 
         val = QLabel(value_text)
         val.setObjectName("MetaValue")
-        val.setWordWrap(True)
+        val.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        val.setWordWrap(False)
+        val.setMinimumHeight(16)
         v.addWidget(val)
 
-        container._meta_icon = ic
         container._meta_label = lbl
         container._meta_value = val
         self.meta_items.append(container)
@@ -398,7 +413,7 @@ class DropZoneOpen(QWidget):
             import datetime as dt
 
             mtime = dt.datetime.fromtimestamp(stat.st_mtime)
-            date_str = f"{mtime.day} {months[mtime.month]} {mtime.year}, {mtime.strftime('%H:%M')}"
+            date_str = f"{mtime.day} {months[mtime.month]} {mtime.year}"
 
             filename = os.path.basename(path)
             fullpath = path
@@ -409,18 +424,22 @@ class DropZoneOpen(QWidget):
             fullpath = path or "..."
 
         vault_info = self._read_vault_display_info(path)
+        self._file_format_openable = bool(vault_info["openable"])
+        self._format_status_text = str(vault_info["status"])
+        self._format_badge_state = str(vault_info["badge_state"])
 
         # Update widgets
         self.lbl_filename.setText(filename)
         self.lbl_fullpath.setText(fullpath)
-        self.valid_badge.setText(vault_info["badge"])
+        self.lbl_ready.setText(str(vault_info["subtitle"]))
+        self._set_badge(str(vault_info["badge"]), str(vault_info["badge_state"]))
 
         # 4 metadata columns
         if len(self.meta_items) >= 4:
             self.meta_items[0]._meta_value.setText(size_str)
-            self.meta_items[1]._meta_value.setText("File Brankas (.adtn)")
-            self.meta_items[2]._meta_value.setText(date_str)
-            self.meta_items[3]._meta_value.setText(vault_info["encryption"])
+            self.meta_items[1]._meta_value.setText(date_str)
+            self.meta_items[2]._meta_value.setText(str(vault_info["encryption"]))
+            self.meta_items[3]._meta_value.setText(str(vault_info["status"]))
 
         # Detail keamanan: Enkripsi, KDF, Format, Integritas.
         if len(self.enc_items) >= 4:
@@ -429,66 +448,284 @@ class DropZoneOpen(QWidget):
             self.enc_items[2]._enc_val.setText(vault_info["format"])
             self.enc_items[3]._enc_val.setText("Belum diverifikasi")
 
-    def _read_vault_display_info(self, path: str) -> dict[str, str]:
+    def _read_vault_display_info(self, path: str) -> dict[str, object]:
         """Baca metadata header ringan untuk display UI.
 
-        Ini bukan verifikasi integritas kriptografis. Status tetap "Belum
-        diverifikasi" sampai proses buka brankas selesai dengan sukses.
+        Ini hanya validasi struktur/format vault, bukan verifikasi integritas
+        kriptografis. Integritas baru dianggap valid setelah proses dekripsi
+        sukses, karena tag AES-GCM membutuhkan password/key yang benar.
         """
         info = {
-            "badge": "FORMAT OK",
+            "badge": "FORMAT  ✓",
+            "badge_state": "ok",
             "encryption": "AES-256-GCM",
             "kdf": "—",
             "format": "—",
+            "status": "Format valid",
+            "subtitle": "Menunggu password",
+            "openable": True,
         }
 
+        def mark_problem(
+            badge: str,
+            status: str,
+            fmt: str,
+            *,
+            state: str = "error",
+            subtitle: str = "File belum bisa dibuka",
+            openable: bool = False,
+            kdf: str | None = None,
+        ) -> dict[str, object]:
+            info.update(
+                {
+                    "badge": badge,
+                    "badge_state": state,
+                    "status": status,
+                    "format": fmt,
+                    "subtitle": subtitle,
+                    "openable": openable,
+                }
+            )
+            if kdf is not None:
+                info["kdf"] = kdf
+            return info
+
         try:
+            if not path.lower().endswith(".adtn"):
+                return mark_problem(
+                    "ERROR",
+                    "Ekstensi tidak valid",
+                    "Bukan file .adtn",
+                )
+
+            file_size = os.path.getsize(path)
+            if file_size <= 0:
+                return mark_problem("ERROR", "File kosong", "Tidak lengkap")
+
             with open(path, "rb") as f:
                 if f.read(4) != MAGIC_BYTES:
-                    info.update({"badge": "FORMAT ?", "format": "Tidak dikenali"})
-                    return info
+                    return mark_problem(
+                        "ERROR",
+                        "Bukan vault Adyton",
+                        "Tidak dikenali",
+                    )
 
                 version = f.read(1)
                 if version == VERSION_V1:
-                    info.update({"kdf": "PBKDF2", "format": "Vault v1 / Legacy"})
+                    if file_size < OVERHEAD_V1:
+                        return mark_problem(
+                            "ERROR",
+                            "File tidak lengkap",
+                            "Vault v1 / Legacy",
+                            kdf="PBKDF2",
+                        )
+                    info.update(
+                        {
+                            "kdf": "PBKDF2",
+                            "format": "Vault v1 / Legacy",
+                            "status": "Format valid",
+                            "subtitle": "Siap dibuka",
+                        }
+                    )
                     return info
 
                 if version != VERSION_V2:
-                    info.update({"badge": "FORMAT ?", "format": "Versi tidak didukung"})
-                    return info
+                    return mark_problem(
+                        "UNSUPPORTED",
+                        "Versi tidak didukung",
+                        "Versi lebih baru/tidak dikenal",
+                        state="warn",
+                        subtitle="Butuh versi aplikasi lebih baru",
+                    )
+
+                if file_size < HEADER_SIZE_V2 + (2 * CHUNK_RECORD_OVERHEAD):
+                    return mark_problem(
+                        "ERROR",
+                        "File tidak lengkap",
+                        "Vault v2",
+                    )
 
                 # v2: salt + file_id + chunk_size + flags
                 f.read(SALT_SIZE + FILE_ID_SIZE)
-                f.read(4)
+                chunk_size_raw = f.read(4)
+                if len(chunk_size_raw) != 4:
+                    return mark_problem("ERROR", "Header tidak lengkap", "Vault v2")
+                chunk_size = int.from_bytes(chunk_size_raw, byteorder="big")
+                if chunk_size <= 0 or chunk_size > CHUNK_SIZE:
+                    return mark_problem(
+                        "ERROR",
+                        "Parameter chunk invalid",
+                        "Vault v2",
+                    )
+
                 flags_raw = f.read(4)
                 if len(flags_raw) != 4:
-                    info.update({"badge": "FORMAT ?", "format": "Header tidak lengkap"})
-                    return info
+                    return mark_problem("ERROR", "Header tidak lengkap", "Vault v2")
 
                 flags = int.from_bytes(flags_raw, byteorder="big")
+                if flags & ~V2_SUPPORTED_FLAGS:
+                    return mark_problem(
+                        "UNSUPPORTED",
+                        "Flag tidak didukung",
+                        "Vault v2",
+                        state="warn",
+                        subtitle="Butuh versi aplikasi lebih baru",
+                    )
+
                 kdf = "PBKDF2 Legacy"
                 if flags & V2_FLAG_KDF_PARAMS:
                     section = f.read(3)
                     if len(section) != 3:
-                        info.update(
-                            {"badge": "FORMAT ?", "format": "Header tidak lengkap"}
-                        )
-                        return info
+                        return mark_problem("ERROR", "Header tidak lengkap", "Vault v2")
                     kdf_id = section[0]
                     params_len = int.from_bytes(section[1:3], byteorder="big")
-                    f.read(params_len)
+                    params_raw = f.read(params_len)
+                    if len(params_raw) != params_len:
+                        return mark_problem("ERROR", "Header tidak lengkap", "Vault v2")
+
                     if kdf_id == KDF_ID_ARGON2ID:
+                        if params_len != ARGON2ID_PARAMS_SIZE:
+                            return mark_problem(
+                                "ERROR",
+                                "Parameter KDF invalid",
+                                "Vault v2",
+                                kdf="Argon2id",
+                            )
+                        iterations = int.from_bytes(params_raw[0:4], byteorder="big")
+                        lanes = int.from_bytes(params_raw[4:8], byteorder="big")
+                        memory_cost = int.from_bytes(params_raw[8:12], byteorder="big")
+                        if iterations <= 0 or lanes <= 0 or memory_cost <= 0:
+                            return mark_problem(
+                                "ERROR",
+                                "Parameter KDF invalid",
+                                "Vault v2",
+                                kdf="Argon2id",
+                            )
                         kdf = "Argon2id"
                     elif kdf_id == KDF_ID_PBKDF2_SHA256:
+                        if params_len != 4:
+                            return mark_problem(
+                                "ERROR",
+                                "Parameter KDF invalid",
+                                "Vault v2",
+                                kdf="PBKDF2",
+                            )
+                        iterations = int.from_bytes(params_raw, byteorder="big")
+                        if iterations <= 0:
+                            return mark_problem(
+                                "ERROR",
+                                "Parameter KDF invalid",
+                                "Vault v2",
+                                kdf="PBKDF2",
+                            )
                         kdf = "PBKDF2"
                     else:
-                        kdf = "Tidak didukung"
+                        return mark_problem(
+                            "UNSUPPORTED",
+                            "KDF tidak didukung",
+                            "Vault v2",
+                            state="warn",
+                            subtitle="Butuh versi aplikasi lebih baru",
+                            kdf="Tidak didukung",
+                        )
 
-                info.update({"kdf": kdf, "format": "Vault v2"})
+                # Minimal sanity check record pertama. Header record tidak
+                # didekripsi di sini, tapi tipe/index/panjang bisa dicek tanpa password.
+                record_header = f.read(CHUNK_RECORD_HEADER_SIZE)
+                if len(record_header) != CHUNK_RECORD_HEADER_SIZE:
+                    return mark_problem("ERROR", "Record tidak lengkap", "Vault v2")
+
+                record_type = record_header[0]
+                record_index = int.from_bytes(record_header[1:9], byteorder="big")
+                plaintext_len = int.from_bytes(record_header[9:13], byteorder="big")
+                if (
+                    record_type != RECORD_TYPE_METADATA
+                    or record_index != 0
+                    or plaintext_len < 2
+                    or plaintext_len > 2 + MAX_VIRTUAL_NAME_LENGTH
+                ):
+                    return mark_problem("ERROR", "Struktur record invalid", "Vault v2")
+
+                if file_size - f.tell() < plaintext_len + TAG_SIZE:
+                    return mark_problem("ERROR", "Record tidak lengkap", "Vault v2")
+
+                info.update(
+                    {
+                        "kdf": kdf,
+                        "format": "Vault v2",
+                        "status": "Format valid",
+                        "subtitle": "Siap dibuka",
+                    }
+                )
                 return info
         except Exception:
-            info.update({"badge": "FORMAT ?", "format": "Tidak terbaca"})
-            return info
+            return mark_problem("ERROR", "Tidak terbaca", "Tidak terbaca")
+
+    def _set_badge(self, text: str, state: str):
+        """Update badge kanan atas dan paksa QSS membaca ulang property state."""
+        self.valid_badge.setText(text)
+        self.valid_badge.setProperty("state", state)
+        # Backward compatibility dengan QSS lama yang masih membaca property valid.
+        self.valid_badge.setProperty("valid", state in {"ok", "verified", "busy"})
+        self.valid_badge.style().unpolish(self.valid_badge)
+        self.valid_badge.style().polish(self.valid_badge)
+
+    def _set_meta_status(self, text: str):
+        if len(self.meta_items) >= 4:
+            self.meta_items[3]._meta_value.setText(text)
+
+    def _set_integrity_status(self, text: str):
+        if len(self.enc_items) >= 4:
+            self.enc_items[3]._enc_val.setText(text)
+
+    def can_open_file(self) -> bool:
+        """True jika file lolos validasi format ringan dan boleh dicoba dibuka."""
+        return bool(self._path_file and self._file_format_openable)
+
+    def get_format_status(self) -> str:
+        return self._format_status_text
+
+    def set_verification_state(self, state: str, message: str | None = None):
+        """Sinkronkan status UI setelah proses buka brankas berjalan.
+
+        state:
+        - pending: format valid, integritas belum diverifikasi
+        - checking: sedang verifikasi password/tag AES-GCM
+        - verified: password benar + tag AES-GCM valid
+        - failed: password salah / file rusak / tag AES-GCM gagal
+        """
+        if not self._path_file:
+            return
+
+        if state == "checking":
+            self.lbl_ready.setText(message or "Memverifikasi password")
+            self._set_badge("CEK...", "busy")
+            self._set_meta_status("Memverifikasi")
+            self._set_integrity_status("Memverifikasi")
+            return
+
+        if state == "verified":
+            self.lbl_ready.setText(message or "Integritas terverifikasi")
+            self._set_badge("VERIFIED  ✓", "verified")
+            self._set_meta_status("Terverifikasi")
+            self._set_integrity_status("Terverifikasi")
+            return
+
+        if state == "failed":
+            self.lbl_ready.setText(message or "Password salah atau file rusak")
+            self._set_badge("GAGAL", "error")
+            self._set_meta_status("Gagal verifikasi")
+            self._set_integrity_status("Gagal verifikasi")
+            return
+
+        # pending / cancelled / retry: kembali ke status hasil validasi format ringan.
+        self.lbl_ready.setText(message or "Menunggu password")
+        self._set_badge(
+            "FORMAT  ✓" if self._file_format_openable else "ERROR",
+            self._format_badge_state,
+        )
+        self._set_meta_status(self._format_status_text)
+        self._set_integrity_status("Belum diverifikasi")
 
     def _update_card_style(self, is_empty: bool):
         # Use property-based styling for empty state (same system as DropZoneLock)
@@ -551,6 +788,9 @@ class DropZoneOpen(QWidget):
 
     def _clear_file(self):
         self._path_file = ""
+        self._file_format_openable = False
+        self._format_status_text = "—"
+        self._format_badge_state = "idle"
         self._custom_tooltip.hide_tooltip()
         self.stack_file.setCurrentIndex(0)
         self._update_card_style(True)
