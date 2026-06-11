@@ -4,16 +4,16 @@ Deskripsi: Tombol-tombol aksi kustom (BigActionBtn, ClearButton, split button).
 """
 
 import qtawesome as qta
-from PySide6.QtWidgets import (
-    QPushButton,
-    QFrame,
-    QLabel,
-    QHBoxLayout,
-    QVBoxLayout,
-    QGraphicsDropShadowEffect,
-)
-from PySide6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve, Property
+from PySide6.QtCore import Property, QEasingCurve, QPropertyAnimation, QSize, Qt
 from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+)
 
 
 class BigActionBtn(QPushButton):
@@ -85,9 +85,7 @@ class BigActionBtn(QPushButton):
         super().setEnabled(val)
         color_val = "white" if val else "rgba(255,255,255,0.35)"
 
-        self.lbl_icon.setPixmap(
-            qta.icon(self.icon_name, color=color_val).pixmap(34, 34)
-        )
+        self.lbl_icon.setPixmap(qta.icon(self.icon_name, color=color_val).pixmap(34, 34))
         self.lbl_arrow.setPixmap(
             qta.icon(self._right_icon_name, color=color_val).pixmap(
                 self._right_icon_size, self._right_icon_size
@@ -100,17 +98,13 @@ class BigActionBtn(QPushButton):
             self.lbl_title.setStyleSheet(
                 "font-size: 14pt; font-weight: 600; color: white; letter-spacing: 0.2px;"
             )
-            self.lbl_sub.setStyleSheet(
-                "font-size: 9.5pt; color: rgba(255,255,255,0.82);"
-            )
+            self.lbl_sub.setStyleSheet("font-size: 9.5pt; color: rgba(255,255,255,0.82);")
         else:
             # Disabled state - properly muted (not just faded white)
             self.lbl_title.setStyleSheet(
                 "font-size: 14pt; font-weight: 500; color: rgba(255,255,255,0.45);"
             )
-            self.lbl_sub.setStyleSheet(
-                "font-size: 9.5pt; color: rgba(255,255,255,0.35);"
-            )
+            self.lbl_sub.setStyleSheet("font-size: 9.5pt; color: rgba(255,255,255,0.35);")
 
         self._apply_progress_style()
 
@@ -189,9 +183,7 @@ class BigActionBtn(QPushButton):
             }}
         """)
 
-    def setVisualIcons(
-        self, left_icon_name: str | None = None, right_icon_name: str | None = None
-    ):
+    def setVisualIcons(self, left_icon_name: str | None = None, right_icon_name: str | None = None):
         """Update ikon aksi tanpa membuat ulang tombol.
 
         Dipakai untuk membuat tombol proses lebih jelas sebagai tombol cancel.
@@ -405,14 +397,10 @@ class TambahClearSplitButton(QFrame):
     def eventFilter(self, obj, event):
         if event.type() == event.Type.Enter:
             if obj == self.btn_clear:
-                self.btn_clear.setIcon(
-                    qta.icon("mdi6.trash-can-outline", color="#FFFFFF")
-                )
+                self.btn_clear.setIcon(qta.icon("mdi6.trash-can-outline", color="#FFFFFF"))
         elif event.type() == event.Type.Leave:
             if obj == self.btn_clear:
-                self.btn_clear.setIcon(
-                    qta.icon("mdi6.trash-can-outline", color="#8B95A5")
-                )
+                self.btn_clear.setIcon(qta.icon("mdi6.trash-can-outline", color="#8B95A5"))
         elif event.type() == event.Type.KeyPress:
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
                 if obj == self.btn_clear:

@@ -1,19 +1,19 @@
 import qtawesome as qta
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QVBoxLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QFrame,
+    QVBoxLayout,
 )
-from PySide6.QtCore import Qt, Signal
 
-from ..widgets import apply_shadow, PasswordLineEdit
 from ..styles import (
-    CLR_TEXT_MUTED,
     CLR_ACCENT,
+    CLR_TEXT_MUTED,
     CLR_WARN,
 )
+from ..widgets import PasswordLineEdit, apply_shadow
 
 
 class PasswordPanelOpen(QFrame):
@@ -152,9 +152,7 @@ class PasswordPanelOpen(QFrame):
 
         return box
 
-    def _make_status_row(
-        self, parent_layout: QVBoxLayout, label: str, value: str
-    ) -> QLabel:
+    def _make_status_row(self, parent_layout: QVBoxLayout, label: str, value: str) -> QLabel:
         row = QHBoxLayout()
         row.setSpacing(12)
         lbl = QLabel(label)

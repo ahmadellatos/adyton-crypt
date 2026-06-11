@@ -4,17 +4,17 @@ Deskripsi: Komponen menu kustom (Centered menu dengan icon dan highlight).
 """
 
 import qtawesome as qta
-from PySide6.QtWidgets import (
-    QProxyStyle,
-    QStyle,
-    QMenu,
-    QWidgetAction,
-    QWidget,
-    QHBoxLayout,
-    QLabel,
-)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QProxyStyle,
+    QStyle,
+    QWidget,
+    QWidgetAction,
+)
 
 
 class CenteredMenuStyle(QProxyStyle):
@@ -28,9 +28,7 @@ class CenteredMenuStyle(QProxyStyle):
 
 
 class HoverMenuWidget(QWidget):
-    def __init__(
-        self, text, icon_name, icon_color, text_color, action_ref, parent=None
-    ):
+    def __init__(self, text, icon_name, icon_color, text_color, action_ref, parent=None):
         super().__init__(parent)
         self.action_ref = action_ref
         self._highlighted = False
@@ -121,9 +119,7 @@ class AccessibleCenteredMenu(QMenu):
 
 
 class CenteredMenuAction(QWidgetAction):
-    def __init__(
-        self, text, icon_name, icon_color="white", text_color="white", parent=None
-    ):
+    def __init__(self, text, icon_name, icon_color="white", text_color="white", parent=None):
         super().__init__(parent)
         self.parent_menu = parent
         self.w = HoverMenuWidget(text, icon_name, icon_color, text_color, self, parent)

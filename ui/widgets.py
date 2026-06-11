@@ -4,33 +4,31 @@ Deskripsi: Kumpulan komponen UI (Widget) kustom yang reusable.
 """
 
 import qtawesome as qta
-from PySide6.QtWidgets import (
-    QWidget,
-    QFrame,
-    QLabel,
-    QHBoxLayout,
-    QGraphicsDropShadowEffect,
-    QPushButton,
-    QSizePolicy,
-    QLineEdit,
-)
 from PySide6.QtCore import (
-    Qt,
-    QPropertyAnimation,
     QEasingCurve,
-    QTimer,
-    QSize,
     QPoint,
+    QPropertyAnimation,
+    QSize,
+    Qt,
+    QTimer,
     Signal,
 )
-from PySide6.QtGui import QColor, QCursor, QPixmap, QGuiApplication
+from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPixmap
+from PySide6.QtWidgets import (
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSizePolicy,
+    QWidget,
+)
 
 from core.paths import get_asset_path
 
-from .styles import CLR_TEXT_MUTED, CLR_ACCENT
+from .styles import CLR_ACCENT, CLR_TEXT_MUTED
 from .utils import apply_shadow
-
-
 
 
 # ── HERO ICON WIDGET (FOLDER GLOWING) ───────────────────────────────
@@ -227,9 +225,7 @@ class ElidedLabel(QLabel):
 
     def _update_elided_text(self):
         metrics = self.fontMetrics()
-        elided = metrics.elidedText(
-            self._full_text, self._mode, max(10, self.width() - 5)
-        )
+        elided = metrics.elidedText(self._full_text, self._mode, max(10, self.width() - 5))
         if self.text() != elided:
             super().setText(elided)
 
@@ -280,7 +276,7 @@ class CustomTitleBar(QFrame):
         super().__init__(parent)
         self.parent_window = parent
         self.setFixedHeight(32)
-        self.setStyleSheet("background-color: #0B101E;")
+        self.setStyleSheet("background-color: #111625;")
 
         lay = QHBoxLayout(self)
         lay.setContentsMargins(15, 0, 0, 0)
@@ -361,15 +357,11 @@ class AnimatedNotifBar(QFrame):
         self.lbl_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.lbl_text = QLabel("")
-        self.lbl_text.setAlignment(
-            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
-        )
+        self.lbl_text.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         self.lbl_text.setWordWrap(True)
 
         self.btn_close = QPushButton()
-        self.btn_close.setIcon(
-            qta.icon("mdi6.close", color="#8B95A5", color_active="white")
-        )
+        self.btn_close.setIcon(qta.icon("mdi6.close", color="#8B95A5", color_active="white"))
         self.btn_close.setIconSize(QSize(18, 18))
         self.btn_close.setFixedSize(24, 24)
         self.btn_close.setStyleSheet("background: transparent; border: none;")
@@ -413,12 +405,8 @@ class AnimatedNotifBar(QFrame):
         self.timer.stop()
         self.anim.stop()
 
-        bg_color = (
-            "#0D2B1E" if kind == "ok" else ("#2B0D0D" if kind == "err" else "#2B1E0D")
-        )
-        fg_color = (
-            "#00D2C8" if kind == "ok" else ("#E74C3C" if kind == "err" else "#F39C12")
-        )
+        bg_color = "#0D2B1E" if kind == "ok" else ("#2B0D0D" if kind == "err" else "#2B1E0D")
+        fg_color = "#00D2C8" if kind == "ok" else ("#E74C3C" if kind == "err" else "#F39C12")
         icon_name = (
             "mdi6.check-circle"
             if kind == "ok"
@@ -430,9 +418,7 @@ class AnimatedNotifBar(QFrame):
             f"QLabel {{ border: none; background: transparent; color: {fg_color}; font-weight: 600; font-size: 10pt; }}"
         )
         self.lbl_icon.setPixmap(qta.icon(icon_name, color=fg_color).pixmap(24, 24))
-        self.lbl_text.setStyleSheet(
-            f"color: {fg_color}; font-weight: 600; font-size: 10pt;"
-        )
+        self.lbl_text.setStyleSheet(f"color: {fg_color}; font-weight: 600; font-size: 10pt;")
         self.lbl_text.setText(msg)
 
         self.raise_()
@@ -512,6 +498,9 @@ class PasswordLineEdit(QFrame):
         self.btn_toggle.setFixedSize(44, 45)
         self.btn_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_toggle.clicked.connect(self._toggle_visibility)
+        self.btn_toggle.installEventFilter(self)
+        self.btn_toggle.setAccessibleName("Tampilkan atau sembunyikan password")
+        self.btn_toggle.setToolTip("Tampilkan password")
         self.line_edit.returnPressed.connect(self.returnPressed)
         lay.addWidget(self.btn_toggle)
 
@@ -519,13 +508,22 @@ class PasswordLineEdit(QFrame):
         self._muted_color = CLR_TEXT_MUTED
         self._accent_color = CLR_ACCENT
 
+    def eventFilter(self, obj, event):
+        if obj is self.btn_toggle and event.type() == event.Type.KeyPress:
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self.btn_toggle.click()
+                return True
+        return super().eventFilter(obj, event)
+
     def _toggle_visibility(self):
         if self.line_edit.echoMode() == QLineEdit.EchoMode.Password:
             self.line_edit.setEchoMode(QLineEdit.EchoMode.Normal)
             self.btn_toggle.setIcon(qta.icon("mdi6.eye-off-outline", color=self._accent_color))
+            self.btn_toggle.setToolTip("Sembunyikan password")
         else:
             self.line_edit.setEchoMode(QLineEdit.EchoMode.Password)
             self.btn_toggle.setIcon(qta.icon("mdi6.eye-outline", color=self._muted_color))
+            self.btn_toggle.setToolTip("Tampilkan password")
 
     # --- Public API ---
     def text(self) -> str:

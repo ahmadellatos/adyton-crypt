@@ -2,8 +2,6 @@
 Regression tests for security hardening items 3-9.
 """
 
-from pathlib import Path
-
 import pytest
 
 from core.constants import DISK_OVERHEAD_BYTES, MAGIC_BYTES
@@ -59,7 +57,7 @@ def test_parse_virtual_folder_name_accepts_safe_name():
     name, offset = _parse_virtual_folder_name(_encoded_virtual_name("Rahasia_2026"))
 
     assert name == "Rahasia_2026"
-    assert offset == 2 + len("Rahasia_2026".encode("utf-8"))
+    assert offset == 2 + len(b"Rahasia_2026")
 
 
 def test_decrypt_disk_space_estimate_accounts_for_temp_tar_and_extracted_payload():
@@ -84,4 +82,6 @@ def test_existing_backup_file_is_not_overwritten_when_replacing_target(tmp_path)
     assert status == VaultStatus.SUCCESS, message
     assert target.read_bytes().startswith(MAGIC_BYTES)
     assert legacy_backup.read_text(encoding="utf-8") == "backup lama yang harus tetap ada"
-    assert not list(tmp_path.glob(f"{target.name}.bak-*")), "Backup unik sementara harus dibersihkan setelah sukses"
+    assert not list(
+        tmp_path.glob(f"{target.name}.bak-*")
+    ), "Backup unik sementara harus dibersihkan setelah sukses"

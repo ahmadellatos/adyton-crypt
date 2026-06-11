@@ -1,32 +1,31 @@
 import secrets
 import string
+
 import qtawesome as qta
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, Signal
+from PySide6.QtWidgets import (
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 from zxcvbn import zxcvbn
 
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QGridLayout,
-    QLabel,
-    QPushButton,
-    QFrame,
-    QLineEdit,
+from ..styles import (
+    CLR_ACCENT,
+    CLR_BORDER,
+    CLR_DANGER,
+    CLR_SUCCESS,
+    CLR_WARN,
+    muted_label_style,
 )
-from PySide6.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve, Signal
 
 # Import dari parent project
-from ..widgets import apply_shadow, PasswordLineEdit
-from ..styles import (
-    CLR_TEXT_MAIN,
-    CLR_DANGER,
-    CLR_WARN,
-    CLR_ACCENT,
-    CLR_SUCCESS,
-    CLR_BORDER,
-    muted_label_style,
-    CLR_TEXT_MUTED,
-)
+from ..widgets import PasswordLineEdit, apply_shadow
 
 
 def pw_strength(pw: str) -> int:
@@ -148,9 +147,7 @@ class PasswordPanelLock(QFrame):
             lay.setContentsMargins(0, 0, 0, 0)
             lay.setSpacing(6)
             icon = QLabel()
-            icon.setPixmap(
-                qta.icon("mdi6.check-circle", color="#232B3E").pixmap(16, 16)
-            )
+            icon.setPixmap(qta.icon("mdi6.check-circle", color="#232B3E").pixmap(16, 16))
             lbl = QLabel(text)
             lbl.setObjectName("ChecklistLabel")
             lbl.setProperty("valid", False)
@@ -160,12 +157,8 @@ class PasswordPanelLock(QFrame):
             return lay, icon, lbl
 
         l1, self.chk_len_icon, self.chk_len_lbl = _create_chk_item("Minimal 8 karakter")
-        l2, self.chk_upper_icon, self.chk_upper_lbl = _create_chk_item(
-            "Huruf besar (A-Z)"
-        )
-        l3, self.chk_lower_icon, self.chk_lower_lbl = _create_chk_item(
-            "Huruf kecil (a-z)"
-        )
+        l2, self.chk_upper_icon, self.chk_upper_lbl = _create_chk_item("Huruf besar (A-Z)")
+        l3, self.chk_lower_icon, self.chk_lower_lbl = _create_chk_item("Huruf kecil (a-z)")
         l4, self.chk_digit_icon, self.chk_digit_lbl = _create_chk_item("Angka (0-9)")
         l5, self.chk_sym_icon, self.chk_sym_lbl = _create_chk_item("Simbol (!@#$%^&*)")
 
@@ -270,15 +263,11 @@ class PasswordPanelLock(QFrame):
                         f"background-color: {STRENGTH_COLORS[score]}; border-radius: 3px;"
                     )
                 else:
-                    bar.setStyleSheet(
-                        f"background-color: {CLR_BORDER}; border-radius: 3px;"
-                    )
+                    bar.setStyleSheet(f"background-color: {CLR_BORDER}; border-radius: 3px;")
 
             if score < 0:
                 self.lbl_str.setText("Kekuatan: -")
-                self.lbl_str.setStyleSheet(
-                    muted_label_style("9pt") + " font-weight: 600;"
-                )
+                self.lbl_str.setStyleSheet(muted_label_style("9pt") + " font-weight: 600;")
             else:
                 self.lbl_str.setText(f"Kekuatan: {STRENGTH_LABELS[score]}")
                 self.lbl_str.setStyleSheet(
@@ -300,14 +289,10 @@ class PasswordPanelLock(QFrame):
 
         for is_valid, icon, lbl in rules:
             if is_valid:
-                icon.setPixmap(
-                    qta.icon("mdi6.check-circle", color="#28c75d").pixmap(16, 16)
-                )
+                icon.setPixmap(qta.icon("mdi6.check-circle", color="#28c75d").pixmap(16, 16))
                 lbl.setProperty("valid", True)
             else:
-                icon.setPixmap(
-                    qta.icon("mdi6.check-circle", color="#232B3E").pixmap(16, 16)
-                )
+                icon.setPixmap(qta.icon("mdi6.check-circle", color="#232B3E").pixmap(16, 16))
                 lbl.setProperty("valid", False)
             lbl.style().unpolish(lbl)
             lbl.style().polish(lbl)
@@ -319,17 +304,13 @@ class PasswordPanelLock(QFrame):
         elif pw1 == pw2:
             self.icon_match.show()
             self.lbl_match_txt.show()
-            self.icon_match.setPixmap(
-                qta.icon("mdi6.check-circle", color="#28c75d").pixmap(16, 16)
-            )
+            self.icon_match.setPixmap(qta.icon("mdi6.check-circle", color="#28c75d").pixmap(16, 16))
             self.lbl_match_txt.setText("Password cocok")
             self.lbl_match_txt.setStyleSheet(f"color: {CLR_SUCCESS};")
         else:
             self.icon_match.show()
             self.lbl_match_txt.show()
-            self.icon_match.setPixmap(
-                qta.icon("mdi6.close-circle", color="#E74C3C").pixmap(16, 16)
-            )
+            self.icon_match.setPixmap(qta.icon("mdi6.close-circle", color="#E74C3C").pixmap(16, 16))
             self.lbl_match_txt.setText("Password tidak cocok")
             self.lbl_match_txt.setStyleSheet("color: #E74C3C;")
 

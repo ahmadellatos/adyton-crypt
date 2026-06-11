@@ -5,30 +5,32 @@ Deskripsi: Controller utama untuk Tab "Buka Brankas".
 """
 
 import os
-from loguru import logger
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QDialog
-from PySide6.QtCore import Qt, Signal
 
-from core.vault import buka_brankas, VaultStatus
+from loguru import logger
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QDialog, QHBoxLayout, QVBoxLayout, QWidget
+
+from core.vault import VaultStatus, buka_brankas
 from core.worker import CryptoWorker
-from .widgets import AnimatedNotifBar
-from .utils import apply_shadow
+
 from .buttons import BigActionBtn
-from .dialogs import ModernMessageBox
-from .constants import APP_NAME
-from .utils import (
-    ProgressETA,
-    format_file_size,
-    format_progress_label,
-    format_user_error,
-    progress_stage_label,
-    apply_cancelling_state,
-    start_crypto_worker,
-)
 
 # --- IMPORT SMART COMPONENTS (Sesuai dengan nama asli file lu!) ---
 from .components.drop_zone_open import DropZoneOpen
 from .components.password_panel_open import PasswordPanelOpen
+from .constants import APP_NAME
+from .dialogs import ModernMessageBox
+from .utils import (
+    ProgressETA,
+    apply_cancelling_state,
+    apply_shadow,
+    format_file_size,
+    format_progress_label,
+    format_user_error,
+    progress_stage_label,
+    start_crypto_worker,
+)
+from .widgets import AnimatedNotifBar
 
 
 class TabBuka(QWidget):
@@ -54,9 +56,7 @@ class TabBuka(QWidget):
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(
-            22
-        )  # Sedikit lebih lapang untuk harmoni visual dua kolom
+        main_layout.setSpacing(22)  # Sedikit lebih lapang untuk harmoni visual dua kolom
 
         # Inisialisasi sesuai nama Class asli lu
         self.drop_zone = DropZoneOpen()
@@ -131,9 +131,7 @@ class TabBuka(QWidget):
         self._konfirmasi_timpa = False
         self.btn_aksi.resetVisualIcons("mdi6.lock-open-variant")
         self.btn_aksi.setProgressVisible(False)
-        self.btn_aksi.setTextLabels(
-            "Buka Brankas", "Masukkan password untuk membuka kunci"
-        )
+        self.btn_aksi.setTextLabels("Buka Brankas", "Masukkan password untuk membuka kunci")
 
     def set_external_busy(self, busy: bool) -> None:
         """Kunci aksi buka saat tab lain sedang menjalankan operasi crypto.
@@ -206,9 +204,7 @@ class TabBuka(QWidget):
         path_file = self.drop_zone.get_file()
         file_name = os.path.basename(path_file) if path_file else "—"
         try:
-            size_text = (
-                format_file_size(os.path.getsize(path_file)) if path_file else "—"
-            )
+            size_text = format_file_size(os.path.getsize(path_file)) if path_file else "—"
         except OSError:
             size_text = "—"
         return file_name, size_text
@@ -219,12 +215,8 @@ class TabBuka(QWidget):
         if busy:
             self.drop_zone.set_verification_state("checking")
             file_name, size_text = self._current_file_summary()
-            self.password_panel.set_processing_state(
-                file_name, size_text, "Memverifikasi password"
-            )
-            self.status_changed.emit(
-                "Memverifikasi vault", "Jangan tutup aplikasi", "busy"
-            )
+            self.password_panel.set_processing_state(file_name, size_text, "Memverifikasi password")
+            self.status_changed.emit("Memverifikasi vault", "Jangan tutup aplikasi", "busy")
             self.btn_aksi.setVisualIcons("mdi6.close-circle", "mdi6.close")
             self.btn_aksi.setProgressVisible(True, 0.0)
             self.btn_aksi.setTextLabels(
@@ -235,19 +227,13 @@ class TabBuka(QWidget):
         else:
             self.btn_aksi.resetVisualIcons("mdi6.lock-open-variant")
             self.btn_aksi.setProgressVisible(False)
-            self.btn_aksi.setTextLabels(
-                "Buka Brankas", "Masukkan password untuk membuka"
-            )
+            self.btn_aksi.setTextLabels("Buka Brankas", "Masukkan password untuk membuka")
             if self._has_file:
                 self.password_panel.set_idle_state()
-                self.status_changed.emit(
-                    "Vault siap dibuka", "Belum diverifikasi", "ready"
-                )
+                self.status_changed.emit("Vault siap dibuka", "Belum diverifikasi", "ready")
             else:
                 self.password_panel.set_idle_state()
-                self.status_changed.emit(
-                    "AES-256 • GCM", "Enkripsi lokal aktif", "idle"
-                )
+                self.status_changed.emit("AES-256 • GCM", "Enkripsi lokal aktif", "idle")
             self._validate_state()
             self._progress_eta.reset()
 
@@ -266,9 +252,7 @@ class TabBuka(QWidget):
             self.drop_zone.reset_zone()
             self.status_changed.emit("Terverifikasi", "Data berhasil dibuka", "success")
             logger.info(f"Dekripsi sukses: {msg}")
-            self.notif.show_msg(
-                "ok", f"Folder/File '{msg}' berhasil dikembalikan!", 6000
-            )
+            self.notif.show_msg("ok", f"Folder/File '{msg}' berhasil dikembalikan!", 6000)
 
             # PANCARKAN SINYAL KE APP.PY UNTUK WINOTIFY
             self.system_notification.emit(APP_NAME, f"Brankas '{msg}' berhasil dibuka.")
@@ -276,9 +260,7 @@ class TabBuka(QWidget):
         elif status == VaultStatus.CANCELLED:
             logger.info("Dekripsi dibatalkan pengguna.")
             self.drop_zone.set_verification_state("pending", "Menunggu password")
-            self.status_changed.emit(
-                "Proses dibatalkan", "File sementara dibersihkan", "warn"
-            )
+            self.status_changed.emit("Proses dibatalkan", "File sementara dibersihkan", "warn")
             self.notif.show_msg("warn", "Dekripsi dibatalkan pengguna.", 4000)
 
         elif status == VaultStatus.WRONG_PASSWORD:
@@ -292,9 +274,7 @@ class TabBuka(QWidget):
             self.notif.show_msg("err", user_msg, 8000)
 
         elif status == VaultStatus.OVERWRITE_NEEDED:
-            self.drop_zone.set_verification_state(
-                "verified", "Terverifikasi, menunggu konfirmasi"
-            )
+            self.drop_zone.set_verification_state("verified", "Terverifikasi, menunggu konfirmasi")
             dialog = ModernMessageBox(
                 title="Konfirmasi Timpa File",
                 message=(

@@ -1,41 +1,39 @@
 import os
+
 import qtawesome as qta
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QFileDialog,
-    QFrame,
-    QStackedWidget,
-    QDialog,
-    QListView,
-    QStyledItemDelegate,
-    QStyle,
-)
 from PySide6.QtCore import (
-    Qt,
-    Signal,
     QAbstractListModel,
-    QModelIndex,
     QEvent,
+    QModelIndex,
     QRect,
     QSize,
-    QMimeData,
+    Qt,
+    Signal,
 )
-from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
+from PySide6.QtWidgets import (
+    QDialog,
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QListView,
+    QPushButton,
+    QStackedWidget,
+    QStyle,
+    QStyledItemDelegate,
+    QVBoxLayout,
+    QWidget,
+)
 
+from ..buttons import ClearButton, TambahClearSplitButton
+from ..dialogs import ModernMessageBox
+from ..menus import AccessibleCenteredMenu, CenteredMenuAction
+from ..utils import format_file_size
 from ..widgets import (
-    apply_shadow,
     CustomToolTip,
     HeroIconWidget,
 )
-from ..menus import AccessibleCenteredMenu, CenteredMenuAction
-from ..buttons import ClearButton, TambahClearSplitButton
-from ..dialogs import ModernMessageBox
-from ..styles import CLR_TEXT_MUTED, muted_label_style, caption_style
-from ..utils import format_file_size
 
 
 class MultiDropFrame(QFrame):
@@ -73,9 +71,7 @@ class MultiDropFrame(QFrame):
 
     def dropEvent(self, event):
         self._set_drag_state(False)
-        paths = [
-            url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()
-        ]
+        paths = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
         valid_paths = [p for p in paths if os.path.exists(p)]
         if valid_paths and self.on_paths_dropped:
             self.on_paths_dropped(valid_paths)
@@ -92,7 +88,7 @@ class TargetListModel(QAbstractListModel):
         super().__init__(parent)
         self._paths = list(paths) if paths else []
 
-    def rowCount(self, parent=QModelIndex()):
+    def rowCount(self, parent=QModelIndex()):  # noqa: B008
         return len(self._paths)
 
     def data(self, index, role=Qt.DisplayRole):
@@ -104,9 +100,7 @@ class TargetListModel(QAbstractListModel):
 
         if role == Qt.DisplayRole:
             return os.path.basename(path) or path
-        elif role == Qt.UserRole:
-            return path
-        elif role == Qt.ToolTipRole:
+        elif role == Qt.UserRole or role == Qt.ToolTipRole:
             return path
         elif role == TargetListModel.SizeRole:
             try:
@@ -122,11 +116,7 @@ class TargetListModel(QAbstractListModel):
                 return "file"
         elif role in (Qt.AccessibleTextRole, Qt.AccessibleDescriptionRole):
             basename = os.path.basename(path) or path
-            typ = (
-                "Folder"
-                if self.data(index, TargetListModel.TypeRole) == "folder"
-                else "File"
-            )
+            typ = "Folder" if self.data(index, TargetListModel.TypeRole) == "folder" else "File"
             size_bytes = self.data(index, TargetListModel.SizeRole)
             if size_bytes >= 0:
                 hsize = format_file_size(size_bytes)
@@ -261,7 +251,6 @@ class TargetListDelegate(QStyledItemDelegate):
 
         is_selected = bool(option.state & QStyle.State_Selected)
         is_hovered = index.row() == self._hovered_row
-        is_folder = index.data(TargetListModel.TypeRole) == "folder"
 
         # Background highlight
         if is_selected:
@@ -340,19 +329,12 @@ class TargetListDelegate(QStyledItemDelegate):
         name_right_reserve = 6 if show_delete else 2
         max_name_w = max(
             80,
-            (
-                content.right()
-                - name_right_reserve
-                - (del_size + 6 if show_delete else 0)
-            )
-            - text_x,
+            (content.right() - name_right_reserve - (del_size + 6 if show_delete else 0)) - text_x,
         )
 
         # === NAME (SemiBold 9.5pt) ===
         painter.setFont(self.name_font)
-        elided_name = self.fm_name.elidedText(
-            name, Qt.TextElideMode.ElideMiddle, max_name_w
-        )
+        elided_name = self.fm_name.elidedText(name, Qt.TextElideMode.ElideMiddle, max_name_w)
         painter.setPen(QColor("#FFFFFF"))
         name_y = content.top() + 13
         painter.drawText(text_x, name_y, elided_name)
@@ -360,9 +342,7 @@ class TargetListDelegate(QStyledItemDelegate):
         # === PATH (Light 8pt) + SIZE (Regular 8pt) ===
         painter.setFont(self.path_font)
         dirname = os.path.dirname(path) or ""
-        path_elided = self.fm_path.elidedText(
-            dirname, Qt.TextElideMode.ElideMiddle, max_path_w
-        )
+        path_elided = self.fm_path.elidedText(dirname, Qt.TextElideMode.ElideMiddle, max_path_w)
         painter.setPen(QColor("#8B95A5"))
         painter.drawText(text_x, name_y + 15, path_elided)
 
@@ -461,9 +441,7 @@ class DropZoneLock(QWidget):
         self.lbl_main_empty.setObjectName("DropZoneMainText")
         self.lbl_main_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.lbl_sub_empty = QLabel(
-            "atau klik tombol di bawah untuk memilih secara manual"
-        )
+        self.lbl_sub_empty = QLabel("atau klik tombol di bawah untuk memilih secara manual")
         self.lbl_sub_empty.setObjectName("DropZoneSubText")
         self.lbl_sub_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -474,9 +452,7 @@ class DropZoneLock(QWidget):
         self.btn_empty_browse.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_empty_browse.setMenu(self.menu)
 
-        self.lbl_footer_empty = QLabel(
-            "Mendukung semua format file dan folder tak terbatas"
-        )
+        self.lbl_footer_empty = QLabel("Mendukung semua format file dan folder tak terbatas")
         self.lbl_footer_empty.setObjectName("DropZoneFooter")
         self.lbl_footer_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -487,9 +463,7 @@ class DropZoneLock(QWidget):
         lay_empty.addSpacing(2)
         lay_empty.addWidget(self.lbl_sub_empty)
         lay_empty.addSpacing(20)
-        lay_empty.addWidget(
-            self.btn_empty_browse, alignment=Qt.AlignmentFlag.AlignHCenter
-        )
+        lay_empty.addWidget(self.btn_empty_browse, alignment=Qt.AlignmentFlag.AlignHCenter)
         lay_empty.addSpacing(24)
         lay_empty.addWidget(self.lbl_footer_empty)
         lay_empty.addStretch(1)
@@ -504,16 +478,12 @@ class DropZoneLock(QWidget):
 
         row_hdr = QHBoxLayout()
         icon_folder = QLabel()
-        icon_folder.setPixmap(
-            qta.icon("mdi6.folder-open", color="#F1C40F").pixmap(32, 32)
-        )
+        icon_folder.setPixmap(qta.icon("mdi6.folder-open", color="#F1C40F").pixmap(32, 32))
 
         v_hdr_text = QVBoxLayout()
         v_hdr_text.setSpacing(3)
         lbl_target = QLabel("DAFTAR TARGET")
-        lbl_target.setObjectName(
-            "TargetHeaderTitle"
-        )  # bigger specific title for daftar target
+        lbl_target.setObjectName("TargetHeaderTitle")  # bigger specific title for daftar target
         lbl_target_sub = QLabel("Pilih file atau folder yang akan dikunci")
         lbl_target_sub.setObjectName("CardSubtitle")
         v_hdr_text.addWidget(lbl_target)
@@ -563,9 +533,7 @@ class DropZoneLock(QWidget):
         self.list_view.setUniformItemSizes(True)
         self.list_view.setSelectionMode(QListView.SelectionMode.SingleSelection)
         self.list_view.setEditTriggers(QListView.EditTrigger.NoEditTriggers)
-        self.list_view.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
+        self.list_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list_view.setVerticalScrollMode(QListView.ScrollMode.ScrollPerPixel)
 
         # Drag & drop reordering disabled (not needed for encryption use case)
@@ -595,9 +563,7 @@ class DropZoneLock(QWidget):
 
     def _update_card_style(self, is_empty: bool):
         """Update visual state via properties (styled globally in styles.py)."""
-        if hasattr(self, "card_target") and hasattr(
-            self.card_target, "set_empty_state"
-        ):
+        if hasattr(self, "card_target") and hasattr(self.card_target, "set_empty_state"):
             self.card_target.set_empty_state(is_empty)
 
     def _setup_accessibility(self):
@@ -692,9 +658,7 @@ class DropZoneLock(QWidget):
         added = []
         for p in new_paths:
             if p.lower().endswith(".adtn"):
-                self.warning_emitted.emit(
-                    f"⚠ '{os.path.basename(p)}' sudah jadi file brankas!"
-                )
+                self.warning_emitted.emit(f"⚠ '{os.path.basename(p)}' sudah jadi file brankas!")
                 continue
             if p not in self._paths:
                 self._paths.append(p)

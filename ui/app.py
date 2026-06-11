@@ -6,28 +6,29 @@ Deskripsi: Antarmuka jendela utama (Main Window) dari aplikasi Adyton Crypt.
 """
 
 import os
-import sys
+
 import qtawesome as qta
+from loguru import logger
+from PySide6.QtCore import QPropertyAnimation, QSize, Qt
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QApplication,
+    QButtonGroup,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QStackedWidget,
-    QFrame,
-    QButtonGroup,
     QSizePolicy,
+    QStackedWidget,
     QSystemTrayIcon,
-    QApplication,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, QSize, QPropertyAnimation
-from PySide6.QtGui import QPixmap, QIcon
+from qframelesswindow import FramelessMainWindow
+
+from core.paths import get_asset_path
 
 from .styles import CLR_TEXT_MUTED
-from loguru import logger
-from qframelesswindow import FramelessMainWindow
-from core.paths import get_asset_path
 
 try:
     from winotify import Notification, audio
@@ -36,12 +37,13 @@ try:
 except ImportError:
     HAS_WINOTIFY = False
 
-from .tab_kunci import TabKunci
-from .tab_buka import TabBuka
-from .constants import APP_NAME, APP_VERSION, APP_AUMID
-from .widgets import CustomTitleBar
-from .menus import AccessibleCenteredMenu, CenteredMenuAction
+from .constants import APP_AUMID, APP_NAME, APP_VERSION
 from .dialogs import ModernMessageBox
+from .menus import AccessibleCenteredMenu, CenteredMenuAction
+from .tab_buka import TabBuka
+from .tab_kunci import TabKunci
+from .tab_teks import TabTeks  # <-- [TAMBAHAN] Import Tab Teks
+from .widgets import CustomTitleBar
 
 # =========================================================================
 # MAIN WINDOW
@@ -53,7 +55,7 @@ class AppBrankas(FramelessMainWindow):
         super().__init__()
 
         self._quitting = False
-        self.setMinimumSize(1100, 700)
+        self.setMinimumSize(1280, 720)
         self.setObjectName("MainWindow")
 
         app_icon = self._load_app_icon()
@@ -76,8 +78,7 @@ class AppBrankas(FramelessMainWindow):
         return icon
 
     def _center_window(self) -> None:
-        # Initial window size (no compact mode - always full design size)
-        self.resize(1100, 700)
+        self.resize(1300, 740)
         center_point = QApplication.primaryScreen().availableGeometry().center()
         frame_geo = self.frameGeometry()
         frame_geo.moveCenter(center_point)
@@ -95,18 +96,29 @@ class AppBrankas(FramelessMainWindow):
         self.title_bar = CustomTitleBar(self)
         self.setTitleBar(self.title_bar)
 
+        # Body: split horizontal — sidebar navigasi (kiri) + area konten (kanan)
+        body = QWidget()
+        body_lay = QHBoxLayout(body)
+        body_lay.setContentsMargins(0, 0, 0, 0)
+        body_lay.setSpacing(0)
+
+        self._build_sidebar(body_lay)  # logo + MODE + tombol navigasi vertikal
+
         content_container = QWidget()
         content_lay = QVBoxLayout(content_container)
         content_lay.setContentsMargins(30, 8, 30, 15)
         content_lay.setSpacing(22)
 
-        self._build_header(content_lay)
+        self._build_topbar(content_lay)  # status AES-256 GCM tetap di kanan atas
 
         self.stacked_tabs = QStackedWidget()
         self.tab_kunci = TabKunci()
         self.tab_buka = TabBuka()
+        self.tab_teks = TabTeks()  # <-- [TAMBAHAN] Inisialisasi Tab Teks
+
         self.stacked_tabs.addWidget(self.tab_kunci)
         self.stacked_tabs.addWidget(self.tab_buka)
+        self.stacked_tabs.addWidget(self.tab_teks)  # <-- [TAMBAHAN] Masukkan ke StackedWidget
 
         self.tab_kunci.worker_started.connect(
             lambda worker: self._bind_worker_to_tray(worker, "kunci")
@@ -116,35 +128,34 @@ class AppBrankas(FramelessMainWindow):
         )
         self.tab_kunci.system_notification.connect(self._show_system_notif)
         self.tab_buka.system_notification.connect(self._show_system_notif)
+        self.tab_teks.system_notification.connect(
+            self._show_system_notif
+        )  # <-- [TAMBAHAN] Bind Notifikasi Teks
         self.tab_buka.status_changed.connect(self._set_header_security_status)
 
         content_lay.addWidget(self.stacked_tabs, 1)
+        self._build_footer(content_lay)
 
-        # Systematic tab order at main window level
+        body_lay.addWidget(content_container, 1)
+        main_layout.addWidget(body, 1)
+
+        # Tab order navigation
         self.setTabOrder(self.btn_nav_kunci, self.btn_nav_buka)
-        # The content inside the active tab will manage its own tab order.
-        # We connect the action button focus when the tab changes.
+        self.setTabOrder(self.btn_nav_buka, self.btn_nav_teks)
         self.tab_group.buttonClicked.connect(self._update_action_button_tab_order)
 
-        self._build_footer(content_lay)
-        main_layout.addWidget(content_container, 1)
-
-        # Initial tab order setup
         self._update_action_button_tab_order()
+        self._update_page_header(0)  # judul awal: Kunci Folder
 
     def _init_tray(self, app_icon: QIcon) -> None:
         self.tray = QSystemTrayIcon(self)
         self.tray.setIcon(
-            app_icon
-            if not app_icon.isNull()
-            else qta.icon("mdi6.shield-lock", color="white")
+            app_icon if not app_icon.isNull() else qta.icon("mdi6.shield-lock", color="white")
         )
 
         tray_menu = AccessibleCenteredMenu()
 
-        act_show = CenteredMenuAction(
-            "Buka Adyton Crypt", "mdi6.window-maximize", parent=tray_menu
-        )
+        act_show = CenteredMenuAction("Buka Adyton Crypt", "mdi6.window-maximize", parent=tray_menu)
         act_show.triggered.connect(self.showNormal)
         tray_menu.addAction(act_show)
 
@@ -163,13 +174,12 @@ class AppBrankas(FramelessMainWindow):
     # =========================================================================
 
     def _is_busy(self) -> bool:
-        """Return True jika ada worker enkripsi atau dekripsi yang sedang berjalan."""
-        return (
-            self.tab_kunci.worker is not None and self.tab_kunci.worker.isRunning()
-        ) or (self.tab_buka.worker is not None and self.tab_buka.worker.isRunning())
+        return (self.tab_kunci.worker is not None and self.tab_kunci.worker.isRunning()) or (
+            self.tab_buka.worker is not None and self.tab_buka.worker.isRunning()
+        )
 
     # =========================================================================
-    # TRAY
+    # TRAY & LOCKS
     # =========================================================================
 
     def _on_tray_click(self, reason: QSystemTrayIcon.ActivationReason) -> None:
@@ -177,11 +187,6 @@ class AppBrankas(FramelessMainWindow):
             self.showNormal()
 
     def _bind_worker_to_tray(self, worker, source_tab: str) -> None:
-        """Bind progress/finished signals dari worker baru ke tray tooltip.
-
-        Navigasi tab tetap aktif agar UI tidak terasa freeze. Yang dikunci
-        hanyalah aksi memulai operasi crypto lain di tab sebelah.
-        """
         if not worker:
             return
 
@@ -194,36 +199,27 @@ class AppBrankas(FramelessMainWindow):
         worker.finished.connect(lambda: self._set_operation_lock(source_tab, False))
 
     def _set_navigation_busy(self, busy: bool) -> None:
-        """Kompatibilitas lama: navigasi tidak lagi dikunci saat proses.
-
-        User tetap boleh pindah tab untuk melihat UI. Operasi baru dikunci
-        lewat _set_operation_lock().
-        """
         self.btn_nav_kunci.setEnabled(True)
         self.btn_nav_buka.setEnabled(True)
+        self.btn_nav_teks.setEnabled(True)
 
     def _set_operation_lock(self, source_tab: str, busy: bool) -> None:
-        """Kunci aksi crypto di tab lain tanpa mematikan navigasi tab."""
         self.btn_nav_kunci.setEnabled(True)
         self.btn_nav_buka.setEnabled(True)
-        if busy:
-            self.btn_nav_kunci.setToolTip(
-                "Bisa pindah tab, tetapi operasi baru dikunci sampai proses selesai."
-            )
-            self.btn_nav_buka.setToolTip(
-                "Bisa pindah tab, tetapi operasi baru dikunci sampai proses selesai."
-            )
-        else:
-            self.btn_nav_kunci.setToolTip("")
-            self.btn_nav_buka.setToolTip("")
+        self.btn_nav_teks.setEnabled(True)
+
+        msg = "Bisa pindah tab, tetapi operasi baru dikunci sampai proses selesai." if busy else ""
+        self.btn_nav_kunci.setToolTip(msg)
+        self.btn_nav_buka.setToolTip(msg)
+        self.btn_nav_teks.setToolTip(msg)
 
         self.tab_kunci.set_external_busy(busy and source_tab != "kunci")
         self.tab_buka.set_external_busy(busy and source_tab != "buka")
+        self.tab_teks.set_external_busy(
+            busy and source_tab != "teks"
+        )  # <-- [TAMBAHAN] Lock tab teks jika file sedang diproses
 
-    def _set_header_security_status(
-        self, title: str, subtitle: str, state: str = "idle"
-    ) -> None:
-        """Update status keamanan kanan atas sesuai state Tab Buka."""
+    def _set_header_security_status(self, title: str, subtitle: str, state: str = "idle") -> None:
         colors = {
             "idle": "#00D2C8",
             "ready": "#00D2C8",
@@ -252,7 +248,6 @@ class AppBrankas(FramelessMainWindow):
     # =========================================================================
 
     def _show_system_notif(self, title: str, message: str) -> None:
-        """Tampilkan UWP Toast via winotify. Fallback ke Qt tray jika tidak tersedia."""
         if HAS_WINOTIFY:
             try:
                 icon_path = os.path.abspath(get_asset_path("assets/icon_adyton.png"))
@@ -322,64 +317,81 @@ class AppBrankas(FramelessMainWindow):
     # UI BUILDERS
     # =========================================================================
 
-    def _build_header(self, parent_layout: QVBoxLayout) -> None:
-        # Wrapper header dengan subtle separator
-        header_wrapper = QFrame()
-        header_wrapper.setObjectName("HeaderWrapper")
-        header_wrapper.setContentsMargins(0, 0, 0, 0)
+    def _build_sidebar(self, parent_layout: QHBoxLayout) -> None:
+        """Sidebar kiri: logo, label MODE, dan tombol navigasi vertikal."""
+        sidebar = QFrame()
+        sidebar.setObjectName("Sidebar")
+        sidebar.setFixedWidth(220)
 
-        header_layout = QHBoxLayout(header_wrapper)
-        header_layout.setContentsMargins(0, 6, 0, 6)  # lebih rapat tanpa separator
-        header_layout.setSpacing(20)
+        lay = QVBoxLayout(sidebar)
+        lay.setContentsMargins(18, 20, 18, 18)
+        lay.setSpacing(6)
 
-        # Kiri — logo
-        lay_kiri = QHBoxLayout()
-        lay_kiri.setSpacing(12)
+        # Logo di atas sidebar
         lbl_logo = QLabel()
         pixmap = QPixmap(get_asset_path("assets/logo_adyton2.png"))
         if not pixmap.isNull():
             lbl_logo.setPixmap(
-                pixmap.scaledToHeight(
-                    40, Qt.TransformationMode.SmoothTransformation
-                )  # sedikit lebih kecil untuk balance
+                pixmap.scaledToHeight(36, Qt.TransformationMode.SmoothTransformation)
             )
         else:
-            lbl_logo.setText("LOGO NOT FOUND")
-            lbl_logo.setStyleSheet("color: red; font-weight: 700;")
-        lay_kiri.addWidget(lbl_logo)
-        header_layout.addLayout(lay_kiri)
-        header_layout.addStretch()
+            lbl_logo.setText("ADYTON")
+            lbl_logo.setStyleSheet("color: white; font-weight: 700; font-size: 13pt;")
+        lay.addWidget(lbl_logo)
+        lay.addSpacing(24)
 
-        # Tengah — tab navigation
-        tab_container = QFrame()
-        tab_container.setObjectName("TabContainer")
-        tab_container.setFixedSize(340, 46)  # lebih tipis sesuai request
-        lay_tabs = QHBoxLayout(tab_container)
-        lay_tabs.setContentsMargins(4, 3, 4, 3)
-        lay_tabs.setSpacing(4)
+        # Label seksi
+        lbl_mode = QLabel("MODE")
+        lbl_mode.setObjectName("SidebarSection")
+        lay.addWidget(lbl_mode)
+        lay.addSpacing(2)
 
+        # Tombol navigasi (vertikal)
         self.btn_nav_kunci = self._make_tab_button(" Kunci Folder", "mdi6.lock")
         self.btn_nav_kunci.setChecked(True)
         self.btn_nav_kunci.setAccessibleName("Tab Kunci Folder")
 
-        self.btn_nav_buka = self._make_tab_button(
-            " Buka Brankas", "mdi6.lock-open-variant"
-        )
+        self.btn_nav_buka = self._make_tab_button(" Buka Brankas", "mdi6.lock-open-variant")
         self.btn_nav_buka.setAccessibleName("Tab Buka Brankas")
+
+        self.btn_nav_teks = self._make_tab_button(" Teks", "mdi6.file-lock")
+        self.btn_nav_teks.setAccessibleName("Tab Enkripsi Teks")
 
         self.tab_group = QButtonGroup(self)
         self.tab_group.addButton(self.btn_nav_kunci, 0)
         self.tab_group.addButton(self.btn_nav_buka, 1)
+        self.tab_group.addButton(self.btn_nav_teks, 2)
         self.tab_group.buttonClicked.connect(self._on_tab_changed)
 
-        lay_tabs.addWidget(self.btn_nav_kunci)
-        lay_tabs.addWidget(self.btn_nav_buka)
-        header_layout.addWidget(tab_container)
-        header_layout.addStretch()
+        lay.addWidget(self.btn_nav_kunci)
+        lay.addWidget(self.btn_nav_buka)
+        lay.addWidget(self.btn_nav_teks)
+        lay.addStretch()
 
-        # Kanan — status enkripsi (lebih premium)
-        lay_kanan = QHBoxLayout()
-        lay_kanan.setSpacing(12)
+        parent_layout.addWidget(sidebar)
+
+    def _build_topbar(self, parent_layout: QVBoxLayout) -> None:
+        """Bar atas area konten: status AES-256 GCM (tetap di kanan atas)."""
+        topbar = QFrame()
+        topbar.setObjectName("HeaderWrapper")
+        topbar.setContentsMargins(0, 0, 0, 0)
+
+        lay = QHBoxLayout(topbar)
+        lay.setContentsMargins(0, 6, 0, 6)
+        lay.setSpacing(12)
+
+        # Kiri — judul + subtitle per-tab (diperbarui di _update_page_header)
+        lay_page = QVBoxLayout()
+        lay_page.setSpacing(2)
+        lay_page.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        self.lbl_page_title = QLabel("")
+        self.lbl_page_title.setObjectName("PageTitle")
+        self.lbl_page_sub = QLabel("")
+        self.lbl_page_sub.setObjectName("PageSubtitle")
+        lay_page.addWidget(self.lbl_page_title)
+        lay_page.addWidget(self.lbl_page_sub)
+        lay.addLayout(lay_page)
+        lay.addStretch()
 
         self.lbl_status_icon = QLabel()
         self.lbl_status_icon.setPixmap(
@@ -396,20 +408,20 @@ class AppBrankas(FramelessMainWindow):
         lay_status.addWidget(self.lbl_stat_title)
         lay_status.addWidget(self.lbl_stat_sub)
 
-        lay_kanan.addWidget(self.lbl_status_icon)
-        lay_kanan.addLayout(lay_status)
-        header_layout.addLayout(lay_kanan)
-
-        parent_layout.addWidget(header_wrapper)
+        lay.addWidget(self.lbl_status_icon)
+        lay.addLayout(lay_status)
+        parent_layout.addWidget(topbar)
 
     def _make_tab_button(self, label: str, icon_name: str) -> QPushButton:
-        """Factory untuk tombol navigasi tab."""
+        """Factory tombol navigasi sidebar (vertikal, teks rata kiri)."""
         btn = QPushButton(label)
         btn.setIcon(qta.icon(icon_name, color="#8B95A5", color_on="white"))
         btn.setIconSize(QSize(18, 18))
-        btn.setObjectName("TabBtn")
+        btn.setObjectName("NavBtn")
         btn.setCheckable(True)
-        btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setMinimumHeight(44)
+        btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         return btn
 
     def _build_footer(self, parent_layout: QVBoxLayout) -> None:
@@ -417,15 +429,13 @@ class AppBrankas(FramelessMainWindow):
         footer_wrapper.setObjectName("MainFooter")
 
         lay_footer = QHBoxLayout(footer_wrapper)
-        lay_footer.setContentsMargins(0, 12, 0, 4)  # Premium breathing
+        lay_footer.setContentsMargins(0, 12, 0, 4)
         lay_footer.setSpacing(12)
 
         lay_safe = QHBoxLayout()
         lay_safe.setSpacing(6)
         lbl_safe_icon = QLabel()
-        lbl_safe_icon.setPixmap(
-            qta.icon("mdi6.shield-check", color=CLR_TEXT_MUTED).pixmap(15, 15)
-        )
+        lbl_safe_icon.setPixmap(qta.icon("mdi6.shield-check", color=CLR_TEXT_MUTED).pixmap(15, 15))
         lbl_safe_text = QLabel("Password tidak dikirim ke mana pun")
         lbl_safe_text.setObjectName("MutedText")
         lay_safe.addWidget(lbl_safe_icon)
@@ -436,9 +446,7 @@ class AppBrankas(FramelessMainWindow):
         lbl_ver_text = QLabel(f"Version {APP_VERSION}")
         lbl_ver_text.setObjectName("MutedText")
         lbl_ver_icon = QLabel()
-        lbl_ver_icon.setPixmap(
-            qta.icon("mdi6.check-circle", color=CLR_TEXT_MUTED).pixmap(15, 15)
-        )
+        lbl_ver_icon.setPixmap(qta.icon("mdi6.check-circle", color=CLR_TEXT_MUTED).pixmap(15, 15))
         lay_ver.addWidget(lbl_ver_text)
         lay_ver.addWidget(lbl_ver_icon)
 
@@ -451,10 +459,23 @@ class AppBrankas(FramelessMainWindow):
     # EVENT HANDLERS
     # =========================================================================
 
+    # Judul + subtitle yang tampil di kiri atas untuk tiap tab (indeks stack).
+    PAGE_HEADERS = {
+        0: ("Kunci Folder", "Pilih target, buat password yang kuat, lalu enkripsi."),
+        1: ("Buka Brankas", "Pilih brankas terenkripsi dan masukkan password untuk membuka."),
+        2: ("Teks", "Enkripsi atau dekripsi teks secara langsung dengan password."),
+    }
+
+    def _update_page_header(self, index: int) -> None:
+        title, subtitle = self.PAGE_HEADERS.get(index, ("", ""))
+        self.lbl_page_title.setText(title)
+        self.lbl_page_sub.setText(subtitle)
+
     def _on_tab_changed(self, button: QPushButton) -> None:
         new_idx = self.tab_group.id(button)
         if new_idx != self.stacked_tabs.currentIndex():
             self.stacked_tabs.setCurrentIndex(new_idx)
+        self._update_page_header(new_idx)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -468,11 +489,12 @@ class AppBrankas(FramelessMainWindow):
         logger.info(f"File Association dipicu untuk file: {path}")
         self.btn_nav_buka.setChecked(True)
         self.btn_nav_kunci.setChecked(False)
+        self.btn_nav_teks.setChecked(False)
         self.stacked_tabs.setCurrentIndex(1)
+        self._update_page_header(1)
         self.tab_buka.auto_load_file(path)
 
     def _update_action_button_tab_order(self):
-        """Ensure logical tab order from navigation to the current tab's action button."""
         current_tab = self.stacked_tabs.currentWidget()
         if hasattr(current_tab, "btn_aksi"):
-            self.setTabOrder(self.btn_nav_buka, current_tab.btn_aksi)
+            self.setTabOrder(self.btn_nav_teks, current_tab.btn_aksi)

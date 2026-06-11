@@ -5,36 +5,37 @@ Deskripsi: Controller utama untuk Tab "Kunci Folder".
 """
 
 import os
-from loguru import logger
-from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QFileDialog,
-    QDialog,
-    QFrame,
-)
-from PySide6.QtCore import Qt, Signal
 
-from core.vault import kunci_brankas, VaultStatus
-from core.worker import CryptoWorker
-from .widgets import AnimatedNotifBar
-from .utils import apply_shadow
-from .buttons import BigActionBtn
-from .dialogs import ModernMessageBox
-from .constants import APP_NAME
-from .utils import (
-    ProgressETA,
-    format_progress_label,
-    format_user_error,
-    apply_cancelling_state,
-    start_crypto_worker,
+from loguru import logger
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QVBoxLayout,
+    QWidget,
 )
+
+from core.vault import VaultStatus, kunci_brankas
+from core.worker import CryptoWorker
+
+from .buttons import BigActionBtn
 
 # --- IMPORT SMART COMPONENTS (Sesuai dengan nama asli file lu!) ---
 from .components.drop_zone_lock import DropZoneLock
-from .components.password_panel_lock import PasswordPanelLock
 from .components.options_panel import OptionsPanel
+from .components.password_panel_lock import PasswordPanelLock
+from .constants import APP_NAME
+from .dialogs import ModernMessageBox
+from .utils import (
+    ProgressETA,
+    apply_cancelling_state,
+    apply_shadow,
+    format_progress_label,
+    format_user_error,
+    start_crypto_worker,
+)
+from .widgets import AnimatedNotifBar
 
 
 class TabKunci(QWidget):
@@ -56,7 +57,7 @@ class TabKunci(QWidget):
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(20)
+        main_layout.setSpacing(22)
 
         # Inisialisasi sesuai nama Class asli lu
         self.drop_zone = DropZoneLock()
@@ -65,7 +66,7 @@ class TabKunci(QWidget):
         self.password_panel = PasswordPanelLock()
 
         h_cols = QHBoxLayout()
-        h_cols.setSpacing(20)
+        h_cols.setSpacing(28)
 
         v_left = QVBoxLayout()
         v_left.addWidget(self.drop_zone, 1)
@@ -92,9 +93,7 @@ class TabKunci(QWidget):
         self.btn_aksi.clicked.connect(self._proses)
         self.password_panel.attach_return_event(self._proses)
         self.drop_zone.paths_changed.connect(self._on_paths_changed)
-        self.drop_zone.warning_emitted.connect(
-            lambda msg: self.notif.show_msg("warn", msg, 4000)
-        )
+        self.drop_zone.warning_emitted.connect(lambda msg: self.notif.show_msg("warn", msg, 4000))
         self.password_panel.valid_state_changed.connect(self._on_password_valid_changed)
         self.options_panel.hapus_asli_changed.connect(self._update_btn_label)
 
@@ -131,9 +130,7 @@ class TabKunci(QWidget):
                 "ENKRIPSI & HAPUS ASLI", "File asli akan dihapus setelah dikunci"
             )
         else:
-            self.btn_aksi.setTextLabels(
-                "KUNCI SEKARANG", "Proses penguncian akan dimulai"
-            )
+            self.btn_aksi.setTextLabels("KUNCI SEKARANG", "Proses penguncian akan dimulai")
 
     def set_external_busy(self, busy: bool) -> None:
         """Kunci aksi kunci saat tab lain sedang menjalankan operasi crypto."""

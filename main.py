@@ -4,18 +4,20 @@ Entry point Adyton Crypt dengan Loguru, kapabilitas System Tray,
 Single Instance Lock (IPC) dengan File Association Support, dan Global Exception Handler.
 """
 
+import contextlib
+import ctypes
 import os
 import sys
-import ctypes
 import traceback
-from loguru import logger
-from PySide6.QtWidgets import QApplication, QMessageBox
-from PySide6.QtGui import QFontDatabase, QFont
-from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from core.paths import get_data_dir, get_asset_path
-from ui.constants import APP_NAME, APP_AUMID
 
+from loguru import logger
+from PySide6.QtGui import QFont, QFontDatabase
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
+from PySide6.QtWidgets import QApplication, QMessageBox
+
+from core.paths import get_asset_path, get_data_dir
 from ui.app import AppBrankas
+from ui.constants import APP_AUMID, APP_NAME
 from ui.styles import load_stylesheet
 
 # =========================================================================
@@ -50,10 +52,8 @@ def setup_windows_aumid() -> None:
     Harus dipanggil sebelum QApplication dibuat.
     """
     if sys.platform == "win32":
-        try:
+        with contextlib.suppress(Exception):
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_AUMID)
-        except Exception:
-            pass
 
 
 def register_dev_shortcut() -> None:
@@ -70,7 +70,7 @@ def register_dev_shortcut() -> None:
             winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, APP_NAME)
             icon_path = os.path.abspath("assets/icon_adyton.ico")
             winreg.SetValueEx(key, "IconUri", 0, winreg.REG_SZ, icon_path)
-    except Exception:
+    except Exception:  # noqa: S110
         pass
 
 
@@ -85,10 +85,7 @@ def setup_fonts(app: QApplication) -> None:
     fonts_loaded = False
 
     # Load main weights (user added many variants)
-    main_weights = [
-        "Thin", "ExtraLight", "Light",
-        "Regular", "Medium", "SemiBold", "Bold"
-    ]
+    main_weights = ["Thin", "ExtraLight", "Light", "Regular", "Medium", "SemiBold", "Bold"]
     for weight in main_weights:
         font_path = get_asset_path(f"assets/fonts/IBMPlexSans-{weight}.ttf")
         if os.path.exists(font_path):
@@ -113,9 +110,7 @@ def global_exception_handler(exc_type, exc_value, exc_traceback) -> None:
         sys.__excepthook__(exc_type, exc_value, exc_traceback)
         return
 
-    logger.critical(
-        "Uncaught exception:\n", exc_info=(exc_type, exc_value, exc_traceback)
-    )
+    logger.critical("Uncaught exception:\n", exc_info=(exc_type, exc_value, exc_traceback))
 
     app = QApplication.instance()
     if app:
@@ -126,12 +121,8 @@ def global_exception_handler(exc_type, exc_value, exc_traceback) -> None:
         msg.setInformativeText(
             "Aplikasi harus ditutup. Silakan periksa file log untuk detail lebih lanjut."
         )
-        tb_string = "".join(
-            traceback.format_exception(exc_type, exc_value, exc_traceback)
-        )
-        msg.setDetailedText(
-            f"Tipe Error: {exc_type.__name__}\n\nTraceback:\n{tb_string}"
-        )
+        tb_string = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+        msg.setDetailedText(f"Tipe Error: {exc_type.__name__}\n\nTraceback:\n{tb_string}")
         msg.exec()
 
 
@@ -178,7 +169,7 @@ def try_send_to_existing_instance(file_arg: str) -> bool:
         return False
 
     logger.info("Instance lain aktif. Mengirim sinyal WAKEUP + Path File.")
-    payload = f"WAKEUP|{file_arg}".encode("utf-8")
+    payload = f"WAKEUP|{file_arg}".encode()
     socket.write(payload)
     socket.waitForBytesWritten(500)
     socket.disconnectFromServer()
@@ -221,11 +212,7 @@ def main() -> None:
     app.setOrganizationName(APP_ORG)
     app.setQuitOnLastWindowClosed(False)
 
-    file_arg = (
-        sys.argv[1]
-        if len(sys.argv) > 1 and sys.argv[1].lower().endswith(".adtn")
-        else ""
-    )
+    file_arg = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1].lower().endswith(".adtn") else ""
 
     if try_send_to_existing_instance(file_arg):
         sys.exit(0)

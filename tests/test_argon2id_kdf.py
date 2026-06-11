@@ -11,7 +11,6 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from core.constants import (
     ARGON2ID_PARAMS_SIZE,
-    CHUNK_RECORD_HEADER_SIZE,
     HEADER_SIZE_V2,
     KDF_ID_ARGON2ID,
     KDF_ID_PBKDF2_SHA256,
@@ -19,20 +18,15 @@ from core.constants import (
     RECORD_TYPE_DATA,
     RECORD_TYPE_FINAL,
     RECORD_TYPE_METADATA,
-    TAG_SIZE,
-    VERSION_V2,
     V2_FLAG_KDF_PARAMS,
     V2_FLAG_NONE,
+    VERSION_V2,
 )
 from core.crypto import derive_key, derive_key_for_kdf
 from core.vault import (
     VaultStatus,
     _encode_argon2id_params,
-    _v2_aad,
     _v2_header_context,
-    _v2_kdf_section,
-    _v2_nonce,
-    _v2_record_header,
     _v2_write_record,
     buka_brankas,
     kunci_brankas,
@@ -130,7 +124,9 @@ def test_legacy_v2_pbkdf2_vaults_remain_readable(tmp_path):
 
     assert status == VaultStatus.SUCCESS
     assert restored_name == "legacy_v2_pbkdf2"
-    assert (tmp_path / restored_name / "legacy.txt").read_text(encoding="utf-8") == "legacy v2 content"
+    assert (tmp_path / restored_name / "legacy.txt").read_text(
+        encoding="utf-8"
+    ) == "legacy v2 content"
 
 
 def test_kdf_params_are_bound_to_metadata_aad(tmp_path):

@@ -47,6 +47,9 @@ htmlcov/
 # Temporary review artifacts
 review_tmp/
 
+# Knowledge graph output
+graphify-out/
+
 # Project documentation (not ready to be public / internal notes)
 *.md
 !README.md

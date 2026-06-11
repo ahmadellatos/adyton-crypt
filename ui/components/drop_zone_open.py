@@ -1,45 +1,47 @@
 import os
+
 import qtawesome as qta
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QFileDialog,
-    QFrame,
     QStackedWidget,
-    QGridLayout,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt, Signal
 
-from ..widgets import (
-    apply_shadow,
-    CustomToolTip,
-    ElidedLabel,
-    HeroIconWidget,
-)
-from ..utils import format_file_size
-from ..buttons import ClearButton
 from core.constants import (
     ARGON2ID_PARAMS_SIZE,
     CHUNK_RECORD_HEADER_SIZE,
     CHUNK_RECORD_OVERHEAD,
     CHUNK_SIZE,
-    HEADER_SIZE_V2,
-    MAGIC_BYTES,
-    VERSION_V1,
-    VERSION_V2,
-    OVERHEAD_V1,
-    RECORD_TYPE_METADATA,
-    TAG_SIZE,
-    SALT_SIZE,
     FILE_ID_SIZE,
-    V2_FLAG_KDF_PARAMS,
-    V2_SUPPORTED_FLAGS,
+    HEADER_SIZE_V2,
     KDF_ID_ARGON2ID,
     KDF_ID_PBKDF2_SHA256,
+    MAGIC_BYTES,
     MAX_VIRTUAL_NAME_LENGTH,
+    OVERHEAD_V1,
+    RECORD_TYPE_METADATA,
+    SALT_SIZE,
+    TAG_SIZE,
+    V2_FLAG_KDF_PARAMS,
+    V2_SUPPORTED_FLAGS,
+    VERSION_V1,
+    VERSION_V2,
+)
+
+from ..buttons import ClearButton
+from ..utils import format_file_size
+from ..widgets import (
+    CustomToolTip,
+    ElidedLabel,
+    HeroIconWidget,
+    apply_shadow,
 )
 
 
@@ -143,9 +145,7 @@ class DropZoneOpen(QWidget):
         self.btn_browse_center.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_browse_center.clicked.connect(self._pilih_file)
 
-        self.lbl_footer_empty = QLabel(
-            "Hanya file dengan ekstensi .adtn yang dapat dibuka"
-        )
+        self.lbl_footer_empty = QLabel("Hanya file dengan ekstensi .adtn yang dapat dibuka")
         self.lbl_footer_empty.setObjectName("DropZoneFooter")
         self.lbl_footer_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -156,9 +156,7 @@ class DropZoneOpen(QWidget):
         lay_empty.addSpacing(2)
         lay_empty.addWidget(self.lbl_sub_empty)
         lay_empty.addSpacing(20)
-        lay_empty.addWidget(
-            self.btn_browse_center, alignment=Qt.AlignmentFlag.AlignHCenter
-        )
+        lay_empty.addWidget(self.btn_browse_center, alignment=Qt.AlignmentFlag.AlignHCenter)
         lay_empty.addSpacing(24)
         lay_empty.addWidget(self.lbl_footer_empty)
         lay_empty.addStretch(1)
@@ -213,9 +211,7 @@ class DropZoneOpen(QWidget):
 
         self.icon_file = QLabel()
         self.icon_file.setObjectName("SelectedFileIcon")
-        self.icon_file.setPixmap(
-            qta.icon("mdi6.file-lock", color="#00D2C8").pixmap(38, 38)
-        )
+        self.icon_file.setPixmap(qta.icon("mdi6.file-lock", color="#00D2C8").pixmap(38, 38))
         self.icon_file.setFixedSize(44, 44)
         self.icon_file.setAlignment(Qt.AlignmentFlag.AlignCenter)
         top_row.addWidget(self.icon_file, 0, Qt.AlignmentFlag.AlignTop)
@@ -314,9 +310,7 @@ class DropZoneOpen(QWidget):
             ("mdi6.fingerprint", "Integritas", "Belum diverifikasi"),
         ]
         for idx, (icon_name, label_text, initial_value) in enumerate(enc_defs):
-            item = self._create_encryption_info_item(
-                icon_name, label_text, initial_value
-            )
+            item = self._create_encryption_info_item(icon_name, label_text, initial_value)
             enc_grid.addWidget(item, idx // 2, idx % 2)
         enc_lay.addLayout(enc_grid)
 

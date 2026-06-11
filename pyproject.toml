@@ -19,10 +19,11 @@ select = [
 ]
 
 ignore = [
-    "E501",   # line too long (handled by formatter)
-    "S101",   # assert used (we use it in tests)
-    "S105",   # possible hardcoded password (false positives in crypto code sometimes)
-    "S311",   # random is not cryptographically secure (we use os.urandom where it matters)
+    "E501",    # line too long (handled by formatter)
+    "S101",    # assert used (we use it in tests)
+    "S105",    # possible hardcoded password (false positives in crypto code sometimes)
+    "S311",    # random is not cryptographically secure (we use os.urandom where it matters)
+    "SIM102",  # nested if statements (intentional in Qt event filters for readability)
 ]
 
 [tool.ruff.lint.per-file-ignores]

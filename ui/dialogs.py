@@ -4,18 +4,18 @@ Deskripsi: Dialog dan message box kustom.
 """
 
 import qtawesome as qta
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QFrame,
-    QLabel,
-    QVBoxLayout,
     QHBoxLayout,
-    QPushButton,
+    QLabel,
     QLayout,
+    QPushButton,
     QSizePolicy,
-    QApplication,
+    QVBoxLayout,
 )
-from PySide6.QtCore import Qt, QTimer
 
 from .widgets import apply_shadow
 
@@ -23,9 +23,7 @@ from .widgets import apply_shadow
 class ModernMessageBox(QDialog):
     """Dialog konfirmasi modern dengan style dark dan centering yang reliable."""
 
-    def __init__(
-        self, title, message, icon_name="mdi6.alert", icon_color="#F39C12", parent=None
-    ):
+    def __init__(self, title, message, icon_name="mdi6.alert", icon_color="#F39C12", parent=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -55,14 +53,14 @@ class ModernMessageBox(QDialog):
         content_lay.setSpacing(15)
 
         lbl_icon = QLabel()
-        lbl_icon.setPixmap(qta.icon(icon_name, color=icon_color).pixmap(32, 32))  # More balanced size
+        lbl_icon.setPixmap(
+            qta.icon(icon_name, color=icon_color).pixmap(32, 32)
+        )  # More balanced size
         content_lay.addWidget(lbl_icon, alignment=Qt.AlignmentFlag.AlignTop)
 
         lbl_msg = QLabel(message)
         lbl_msg.setWordWrap(True)
-        lbl_msg.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding
-        )
+        lbl_msg.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
         lbl_msg.setObjectName("MutedText")
 
         content_lay.addWidget(lbl_msg, 1)

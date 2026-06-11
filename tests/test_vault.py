@@ -3,12 +3,19 @@ tests/test_vault.py
 Unit + Integration test untuk core/vault.py dengan refactor VaultStatus (Enum).
 """
 
+import io
 import os
 import shutil
-import pytest
+import tarfile
 from pathlib import Path
 
-from core.vault import kunci_brankas, buka_brankas, VaultStatus, _is_safe_tar_member
+from core.constants import (
+    MAGIC_BYTES,
+    VERSION,
+    VERSION_V1,
+)
+from core.crypto import derive_key, make_encryptor
+from core.vault import VaultStatus, _is_safe_tar_member, buka_brankas, kunci_brankas
 from tests.conftest import folder_checksum
 
 PASSWORD_BENAR = "P@ssw0rd!Kuat123"
@@ -19,9 +26,7 @@ def kunci_dan_dapat_path(folder, password=PASSWORD_BENAR, hapus=False, cb=None):
     base_dir = os.path.dirname(folder)
     path_simpan = os.path.join(base_dir, f"{os.path.basename(folder)}.adtn")
 
-    status, pesan = kunci_brankas(
-        [folder], path_simpan, password, hapus_asli=hapus, progress_cb=cb
-    )
+    status, pesan = kunci_brankas([folder], path_simpan, password, hapus_asli=hapus, progress_cb=cb)
     assert status == VaultStatus.SUCCESS, f"kunci_brankas gagal: {pesan}"
     assert os.path.exists(path_simpan), "File target tidak terbentuk"
     return path_simpan
@@ -113,9 +118,7 @@ class TestHapusAsli:
     def test_hapus_asli_true_menghapus_folder(self, sample_folder):
         base_dir = os.path.dirname(sample_folder)
         path_simpan = os.path.join(base_dir, "hapus_asli.adtn")
-        status, _ = kunci_brankas(
-            [sample_folder], path_simpan, PASSWORD_BENAR, hapus_asli=True
-        )
+        status, _ = kunci_brankas([sample_folder], path_simpan, PASSWORD_BENAR, hapus_asli=True)
         assert status == VaultStatus.SUCCESS
         assert not os.path.exists(sample_folder)
 
@@ -143,20 +146,6 @@ class TestEdgeCases:
 # ============================================================================
 # NEW TESTS FOR HARDENED FEATURES (from security review)
 # ============================================================================
-
-import tarfile
-import io
-from core.vault import (
-    MAGIC_BYTES,
-    VERSION,
-    VERSION_V1,
-    HEADER_SIZE,
-    OVERHEAD,
-    kunci_brankas,
-    buka_brankas,
-    VaultStatus,
-)
-from core.crypto import derive_key, make_encryptor, CHUNK_SIZE
 
 
 class TestHeaderFormat:
@@ -331,9 +320,7 @@ class TestCleanupInvariants:
 class TestWrongPasswordEdgeCases:
     """Additional guardrails for the password detection heuristic."""
 
-    def test_very_large_garbage_name_length_returns_wrong_password(
-        self, sample_folder, tmp_dir
-    ):
+    def test_very_large_garbage_name_length_returns_wrong_password(self, sample_folder, tmp_dir):
         """Garbage dengan panjang nama sangat besar harus tetap dianggap wrong password."""
         locked_path = kunci_dan_dapat_path(sample_folder)
         shutil.rmtree(sample_folder)
@@ -366,7 +353,7 @@ class TestSecureWipeGuardrails:
 
 def test_tarslip_path_traversal():
     """Memastikan _is_safe_tar_member memblokir upaya eksploitasi Path Traversal."""
-    target = Path("/tmp/safe_dir")
+    target = Path("/tmp/safe_dir")  # noqa: S108
 
     # Kasus berbahaya — harus False
     assert not _is_safe_tar_member("../escape.txt", target)

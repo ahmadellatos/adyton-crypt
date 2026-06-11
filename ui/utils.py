@@ -92,8 +92,7 @@ class ProgressETA:
                     self.smoothed_rate = instant_rate
                 else:
                     self.smoothed_rate = (
-                        self.smoothing * instant_rate
-                        + (1.0 - self.smoothing) * self.smoothed_rate
+                        self.smoothing * instant_rate + (1.0 - self.smoothing) * self.smoothed_rate
                     )
 
         self.last_progress = progress
@@ -175,11 +174,7 @@ def format_user_error(status, message: str | None, mode: str) -> str:
     if "cancelled" in status_name:
         return "Proses dibatalkan. File tujuan belum diganti."
 
-    prefix = (
-        "Tidak bisa membuka brankas"
-        if mode == "buka"
-        else "Tidak bisa mengunci brankas"
-    )
+    prefix = "Tidak bisa membuka brankas" if mode == "buka" else "Tidak bisa mengunci brankas"
     if not raw:
         return f"{prefix}. Coba ulangi proses atau periksa ruang disk."
 
@@ -208,8 +203,8 @@ def format_file_size(n: int) -> str:
 
 def apply_shadow(widget, blur_radius=20, y_offset=6, opacity=60):
     """Apply a drop shadow effect to a widget. Pure utility function."""
-    from PySide6.QtWidgets import QGraphicsDropShadowEffect
     from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QGraphicsDropShadowEffect
 
     shadow = QGraphicsDropShadowEffect()
     shadow.setBlurRadius(blur_radius)

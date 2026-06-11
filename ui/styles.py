@@ -13,9 +13,7 @@ CLR_BG = "#0B101E"
 CLR_CARD = "#111625"
 CLR_INNER = "#181F32"
 CLR_BORDER = "#232B3E"
-CLR_BORDER_SUBTLE = (
-    "rgba(35, 43, 62, 0.28)"  # Lebih subtle untuk border halus seperti di footer
-)
+CLR_BORDER_SUBTLE = "rgba(35, 43, 62, 0.28)"  # Lebih subtle untuk border halus seperti di footer
 
 # --- TIPOGRAFI ---
 CLR_TEXT_MAIN = "#FFFFFF"
@@ -63,14 +61,14 @@ CLR_TIPS_BORDER = "#142E3B"
 
 def load_stylesheet() -> str:
     return f"""
-    
+
     /* --- GLOBAL --- */
     QMainWindow {{ background-color: transparent; }}
     QWidget#CentralWidget {{ background-color: {CLR_BG}; }}
     QWidget {{ color: {CLR_TEXT_MAIN}; font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif; font-size: 10pt; letter-spacing: 0.1px; }}
-    
+
     QLabel#Icon {{ font-family: 'Segoe MDL2 Assets', 'Segoe Fluent Icons', sans-serif; background: transparent; }}
-    
+
     /* --- CARDS & CONTAINERS (Minimalist Premium) --- */
     QFrame#Card {{
         background-color: {CLR_CARD};
@@ -100,10 +98,47 @@ def load_stylesheet() -> str:
         border: 1px solid {CLR_TIPS_BORDER};
         border-radius: 10px;
     }}
-    
+
     /* --- HEADER (Minimalist Premium) --- */
     QFrame#HeaderWrapper {{
         background-color: transparent;
+    }}
+
+    /* --- SIDEBAR NAVIGATION --- */
+    QFrame#Sidebar {{
+        background-color: {CLR_CARD};
+    }}
+    QLabel#SidebarSection {{
+        color: {CLR_TEXT_MUTED};
+        font-size: 7.5pt;
+        font-weight: 700;
+        letter-spacing: 1.8px;
+        padding-left: 6px;
+    }}
+    QPushButton#NavBtn {{
+        background-color: transparent;
+        color: {CLR_TEXT_MUTED};
+        border: none;
+        border-radius: 10px;
+        font-weight: 500;
+        font-size: 10pt;
+        padding: 10px 14px;
+        text-align: left;
+    }}
+    QPushButton#NavBtn:checked {{
+        background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {CLR_ACCENT}, stop:1 {CLR_ACCENT_DK});
+        color: {CLR_TEXT_MAIN};
+        font-weight: 600;
+    }}
+    QPushButton#NavBtn:hover:!checked {{
+        background-color: {CLR_INNER};
+        color: {CLR_TEXT_MAIN};
+    }}
+    QPushButton#NavBtn:focus {{
+        border: 2px solid {CLR_ACCENT};
+    }}
+    QPushButton#NavBtn:checked:focus {{
+        border: 2px solid {CLR_TEXT_MAIN};
     }}
 
     /* --- TABS (Minimalist Premium) --- */
@@ -144,7 +179,7 @@ def load_stylesheet() -> str:
         background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {CLR_ACCENT}, stop:1 {CLR_ACCENT_DK});
         border: 2px solid {CLR_TEXT_MAIN};
     }}
-    
+
     /* --- TYPOGRAPHY (Improved Scale - Minimalist Premium) --- */
     QLabel {{
         background-color: transparent;
@@ -167,6 +202,18 @@ def load_stylesheet() -> str:
     }}
 
     /* Section / Card titles */
+    /* --- PAGE HEADER (judul per-tab di kiri atas) --- */
+    QLabel#PageTitle {{
+        font-size: 15pt;
+        font-weight: 700;
+        color: {CLR_TEXT_MAIN};
+        letter-spacing: 0.2px;
+    }}
+    QLabel#PageSubtitle {{
+        font-size: 9.5pt;
+        color: {CLR_TEXT_MUTED};
+    }}
+
     QLabel#CardTitle {{
         font-size: 12pt;
         font-weight: 600;
@@ -267,7 +314,7 @@ def load_stylesheet() -> str:
         color: {CLR_WARN};
         font-weight: 500;
     }}
-    
+
     /* --- INPUTS (Cleaner & More Premium) --- */
     QFrame#InputBox {{
         background-color: {CLR_INNER};
@@ -306,7 +353,7 @@ def load_stylesheet() -> str:
         padding: 0px;
         margin: 0px;
     }}
-    
+
     /* --- FOCUS & A11Y STATES --- */
     * {{ outline: none; }}
     QFrame#InputBox[focused="true"] {{ background-color: {CLR_BG}; border: 1px solid {CLR_ACCENT}; }}
@@ -337,7 +384,7 @@ def load_stylesheet() -> str:
         color: {CLR_TEXT_MUTED};
         border: 1px solid rgba(35, 43, 62, 0.2);
     }}
-    
+
     /* --- GHOST & EYE BUTTONS --- */
     QPushButton#BtnGhost {{
         background-color: transparent;
@@ -480,7 +527,7 @@ def load_stylesheet() -> str:
     QMenu {{ background-color: {CLR_CARD}; border: 1px solid {CLR_BORDER}; border-radius: 8px; padding: 4px; }}
     QMenu::item {{ border-radius: 4px; background: transparent; }}
     QMenu::item:selected {{ background-color: {CLR_INNER}; }}
-    
+
     /* --- SCROLLBAR MINIMALIS (10px TRACK PILL SHAPE) --- */
     QScrollBar:vertical {{ border: none; background: transparent; width: 10px; margin: 0px; }}
     QScrollBar::handle:vertical {{ background-color: {CLR_SCROLL_HANDLE}; min-height: 40px; border-radius: 4px; margin: 1px; }}

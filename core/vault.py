@@ -5,64 +5,63 @@ Dioptimasi dengan Single-Pass I/O Streaming, pathlib, dan Cancellation Support.
 Telah ditambal dari celah keamanan Path Traversal (TarSlip) dan rapuhnya deteksi password.
 """
 
+import contextlib
 import os
-import sys
 import shutil
-import uuid
-import tarfile
 import stat
+import tarfile
 import time
-from pathlib import Path, PureWindowsPath
+import uuid
+from collections.abc import Callable
 from enum import Enum
-from typing import Callable
+from pathlib import Path, PureWindowsPath
+
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from loguru import logger
-from .crypto import (
-    derive_key,
-    derive_key_argon2id,
-    derive_key_for_kdf,
-    make_encryptor,
-    make_decryptor,
-    safe_cb,
-)
+
 from .constants import (
-    MAGIC_BYTES,
-    VERSION,
-    VERSION_V1,
-    VERSION_V2,
-    HEADER_SIZE,
-    HEADER_SIZE_V1,
-    HEADER_SIZE_V2,
-    TAG_SIZE,
-    OVERHEAD,
-    OVERHEAD_V1,
-    CHUNK_SIZE,
-    CHUNK_RECORD_HEADER_SIZE,
-    CHUNK_RECORD_OVERHEAD,
-    DISK_OVERHEAD_BYTES,
-    OLD_TEMP_MAX_AGE_SECONDS,
-    MAX_VIRTUAL_NAME_LENGTH,
-    FIRST_DECRYPT_CHUNK_SIZE,
-    RECORD_TYPE_METADATA,
-    RECORD_TYPE_DATA,
-    RECORD_TYPE_FINAL,
-    V2_FLAG_NONE,
-    V2_FLAG_KDF_PARAMS,
-    V2_SUPPORTED_FLAGS,
-    V2_KDF_SECTION_HEADER_SIZE,
-    KDF_ID_PBKDF2_SHA256,
-    KDF_ID_ARGON2ID,
     ARGON2ID_ITERATIONS,
     ARGON2ID_LANES,
     ARGON2ID_MEMORY_COST_KIB,
     ARGON2ID_PARAMS_SIZE,
+    CHUNK_RECORD_HEADER_SIZE,
+    CHUNK_RECORD_OVERHEAD,
+    CHUNK_SIZE,
+    DISK_OVERHEAD_BYTES,
+    FIRST_DECRYPT_CHUNK_SIZE,
+    HEADER_SIZE,
+    HEADER_SIZE_V2,
+    KDF_ID_ARGON2ID,
+    KDF_ID_PBKDF2_SHA256,
+    MAGIC_BYTES,
+    MAX_VIRTUAL_NAME_LENGTH,
+    OLD_TEMP_MAX_AGE_SECONDS,
+    OVERHEAD,
+    OVERHEAD_V1,
+    RECORD_TYPE_DATA,
+    RECORD_TYPE_FINAL,
+    RECORD_TYPE_METADATA,
+    TAG_SIZE,
+    V2_FLAG_KDF_PARAMS,
+    V2_FLAG_NONE,
+    V2_KDF_SECTION_HEADER_SIZE,
+    V2_SUPPORTED_FLAGS,
+    VERSION_V1,
+    VERSION_V2,
+)
+from .crypto import (
+    derive_key,
+    derive_key_argon2id,
+    derive_key_for_kdf,
+    make_decryptor,
+    safe_cb,
 )
 
 
 class VaultStatus(Enum):
     SUCCESS = "success"
-    WRONG_PASSWORD = "wrong_password"
+    WRONG_PASSWORD = "wrong_password"  # nosec B105
     OVERWRITE_NEEDED = "overwrite_needed"
     ERROR = "error"
     CANCELLED = "cancelled"
@@ -78,19 +77,15 @@ def _hitung_total_wipe_size(paths: list[Path], secure_wipe: bool) -> int:
         if not p.exists():
             continue
         if p.is_file() and secure_wipe:
-            try:
+            with contextlib.suppress(Exception):
                 total += p.stat().st_size
-            except Exception:
-                pass
         elif p.is_dir():
             for root, _, files in os.walk(p):
                 if secure_wipe:
                     for fname in files:
                         fpath = Path(root) / fname
-                        try:
+                        with contextlib.suppress(Exception):
                             total += fpath.stat().st_size
-                        except Exception:
-                            pass
     return total
 
 
@@ -115,32 +110,27 @@ def hapus_permanen(
 
     if path.is_file() or path.is_symlink():
         file_size = 0
-        try:
+        with contextlib.suppress(Exception):
             file_size = path.stat().st_size if path.is_file() else 0
-        except Exception:
-            pass
 
         if secure_wipe and not path.is_symlink() and file_size > 0:
             try:
                 path.chmod(stat.S_IWRITE | stat.S_IREAD)
                 with path.open("r+b") as f:
                     written = 0
-                    random_data = os.urandom(CHUNK_SIZE)
                     while written < file_size:
                         chunk = min(CHUNK_SIZE, file_size - written)
-                        f.write(random_data[:chunk])
+                        # Generate fresh random data per chunk — jangan reuse blok
+                        # yang sama untuk file > CHUNK_SIZE (lebih aman dan unpredictable)
+                        f.write(os.urandom(chunk))
                         written += chunk
 
                         # Laporkan sub-progress jika diminta
-                        if (
-                            progress_cb
-                            and total_wipe_bytes > 0
-                            and wiped_bytes is not None
-                        ):
+                        if progress_cb and total_wipe_bytes > 0 and wiped_bytes is not None:
                             wiped_bytes[0] += chunk
-                            pct = wipe_start_pct + (
-                                wiped_bytes[0] / total_wipe_bytes
-                            ) * (wipe_end_pct - wipe_start_pct)
+                            pct = wipe_start_pct + (wiped_bytes[0] / total_wipe_bytes) * (
+                                wipe_end_pct - wipe_start_pct
+                            )
                             safe_cb(progress_cb, min(wipe_end_pct, pct))
 
                     f.flush()
@@ -248,9 +238,7 @@ def _hitung_total_size(paths: list[str]) -> int:
             total += path.stat().st_size
         elif path.is_dir():
             total += sum(
-                f.stat().st_size
-                for f in path.rglob("*")
-                if f.is_file() and not f.is_symlink()
+                f.stat().st_size for f in path.rglob("*") if f.is_file() and not f.is_symlink()
             )
     return total or 1
 
@@ -351,9 +339,9 @@ def _is_safe_tar_member(member_name: str, target_dir: Path) -> bool:
         if hasattr(member_path, "is_relative_to"):
             return member_path.is_relative_to(target_resolved)
         else:
-            return str(member_path) == str(target_resolved) or str(
-                member_path
-            ).startswith(str(target_resolved) + os.sep)
+            return str(member_path) == str(target_resolved) or str(member_path).startswith(
+                str(target_resolved) + os.sep
+            )
     except Exception:
         return False
 
@@ -758,9 +746,7 @@ def _extract_and_place_vault(
 
             # --- SECURITY CHECK (TarSlip) ---
             if not _is_safe_tar_member(member.name, temp_ext_dir):
-                raise Exception(
-                    "Anomali Keamanan: Terdeteksi Path Traversal (TarSlip)."
-                )
+                raise Exception("Anomali Keamanan: Terdeteksi Path Traversal (TarSlip).")
             # --------------------------------
 
             member_path = (temp_ext_dir.resolve() / member.name).resolve()
@@ -769,9 +755,7 @@ def _extract_and_place_vault(
                 # Ekstraksi manual file reguler secara bertahap (chunking)
                 member_path.parent.mkdir(parents=True, exist_ok=True)
 
-                with tar.extractfile(member) as source, open(
-                    member_path, "wb"
-                ) as target:
+                with tar.extractfile(member) as source, open(member_path, "wb") as target:
                     while True:
                         if is_cancelled and is_cancelled():
                             raise InterruptedError("Operasi dibatalkan oleh pengguna.")
@@ -789,19 +773,16 @@ def _extract_and_place_vault(
                         safe_cb(progress_cb, pct)
 
                 # Kembalikan metadata dasar
-                try:
+                with contextlib.suppress(Exception):
                     os.chmod(member_path, member.mode)
                     os.utime(member_path, (member.mtime, member.mtime))
-                except Exception:
-                    pass
             elif member.isdir():
                 # Folder — aman diekstrak
-                tar.extract(member, path=temp_ext_dir)
+                # filter="data" wajib di Python 3.14+ (default berubah dari None)
+                tar.extract(member, path=temp_ext_dir, filter="data")
             else:
                 # Blokir symlink, hardlink, device file, dll.
-                logger.warning(
-                    f"Melewati member tidak standar (symlink/device): {member.name}"
-                )
+                logger.warning(f"Melewati member tidak standar (symlink/device): {member.name}")
                 continue
 
     # FASE 3: PINDAH FOLDER & CLEANUP
@@ -826,9 +807,7 @@ def _extract_and_place_vault(
             try:
                 hapus_permanen(path_tujuan)
             except Exception:
-                logger.warning(
-                    "Gagal membersihkan target parsial saat rollback overwrite."
-                )
+                logger.warning("Gagal membersihkan target parsial saat rollback overwrite.")
         if backup_existing and backup_existing.exists() and not path_tujuan.exists():
             backup_existing.rename(path_tujuan)
         raise
@@ -878,18 +857,13 @@ def _target_conflicts_with_source(target_path: Path, source_path: Path) -> bool:
     if target_resolved == source_resolved:
         return True
 
-    if source_path.is_dir() and target_resolved.is_relative_to(source_resolved):
-        return True
-
-    return False
+    return source_path.is_dir() and target_resolved.is_relative_to(source_resolved)
 
 
 def _make_unique_backup_path(target_path: Path) -> Path:
     """Buat path backup unik tanpa menimpa file backup yang sudah ada."""
     for _ in range(100):
-        candidate = target_path.with_name(
-            f"{target_path.name}.bak-{uuid.uuid4().hex[:8]}"
-        )
+        candidate = target_path.with_name(f"{target_path.name}.bak-{uuid.uuid4().hex[:8]}")
         if not candidate.exists():
             return candidate
     raise FileExistsError("Tidak bisa membuat nama backup unik untuk vault lama.")
@@ -898,9 +872,7 @@ def _make_unique_backup_path(target_path: Path) -> Path:
 def _make_unique_replace_backup_path(target_path: Path) -> Path:
     """Buat path staging backup untuk force-overwrite tanpa menimpa data lama."""
     for _ in range(100):
-        candidate = target_path.with_name(
-            f"{target_path.name}.replace-{uuid.uuid4().hex[:8]}"
-        )
+        candidate = target_path.with_name(f"{target_path.name}.replace-{uuid.uuid4().hex[:8]}")
         if not candidate.exists():
             return candidate
     raise FileExistsError("Tidak bisa membuat staging backup unik untuk data lama.")
@@ -1005,9 +977,7 @@ def _buka_brankas_v2_from_open_file(
         safe_cb(progress_cb, 0.04)
 
         # Record 0 wajib metadata terenkripsi: panjang nama + nama virtual.
-        record_type, record_index, plaintext_len, record_header = (
-            _v2_read_record_header(fk)
-        )
+        record_type, record_index, plaintext_len, record_header = _v2_read_record_header(fk)
         if (
             record_type != RECORD_TYPE_METADATA
             or record_index != 0
@@ -1039,9 +1009,7 @@ def _buka_brankas_v2_from_open_file(
                 if is_cancelled and is_cancelled():
                     raise InterruptedError("Operasi dibatalkan oleh pengguna.")
 
-                record_type, record_index, plaintext_len, record_header = (
-                    _v2_read_record_header(fk)
-                )
+                record_type, record_index, plaintext_len, record_header = _v2_read_record_header(fk)
                 if record_index != expected_index:
                     raise InvalidTag
 
@@ -1150,7 +1118,6 @@ def kunci_brankas(
     progress_cb=None,
     is_cancelled: Callable[[], bool] = None,
 ) -> tuple[VaultStatus, str]:
-
     valid_paths = [p for p in paths if Path(p).exists()]
     if not valid_paths:
         return VaultStatus.ERROR, "Tidak ada file/folder valid untuk dikunci."
@@ -1183,9 +1150,7 @@ def kunci_brankas(
     try:
         free_space = shutil.disk_usage(target_path.parent).free
         total_size = _hitung_total_size(valid_paths)
-        required_space = _hitung_kebutuhan_disk_kunci(
-            valid_paths, nama_virtual, target_dir
-        )
+        required_space = _hitung_kebutuhan_disk_kunci(valid_paths, nama_virtual, target_dir)
 
         if free_space < required_space:
             req_mb = required_space / (1024 * 1024)
@@ -1221,9 +1186,7 @@ def kunci_brankas(
             fk.write(header_context)
 
             nama_bytes = nama_virtual.encode("utf-8")
-            metadata_plaintext = (
-                len(nama_bytes).to_bytes(2, byteorder="big") + nama_bytes
-            )
+            metadata_plaintext = len(nama_bytes).to_bytes(2, byteorder="big") + nama_bytes
             _v2_write_record(
                 fk,
                 aesgcm,
@@ -1453,9 +1416,7 @@ def buka_brankas(
                 return VaultStatus.OVERWRITE_NEEDED, nama_folder
 
             temp_ext_dir, temp_tar_path = _create_temp_decrypt_paths(base_dir)
-            safe_cb(
-                progress_cb, 0.46
-            )  # Aman menulis plaintext terautentikasi ke temp tar
+            safe_cb(progress_cb, 0.46)  # Aman menulis plaintext terautentikasi ke temp tar
 
             try:
                 # FASE 2: AUTHENTICATED PLAINTEXT WRITE PASS
@@ -1521,19 +1482,16 @@ def _parse_virtual_folder_name(decrypted_first: bytes) -> tuple[str, int]:
     """
     try:
         panjang_nama = int.from_bytes(decrypted_first[:2], byteorder="big")
-        if (
-            panjang_nama > MAX_VIRTUAL_NAME_LENGTH
-            or len(decrypted_first) < 2 + panjang_nama
-        ):
+        if panjang_nama > MAX_VIRTUAL_NAME_LENGTH or len(decrypted_first) < 2 + panjang_nama:
             raise ValueError("wrong_password")
 
         nama_folder = decrypted_first[2 : 2 + panjang_nama].decode("utf-8")
         nama_folder = _validate_virtual_folder_name(nama_folder)
         return nama_folder, 2 + panjang_nama
     except UnicodeDecodeError:
-        raise ValueError("wrong_password")
+        raise ValueError("wrong_password") from None
     except Exception:
-        raise ValueError("wrong_password")
+        raise ValueError("wrong_password") from None
 
 
 def _create_temp_decrypt_paths(base_dir: Path) -> tuple[Path, Path]:

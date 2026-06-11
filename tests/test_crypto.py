@@ -7,15 +7,16 @@ Jalankan:
 """
 
 import os
+
 import pytest
 
-from core.crypto import derive_key, make_encryptor, make_decryptor, safe_cb, CHUNK_SIZE
+from core.constants import CHUNK_SIZE
+from core.crypto import derive_key, make_decryptor, make_encryptor, safe_cb
 
 # ── derive_key ────────────────────────────────────────────────────────────────
 
 
 class TestDeriveKey:
-
     def test_output_length(self):
         """Kunci yang dihasilkan harus tepat 32 bytes (256-bit)."""
         key = derive_key("password123", os.urandom(16))
@@ -67,7 +68,6 @@ class TestDeriveKey:
 
 
 class TestEncryptorDecryptor:
-
     def test_encrypt_decrypt_roundtrip(self):
         """Data yang dienkripsi harus bisa didekripsi kembali ke data asli."""
         key = os.urandom(32)
@@ -179,7 +179,6 @@ class TestEncryptorDecryptor:
 
 
 class TestSafeCb:
-
     def test_callback_dipanggil(self):
         """Callback harus dipanggil dengan nilai yang diberikan."""
         hasil = []
@@ -218,7 +217,6 @@ class TestSafeCb:
 
 
 class TestConstants:
-
     def test_chunk_size_minimal(self):
         """CHUNK_SIZE harus minimal 1MB untuk performa."""
         assert CHUNK_SIZE >= 1 * 1024 * 1024

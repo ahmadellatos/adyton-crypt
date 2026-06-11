@@ -10,7 +10,9 @@ from core.vault import VaultStatus, buka_brankas, kunci_brankas
 PASSWORD = "P@ssw0rd!Kuat123"
 
 
-def test_force_overwrite_restores_existing_folder_when_final_move_fails(sample_folder, tmp_dir, monkeypatch):
+def test_force_overwrite_restores_existing_folder_when_final_move_fails(
+    sample_folder, tmp_dir, monkeypatch
+):
     vault_path = os.path.join(tmp_dir, "rollback.adtn")
     status, msg = kunci_brankas([sample_folder], vault_path, PASSWORD)
     assert status == VaultStatus.SUCCESS, msg

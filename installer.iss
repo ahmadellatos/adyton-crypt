@@ -31,7 +31,7 @@ UninstallDisplayIcon={app}\AdytonCrypt.exe
 
 ; --- 64-bit Only ---
 ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=yes
+ArchitecturesInstallIn64BitMode=x64compatible
 
 ; --- MODERN PRIVILEGE HANDLING ---
 PrivilegesRequired=lowest
@@ -76,7 +76,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 ; Desktop shortcut - dicentang secara default
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 ; VC++ hanya muncul jika diperlukan
 Name: "vcredist"; Description: "Download and install Microsoft Visual C++ Redistributable 2015-2022 (recommended)"; GroupDescription: "System Requirements"; Check: NeedsVCRedist
