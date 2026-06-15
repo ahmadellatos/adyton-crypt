@@ -1,10 +1,11 @@
 import qtawesome as qta
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QDialog
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, Signal
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, Signal
 from PySide6.QtGui import QKeyEvent
+from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from ..dialogs import ModernMessageBox
-from ..styles import CLR_TEXT_MAIN, CLR_TEXT_MUTED, muted_label_style, CLR_WARN_DK
+from ..styles import CLR_WARN_DK
+from ..widgets import ToggleSwitch
 
 
 class KeyboardCheckbox(QFrame):
@@ -57,70 +58,79 @@ class OptionsPanel(QWidget):
         super().__init__(parent)
         self._build_ui()
 
+    _SECURE_H = 58  # tinggi terbuka sub-opsi Secure Wipe (judul + subjudul)
+
     def _build_ui(self):
-        # Wrapper tanpa background spesial supaya warnanya konsisten dengan card lain
+        # Section opsi di dasar card target — latar rounded halus agar terpisah
+        # visual dari daftar di atasnya.
         container = QFrame(self)
         container.setObjectName("OptionsPanel")
-        container.setContentsMargins(0, 0, 0, 0)
+        container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        container.setStyleSheet(
+            "QFrame#OptionsPanel { background: rgba(255, 255, 255, 0.04);" " border-radius: 12px; }"
+        )
 
         lay_opsi_hapus = QVBoxLayout(container)
-        lay_opsi_hapus.setContentsMargins(0, 0, 0, 0)
-        lay_opsi_hapus.setSpacing(8)  # Premium breathing between main options
+        lay_opsi_hapus.setContentsMargins(16, 14, 16, 14)
+        lay_opsi_hapus.setSpacing(6)
 
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 6, 0, 0)
+        main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(container)
 
+        # --- Baris utama: judul + deskripsi (kiri), toggle (kanan) ---
         lay_chk1 = QHBoxLayout()
         lay_chk1.setContentsMargins(0, 0, 0, 0)
-        lay_chk1.setSpacing(10)  # Balanced checkbox-to-text gap
-
-        self.chk_hapus = KeyboardCheckbox(size=22)
-        self.chk_hapus.setObjectName("ChkHapus")
-        self.chk_hapus.set_checked(False)
+        lay_chk1.setSpacing(12)
 
         v_chk_txt1 = QVBoxLayout()
-        v_chk_txt1.setSpacing(3)  # Tight premium title-to-desc spacing
-        lbl_chk_title1 = QLabel("Hapus file/folder asli setelah dikunci")
+        v_chk_txt1.setSpacing(3)
+        lbl_chk_title1 = QLabel("Delete original after locking")
         lbl_chk_title1.setObjectName("SectionLabel")
-        self.chk_hapus.setAccessibleName("Hapus file asli setelah dikunci")
-        lbl_chk_desc1 = QLabel(
-            "File atau folder asli akan dihapus secara standar (Cepat & Aman untuk SSD)."
-        )
+        lbl_chk_desc1 = QLabel("Standard deletion — fast & safe for SSDs.")
         lbl_chk_desc1.setObjectName("OptionDesc")
+        lbl_chk_desc1.setWordWrap(True)
         v_chk_txt1.addWidget(lbl_chk_title1)
         v_chk_txt1.addWidget(lbl_chk_desc1)
 
-        lay_chk1.addWidget(self.chk_hapus, alignment=Qt.AlignmentFlag.AlignVCenter)
-        lay_chk1.addSpacing(12)
-        lay_chk1.addLayout(v_chk_txt1)
+        self.switch_hapus = ToggleSwitch(checked=False)
+        self.switch_hapus.setAccessibleName("Delete original file after locking")
+
+        lay_chk1.addLayout(v_chk_txt1, 1)
+        lay_chk1.addWidget(self.switch_hapus, 0, Qt.AlignmentFlag.AlignVCenter)
         lay_opsi_hapus.addLayout(lay_chk1)
 
+        # --- Sub-opsi collapsible: Secure Wipe (checkbox + judul + subjudul) ---
         self.widget_secure_wipe = QWidget()
         self.widget_secure_wipe.setMaximumHeight(0)
         self.widget_secure_wipe.setMinimumHeight(0)
 
         lay_collapse = QVBoxLayout(self.widget_secure_wipe)
-        lay_collapse.setContentsMargins(36, 6, 0, 4)  # Better indent + breathing for sub-option
+        lay_collapse.setContentsMargins(0, 10, 0, 0)
         lay_collapse.setSpacing(4)
 
         lay_chk2 = QHBoxLayout()
         lay_chk2.setContentsMargins(0, 0, 0, 0)
-        lay_chk2.setSpacing(10)
+        lay_chk2.setSpacing(12)
 
         self.chk_secure = KeyboardCheckbox(size=20)
         self.chk_secure.setObjectName("ChkSecure")
         self.chk_secure.set_checked(False)
         self.chk_secure.hide()
 
-        lbl_chk_title2 = QLabel("Advanced: Secure Wipe (Timpa data)")
-        lbl_chk_title2.setObjectName("OptionDesc")
-        self.chk_secure.setAccessibleName("Secure Wipe - Timpa data asli")
+        v_chk_txt2 = QVBoxLayout()
+        v_chk_txt2.setSpacing(2)
+        lbl_chk_title2 = QLabel("Advanced: Secure Wipe (overwrite data)")
+        lbl_chk_title2.setObjectName("SectionLabel")
+        lbl_chk_desc2 = QLabel("Slower — for HDDs or highly sensitive data.")
+        lbl_chk_desc2.setObjectName("OptionDesc")
+        lbl_chk_desc2.setWordWrap(True)
+        v_chk_txt2.addWidget(lbl_chk_title2)
+        v_chk_txt2.addWidget(lbl_chk_desc2)
+        self.chk_secure.setAccessibleName("Secure Wipe — overwrite original data")
 
         lay_chk2.addWidget(self.chk_secure, alignment=Qt.AlignmentFlag.AlignVCenter)
-        lay_chk2.addSpacing(10)
-        lay_chk2.addWidget(lbl_chk_title2)
-        lay_chk2.addStretch()
+        lay_chk2.addLayout(v_chk_txt2, 1)
         lay_collapse.addLayout(lay_chk2)
         lay_opsi_hapus.addWidget(self.widget_secure_wipe)
 
@@ -128,38 +138,35 @@ class OptionsPanel(QWidget):
         self.anim_secure.setDuration(250)
         self.anim_secure.setEasingCurve(QEasingCurve.Type.InOutCubic)
 
-        self.chk_hapus._on_toggle = self._toggle_hapus_asli
+        self.anim_secure.finished.connect(self._on_secure_collapsed)
+        self.switch_hapus.toggled.connect(self._on_hapus_toggled)
         self.chk_secure._on_toggle = self._toggle_secure_wipe
 
-    def _toggle_hapus_asli(self):
-        self.chk_hapus.set_checked(not self.chk_hapus._checked)
-        if self.chk_hapus._checked:
+    def _on_hapus_toggled(self, checked: bool):
+        self.anim_secure.stop()
+        self.anim_secure.setStartValue(self.widget_secure_wipe.maximumHeight())
+        if checked:
             self.widget_secure_wipe.show()
             self.chk_secure.show()
-            self.anim_secure.setStartValue(0)
-            self.anim_secure.setEndValue(52)  # Adjusted for new sub-option spacing + padding
-            self.anim_secure.start()
+            self.anim_secure.setEndValue(self._SECURE_H)
         else:
-            self.anim_secure.setStartValue(self.widget_secure_wipe.maximumHeight())
             self.anim_secure.setEndValue(0)
-            self.anim_secure.start()
-            self.anim_secure.finished.connect(self._on_secure_collapsed)
             if self.chk_secure._checked:
                 self.chk_secure.set_checked(False)
-
-        self.hapus_asli_changed.emit(self.chk_hapus._checked)
+        self.anim_secure.start()
+        self.hapus_asli_changed.emit(checked)
 
     def _toggle_secure_wipe(self):
-        if not self.chk_hapus._checked:
+        if not self.switch_hapus.isChecked():
             return
         if not self.chk_secure._checked:
             dialog = ModernMessageBox(
-                title="Peringatan Perangkat Keras",
-                message="Secure Wipe akan menimpa data asli dengan byte kosong sebelum dihapus agar sulit dipulihkan.\n\n"
-                "PERHATIAN:\n"
-                "• Jangan gunakan opsi ini jika file berada di SSD karena dapat merusak disk.\n"
-                "• Hanya gunakan untuk Harddisk (HDD).\n\n"
-                "Apakah Anda yakin ingin mengaktifkan opsi ini?",
+                title="Heads Up: Hardware Compatibility",
+                message="Secure Wipe overwrites the original data with random bytes before deleting, making recovery much harder.\n\n"
+                "Important:\n"
+                "• Avoid this on SSDs — repeated overwrites accelerate drive wear.\n"
+                "• Use it only for traditional hard drives (HDD).\n\n"
+                "Enable Secure Wipe?",
                 icon_name="mdi6.alert-decagram",
                 icon_color=CLR_WARN_DK,
                 parent=self,
@@ -169,25 +176,22 @@ class OptionsPanel(QWidget):
         self.chk_secure.set_checked(not self.chk_secure._checked)
 
     def _on_secure_collapsed(self):
-        self.chk_secure.hide()
-        self.anim_secure.finished.disconnect(self._on_secure_collapsed)
+        # 'finished' terhubung permanen; sembunyikan checkbox hanya saat benar-benar
+        # tertutup (toggle OFF) agar tidak fokusable/terlihat ketika collapsed.
+        if not self.switch_hapus.isChecked():
+            self.chk_secure.hide()
 
     # --- PUBLIC API ---
     def is_hapus_asli(self) -> bool:
-        return self.chk_hapus._checked
+        return self.switch_hapus.isChecked()
 
     def is_secure_wipe(self) -> bool:
         return self.chk_secure._checked
 
     def reset_options(self):
-        if self.chk_hapus._checked:
-            self.chk_hapus.set_checked(False)
-            self.chk_secure.set_checked(False)
-            self.anim_secure.setStartValue(self.widget_secure_wipe.maximumHeight())
-            self.anim_secure.setEndValue(0)
-            self.anim_secure.start()
-            self.hapus_asli_changed.emit(False)
+        if self.switch_hapus.isChecked():
+            self.switch_hapus.setChecked(False)  # memicu _on_hapus_toggled (collapse + emit)
 
     def set_busy(self, busy: bool):
-        self.chk_hapus.setEnabled(not busy)
+        self.switch_hapus.setEnabled(not busy)
         self.chk_secure.setEnabled(not busy)

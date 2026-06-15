@@ -74,6 +74,14 @@ ARGON2ID_LANES = 4
 ARGON2ID_MEMORY_COST_KIB = 64 * 1024
 ARGON2ID_PARAMS_SIZE = 12  # iterations(4) + lanes(4) + memory_cost_kib(4)
 
+# Upper bounds for Argon2id parameters read from a vault header. A malicious or
+# corrupted .adtn could otherwise request gigabytes/terabytes of memory and OOM
+# the app when opening it. These ceilings stay far above the defaults above, so
+# any realistic future increase keeps working while absurd values are rejected.
+ARGON2ID_MAX_ITERATIONS = 64
+ARGON2ID_MAX_LANES = 64
+ARGON2ID_MAX_MEMORY_COST_KIB = 2 * 1024 * 1024  # 2 GiB
+
 # ============================================================================
 # PARAMETER APLIKASI (disesuaikan dari magic numbers sebelumnya)
 # ============================================================================

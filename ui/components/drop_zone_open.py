@@ -15,6 +15,9 @@ from PySide6.QtWidgets import (
 )
 
 from core.constants import (
+    ARGON2ID_MAX_ITERATIONS,
+    ARGON2ID_MAX_LANES,
+    ARGON2ID_MAX_MEMORY_COST_KIB,
     ARGON2ID_PARAMS_SIZE,
     CHUNK_RECORD_HEADER_SIZE,
     CHUNK_RECORD_OVERHEAD,
@@ -36,6 +39,14 @@ from core.constants import (
 )
 
 from ..buttons import ClearButton
+from ..styles import (
+    CLR_ACCENT,
+    CLR_BORDER,
+    CLR_CARD,
+    CLR_INSET,
+    CLR_TEXT_DIM,
+    CLR_TEXT_MAIN,
+)
 from ..utils import format_file_size
 from ..widgets import (
     CustomToolTip,
@@ -130,22 +141,22 @@ class DropZoneOpen(QWidget):
         self.icon_empty = HeroIconWidget(mode="buka")
         self.icon_empty.setMaximumHeight(85)
 
-        self.lbl_main_empty = QLabel("Drag & drop file .adtn ke sini")
+        self.lbl_main_empty = QLabel("Drag & drop a .adtn file here")
         self.lbl_main_empty.setObjectName("DropZoneMainText")
         self.lbl_main_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.lbl_sub_empty = QLabel("atau klik tombol di bawah untuk memilih file")
+        self.lbl_sub_empty = QLabel("or click the button below to choose a file")
         self.lbl_sub_empty.setObjectName("DropZoneSubText")
         self.lbl_sub_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.btn_browse_center = QPushButton(" Pilih File Brankas")
+        self.btn_browse_center = QPushButton(" Choose Vault File")
         self.btn_browse_center.setIcon(qta.icon("mdi6.folder-search", color="white"))
         self.btn_browse_center.setFixedSize(220, 42)
         self.btn_browse_center.setObjectName("BtnBrowseLg")
         self.btn_browse_center.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_browse_center.clicked.connect(self._pilih_file)
 
-        self.lbl_footer_empty = QLabel("Hanya file dengan ekstensi .adtn yang dapat dibuka")
+        self.lbl_footer_empty = QLabel("Only .adtn vault files can be opened here")
         self.lbl_footer_empty.setObjectName("DropZoneFooter")
         self.lbl_footer_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -183,11 +194,11 @@ class DropZoneOpen(QWidget):
         header_lay.setContentsMargins(0, 0, 0, 0)
         header_lay.setSpacing(6)
 
-        header = QLabel("File Brankas (.adtn)")
+        header = QLabel("Vault File (.adtn)")
         header.setObjectName("CardTitle")
         header_lay.addWidget(header)
 
-        sub = QLabel("Pilih file brankas yang ingin Anda buka.")
+        sub = QLabel("Select the vault file to open.")
         sub.setObjectName("CardSubtitle")
         header_lay.addWidget(sub)
 
@@ -211,7 +222,9 @@ class DropZoneOpen(QWidget):
 
         self.icon_file = QLabel()
         self.icon_file.setObjectName("SelectedFileIcon")
-        self.icon_file.setPixmap(qta.icon("mdi6.file-lock", color="#00D2C8").pixmap(38, 38))
+        self.icon_file.setPixmap(
+            qta.icon("mdi6.file-lock-outline", color=CLR_ACCENT).pixmap(38, 38)
+        )
         self.icon_file.setFixedSize(44, 44)
         self.icon_file.setAlignment(Qt.AlignmentFlag.AlignCenter)
         top_row.addWidget(self.icon_file, 0, Qt.AlignmentFlag.AlignTop)
@@ -224,7 +237,7 @@ class DropZoneOpen(QWidget):
         self.lbl_filename.setObjectName("SelectedFileName")
         name_col.addWidget(self.lbl_filename)
 
-        self.lbl_ready = QLabel("Siap dibuka")
+        self.lbl_ready = QLabel("Ready to open")
         self.lbl_ready.setObjectName("FileReadySubtitle")
         name_col.addWidget(self.lbl_ready)
 
@@ -256,10 +269,10 @@ class DropZoneOpen(QWidget):
         meta_row.setSpacing(0)
         self.meta_items = []
         meta_defs = [
-            ("Ukuran File", "—"),
-            ("Dibuat", "—"),
-            ("Enkripsi", "AES-256-GCM"),
-            ("Status", "Menunggu password"),
+            ("File Size", "—"),
+            ("Created", "—"),
+            ("Encryption", "AES-256-GCM"),
+            ("Status", "Waiting for password"),
         ]
         for idx, (label_text, initial_value) in enumerate(meta_defs):
             item = self._create_meta_item(label_text, initial_value)
@@ -276,8 +289,8 @@ class DropZoneOpen(QWidget):
         lay.addSpacing(16)
 
         # Ganti button
-        self.btn_ganti = QPushButton("  Ganti File Brankas")
-        self.btn_ganti.setIcon(qta.icon("mdi6.file-find", color="#8B95A5"))
+        self.btn_ganti = QPushButton("  Change Vault File")
+        self.btn_ganti.setIcon(qta.icon("mdi6.file-find-outline", color=CLR_TEXT_DIM))
         self.btn_ganti.setFixedHeight(36)
         self.btn_ganti.setObjectName("BtnGantiFile")
         self.btn_ganti.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -294,7 +307,7 @@ class DropZoneOpen(QWidget):
         enc_lay.setContentsMargins(14, 12, 14, 12)
         enc_lay.setSpacing(8)
 
-        enc_title = QLabel("Detail Keamanan")
+        enc_title = QLabel("Security Details")
         enc_title.setObjectName("EncSectionTitle")
         enc_lay.addWidget(enc_title)
         enc_lay.addSpacing(4)
@@ -304,10 +317,10 @@ class DropZoneOpen(QWidget):
         enc_grid.setVerticalSpacing(10)
         self.enc_items = []
         enc_defs = [
-            ("mdi6.shield-lock", "Enkripsi", "AES-256-GCM"),
+            ("mdi6.shield-lock", "Encryption", "AES-256-GCM"),
             ("mdi6.key-variant", "KDF", "—"),
             ("mdi6.package-variant-closed", "Format", "—"),
-            ("mdi6.fingerprint", "Integritas", "Belum diverifikasi"),
+            ("mdi6.fingerprint", "Integrity", "Not yet verified"),
         ]
         for idx, (icon_name, label_text, initial_value) in enumerate(enc_defs):
             item = self._create_encryption_info_item(icon_name, label_text, initial_value)
@@ -356,7 +369,7 @@ class DropZoneOpen(QWidget):
 
         # Icon on the left side (32px as requested, vertically centered)
         ic = QLabel()
-        ic.setPixmap(qta.icon(icon_name, color="#00D2C8").pixmap(26, 26))
+        ic.setPixmap(qta.icon(icon_name, color=CLR_ACCENT).pixmap(26, 26))
         ic.setFixedSize(26, 26)
         h.addWidget(ic, 0, Qt.AlignmentFlag.AlignVCenter)
 
@@ -366,11 +379,11 @@ class DropZoneOpen(QWidget):
         v.setSpacing(2)
 
         lbl = QLabel(label_text)
-        lbl.setStyleSheet("color: #8B95A5; font-size: 8pt; font-weight: 400;")
+        lbl.setStyleSheet(f"color: {CLR_TEXT_DIM}; font-size: 8pt; font-weight: 600;")
         v.addWidget(lbl)
 
         val = QLabel(value_text)
-        val.setStyleSheet("color: #E8ECF3; font-size: 9pt; font-weight: 600;")
+        val.setStyleSheet(f"color: {CLR_TEXT_MAIN}; font-size: 9pt; font-weight: 700;")
         v.addWidget(val)
 
         h.addLayout(v, 1)
@@ -389,20 +402,20 @@ class DropZoneOpen(QWidget):
             stat = os.stat(path)
             size_str = format_file_size(stat.st_size)
 
-            # Indonesian month names
+            # Short month abbreviations for the "Created" field
             months = {
                 1: "Jan",
                 2: "Feb",
                 3: "Mar",
                 4: "Apr",
-                5: "Mei",
+                5: "May",
                 6: "Jun",
                 7: "Jul",
-                8: "Agt",
+                8: "Aug",
                 9: "Sep",
-                10: "Okt",
+                10: "Oct",
                 11: "Nov",
-                12: "Des",
+                12: "Dec",
             }
             import datetime as dt
 
@@ -440,7 +453,7 @@ class DropZoneOpen(QWidget):
             self.enc_items[0]._enc_val.setText(vault_info["encryption"])
             self.enc_items[1]._enc_val.setText(vault_info["kdf"])
             self.enc_items[2]._enc_val.setText(vault_info["format"])
-            self.enc_items[3]._enc_val.setText("Belum diverifikasi")
+            self.enc_items[3]._enc_val.setText("Not yet verified")
 
     def _read_vault_display_info(self, path: str) -> dict[str, object]:
         """Baca metadata header ringan untuk display UI.
@@ -455,8 +468,8 @@ class DropZoneOpen(QWidget):
             "encryption": "AES-256-GCM",
             "kdf": "—",
             "format": "—",
-            "status": "Format valid",
-            "subtitle": "Menunggu password",
+            "status": "Valid format",
+            "subtitle": "Waiting for password",
             "openable": True,
         }
 
@@ -466,7 +479,7 @@ class DropZoneOpen(QWidget):
             fmt: str,
             *,
             state: str = "error",
-            subtitle: str = "File belum bisa dibuka",
+            subtitle: str = "File can't be opened yet",
             openable: bool = False,
             kdf: str | None = None,
         ) -> dict[str, object]:
@@ -488,20 +501,20 @@ class DropZoneOpen(QWidget):
             if not path.lower().endswith(".adtn"):
                 return mark_problem(
                     "ERROR",
-                    "Ekstensi tidak valid",
-                    "Bukan file .adtn",
+                    "Invalid extension",
+                    "Not a .adtn file",
                 )
 
             file_size = os.path.getsize(path)
             if file_size <= 0:
-                return mark_problem("ERROR", "File kosong", "Tidak lengkap")
+                return mark_problem("ERROR", "Empty file", "Incomplete")
 
             with open(path, "rb") as f:
                 if f.read(4) != MAGIC_BYTES:
                     return mark_problem(
                         "ERROR",
-                        "Bukan vault Adyton",
-                        "Tidak dikenali",
+                        "Not an Adyton vault",
+                        "Unrecognized",
                     )
 
                 version = f.read(1)
@@ -509,7 +522,7 @@ class DropZoneOpen(QWidget):
                     if file_size < OVERHEAD_V1:
                         return mark_problem(
                             "ERROR",
-                            "File tidak lengkap",
+                            "Incomplete file",
                             "Vault v1 / Legacy",
                             kdf="PBKDF2",
                         )
@@ -517,8 +530,8 @@ class DropZoneOpen(QWidget):
                         {
                             "kdf": "PBKDF2",
                             "format": "Vault v1 / Legacy",
-                            "status": "Format valid",
-                            "subtitle": "Siap dibuka",
+                            "status": "Valid format",
+                            "subtitle": "Ready to open",
                         }
                     )
                     return info
@@ -526,16 +539,16 @@ class DropZoneOpen(QWidget):
                 if version != VERSION_V2:
                     return mark_problem(
                         "UNSUPPORTED",
-                        "Versi tidak didukung",
-                        "Versi lebih baru/tidak dikenal",
+                        "Unsupported version",
+                        "Newer/unknown version",
                         state="warn",
-                        subtitle="Butuh versi aplikasi lebih baru",
+                        subtitle="Needs a newer app version",
                     )
 
                 if file_size < HEADER_SIZE_V2 + (2 * CHUNK_RECORD_OVERHEAD):
                     return mark_problem(
                         "ERROR",
-                        "File tidak lengkap",
+                        "Incomplete file",
                         "Vault v2",
                     )
 
@@ -543,55 +556,62 @@ class DropZoneOpen(QWidget):
                 f.read(SALT_SIZE + FILE_ID_SIZE)
                 chunk_size_raw = f.read(4)
                 if len(chunk_size_raw) != 4:
-                    return mark_problem("ERROR", "Header tidak lengkap", "Vault v2")
+                    return mark_problem("ERROR", "Incomplete header", "Vault v2")
                 chunk_size = int.from_bytes(chunk_size_raw, byteorder="big")
                 if chunk_size <= 0 or chunk_size > CHUNK_SIZE:
                     return mark_problem(
                         "ERROR",
-                        "Parameter chunk invalid",
+                        "Invalid chunk parameter",
                         "Vault v2",
                     )
 
                 flags_raw = f.read(4)
                 if len(flags_raw) != 4:
-                    return mark_problem("ERROR", "Header tidak lengkap", "Vault v2")
+                    return mark_problem("ERROR", "Incomplete header", "Vault v2")
 
                 flags = int.from_bytes(flags_raw, byteorder="big")
                 if flags & ~V2_SUPPORTED_FLAGS:
                     return mark_problem(
                         "UNSUPPORTED",
-                        "Flag tidak didukung",
+                        "Unsupported flag",
                         "Vault v2",
                         state="warn",
-                        subtitle="Butuh versi aplikasi lebih baru",
+                        subtitle="Needs a newer app version",
                     )
 
                 kdf = "PBKDF2 Legacy"
                 if flags & V2_FLAG_KDF_PARAMS:
                     section = f.read(3)
                     if len(section) != 3:
-                        return mark_problem("ERROR", "Header tidak lengkap", "Vault v2")
+                        return mark_problem("ERROR", "Incomplete header", "Vault v2")
                     kdf_id = section[0]
                     params_len = int.from_bytes(section[1:3], byteorder="big")
                     params_raw = f.read(params_len)
                     if len(params_raw) != params_len:
-                        return mark_problem("ERROR", "Header tidak lengkap", "Vault v2")
+                        return mark_problem("ERROR", "Incomplete header", "Vault v2")
 
                     if kdf_id == KDF_ID_ARGON2ID:
                         if params_len != ARGON2ID_PARAMS_SIZE:
                             return mark_problem(
                                 "ERROR",
-                                "Parameter KDF invalid",
+                                "Invalid KDF parameter",
                                 "Vault v2",
                                 kdf="Argon2id",
                             )
                         iterations = int.from_bytes(params_raw[0:4], byteorder="big")
                         lanes = int.from_bytes(params_raw[4:8], byteorder="big")
                         memory_cost = int.from_bytes(params_raw[8:12], byteorder="big")
-                        if iterations <= 0 or lanes <= 0 or memory_cost <= 0:
+                        if (
+                            iterations <= 0
+                            or lanes <= 0
+                            or memory_cost <= 0
+                            or iterations > ARGON2ID_MAX_ITERATIONS
+                            or lanes > ARGON2ID_MAX_LANES
+                            or memory_cost > ARGON2ID_MAX_MEMORY_COST_KIB
+                        ):
                             return mark_problem(
                                 "ERROR",
-                                "Parameter KDF invalid",
+                                "Invalid KDF parameter",
                                 "Vault v2",
                                 kdf="Argon2id",
                             )
@@ -600,7 +620,7 @@ class DropZoneOpen(QWidget):
                         if params_len != 4:
                             return mark_problem(
                                 "ERROR",
-                                "Parameter KDF invalid",
+                                "Invalid KDF parameter",
                                 "Vault v2",
                                 kdf="PBKDF2",
                             )
@@ -608,7 +628,7 @@ class DropZoneOpen(QWidget):
                         if iterations <= 0:
                             return mark_problem(
                                 "ERROR",
-                                "Parameter KDF invalid",
+                                "Invalid KDF parameter",
                                 "Vault v2",
                                 kdf="PBKDF2",
                             )
@@ -616,18 +636,18 @@ class DropZoneOpen(QWidget):
                     else:
                         return mark_problem(
                             "UNSUPPORTED",
-                            "KDF tidak didukung",
+                            "Unsupported KDF",
                             "Vault v2",
                             state="warn",
-                            subtitle="Butuh versi aplikasi lebih baru",
-                            kdf="Tidak didukung",
+                            subtitle="Needs a newer app version",
+                            kdf="Unsupported",
                         )
 
                 # Minimal sanity check record pertama. Header record tidak
                 # didekripsi di sini, tapi tipe/index/panjang bisa dicek tanpa password.
                 record_header = f.read(CHUNK_RECORD_HEADER_SIZE)
                 if len(record_header) != CHUNK_RECORD_HEADER_SIZE:
-                    return mark_problem("ERROR", "Record tidak lengkap", "Vault v2")
+                    return mark_problem("ERROR", "Incomplete record", "Vault v2")
 
                 record_type = record_header[0]
                 record_index = int.from_bytes(record_header[1:9], byteorder="big")
@@ -638,22 +658,22 @@ class DropZoneOpen(QWidget):
                     or plaintext_len < 2
                     or plaintext_len > 2 + MAX_VIRTUAL_NAME_LENGTH
                 ):
-                    return mark_problem("ERROR", "Struktur record invalid", "Vault v2")
+                    return mark_problem("ERROR", "Invalid record structure", "Vault v2")
 
                 if file_size - f.tell() < plaintext_len + TAG_SIZE:
-                    return mark_problem("ERROR", "Record tidak lengkap", "Vault v2")
+                    return mark_problem("ERROR", "Incomplete record", "Vault v2")
 
                 info.update(
                     {
                         "kdf": kdf,
                         "format": "Vault v2",
-                        "status": "Format valid",
-                        "subtitle": "Siap dibuka",
+                        "status": "Valid format",
+                        "subtitle": "Ready to open",
                     }
                 )
                 return info
         except Exception:
-            return mark_problem("ERROR", "Tidak terbaca", "Tidak terbaca")
+            return mark_problem("ERROR", "Unreadable", "Unreadable")
 
     def _set_badge(self, text: str, state: str):
         """Update badge kanan atas dan paksa QSS membaca ulang property state."""
@@ -692,34 +712,34 @@ class DropZoneOpen(QWidget):
             return
 
         if state == "checking":
-            self.lbl_ready.setText(message or "Memverifikasi password")
-            self._set_badge("CEK...", "busy")
-            self._set_meta_status("Memverifikasi")
-            self._set_integrity_status("Memverifikasi")
+            self.lbl_ready.setText(message or "Verifying password")
+            self._set_badge("CHECK…", "busy")
+            self._set_meta_status("Verifying")
+            self._set_integrity_status("Verifying")
             return
 
         if state == "verified":
-            self.lbl_ready.setText(message or "Integritas terverifikasi")
+            self.lbl_ready.setText(message or "Integrity verified")
             self._set_badge("VERIFIED  ✓", "verified")
-            self._set_meta_status("Terverifikasi")
-            self._set_integrity_status("Terverifikasi")
+            self._set_meta_status("Verified")
+            self._set_integrity_status("Verified")
             return
 
         if state == "failed":
-            self.lbl_ready.setText(message or "Password salah atau file rusak")
-            self._set_badge("GAGAL", "error")
-            self._set_meta_status("Gagal verifikasi")
-            self._set_integrity_status("Gagal verifikasi")
+            self.lbl_ready.setText(message or "Wrong password or corrupted file")
+            self._set_badge("FAILED", "error")
+            self._set_meta_status("Verification failed")
+            self._set_integrity_status("Verification failed")
             return
 
         # pending / cancelled / retry: kembali ke status hasil validasi format ringan.
-        self.lbl_ready.setText(message or "Menunggu password")
+        self.lbl_ready.setText(message or "Waiting for password")
         self._set_badge(
             "FORMAT  ✓" if self._file_format_openable else "ERROR",
             self._format_badge_state,
         )
         self._set_meta_status(self._format_status_text)
-        self._set_integrity_status("Belum diverifikasi")
+        self._set_integrity_status("Not yet verified")
 
     def _update_card_style(self, is_empty: bool):
         # Use property-based styling for empty state (same system as DropZoneLock)
@@ -729,9 +749,9 @@ class DropZoneOpen(QWidget):
                 self.card_file.set_empty_state(True)
             # For filled state we still override with inline (different visual treatment)
         else:
-            self.card_file.setStyleSheet("""
-                QFrame#DropArea { border: 1px solid #232B3E; background-color: #111625; border-radius: 12px; }
-                QFrame#DropArea[dragActive="true"] { border: 2px dashed #00D2C8; background-color: #181F32; }
+            self.card_file.setStyleSheet(f"""
+                QFrame#DropArea {{ border: 1px solid {CLR_BORDER}; background-color: {CLR_CARD}; border-radius: 22px; }}
+                QFrame#DropArea[dragActive="true"] {{ border: 1.5px dashed {CLR_ACCENT}; background-color: {CLR_INSET}; }}
             """)
 
     def _setup_accessibility(self):
@@ -797,7 +817,7 @@ class DropZoneOpen(QWidget):
 
     def _pilih_file(self):
         f, _ = QFileDialog.getOpenFileName(
-            self, "Pilih File Brankas", "", "Adyton Crypt Files (*.adtn)"
+            self, "Choose Vault File", "", "Adyton Crypt Files (*.adtn)"
         )
         if f:
             self._set_file(f)

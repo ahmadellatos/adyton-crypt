@@ -17,6 +17,7 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -41,10 +42,14 @@ from .styles import (
     CLR_ACCENT,
     CLR_BORDER,
     CLR_DANGER,
+    CLR_INSET,
+    CLR_ON_ACCENT,
     CLR_SUCCESS,
+    CLR_TEXT_DIM,
     CLR_TEXT_MAIN,
     CLR_TEXT_MUTED,
     CLR_WARN,
+    FONT_MONO,
 )
 from .widgets import AnimatedNotifBar, PasswordLineEdit, apply_shadow
 
@@ -78,7 +83,7 @@ class TextCryptoWorker(QThread):
             self.finished.emit("", str(exc))
         except Exception as exc:
             logger.exception("TextCryptoWorker: error tak terduga")
-            self.finished.emit("", f"Error tak terduga: {exc}")
+            self.finished.emit("", f"Unexpected error: {exc}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -109,26 +114,26 @@ class TextInputCard(QFrame):
         row_hdr.setSpacing(10)
 
         icon_txt = QLabel()
-        icon_txt.setPixmap(qta.icon("mdi6.text-box-edit-outline", color="#00D2C8").pixmap(32, 32))
+        icon_txt.setPixmap(qta.icon("mdi6.text-box-edit-outline", color=CLR_ACCENT).pixmap(32, 32))
         icon_txt.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         v_hdr_txt = QVBoxLayout()
         v_hdr_txt.setSpacing(3)
-        lbl_title = QLabel("TEKS INPUT")
+        lbl_title = QLabel("Text input")
         lbl_title.setObjectName("CardTitle")
-        lbl_sub = QLabel("Ketik atau tempel teks yang ingin dienkripsi/didekripsi")
+        lbl_sub = QLabel("Type or paste the text you want to encrypt/decrypt")
         lbl_sub.setObjectName("CardSubtitle")
         lbl_sub.setWordWrap(True)
         v_hdr_txt.addWidget(lbl_title)
         v_hdr_txt.addWidget(lbl_sub)
 
         # Tombol paste di kanan header
-        self.btn_paste = QPushButton(" Tempel")
+        self.btn_paste = QPushButton(" Paste")
         self.btn_paste.setIcon(qta.icon("mdi6.clipboard-arrow-down-outline", color="white"))
         self.btn_paste.setFixedHeight(36)
         self.btn_paste.setObjectName("BtnGen")
         self.btn_paste.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_paste.setAccessibleName("Tempel teks dari clipboard")
+        self.btn_paste.setAccessibleName("Paste text from clipboard")
         self.btn_paste.clicked.connect(self._paste_clipboard)
 
         row_hdr.addWidget(icon_txt)
@@ -143,8 +148,8 @@ class TextInputCard(QFrame):
         self.text_edit = QTextEdit()
         self.text_edit.setObjectName("TextInputArea")
         self.text_edit.setPlaceholderText(
-            "Ketik atau tempel teks di sini…\n\n"
-            "Tips: Tempel teks terenkripsi (ADTN_TEXT:1:…) untuk mendekripsinya."
+            "Type or paste text here…\n\n"
+            "Tip: Paste encrypted text (ADTN_TEXT:1:…) to decrypt it."
         )
         self.text_edit.setMinimumHeight(180)
         self.text_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -153,16 +158,16 @@ class TextInputCard(QFrame):
         # [PERBAIKAN] Styling eksplisit untuk Dark Mode
         self.text_edit.setStyleSheet(f"""
             QTextEdit {{
-                background-color: rgba(20, 26, 43, 0.5);
+                background-color: {CLR_INSET};
                 color: {CLR_TEXT_MAIN};
-                border: 1px solid {CLR_BORDER};
-                border-radius: 6px;
-                padding: 10px;
-                font-size: 10pt;
+                border: 1.5px solid {CLR_BORDER};
+                border-radius: 14px;
+                padding: 12px;
+                font-size: 10.5pt;
             }}
             QTextEdit:focus {{
-                border: 1px solid {CLR_ACCENT};
-                background-color: rgba(24, 31, 50, 0.8);
+                border: 1.5px solid {CLR_ACCENT};
+                background-color: #0E1B21;
             }}
         """)
 
@@ -173,16 +178,16 @@ class TextInputCard(QFrame):
         row_footer = QHBoxLayout()
         row_footer.setSpacing(8)
 
-        self.lbl_char_count = QLabel("0 karakter")
+        self.lbl_char_count = QLabel("0 characters")
         self.lbl_char_count.setObjectName("MutedText")
         self.lbl_char_count.setStyleSheet(f"font-size: 8.5pt; color: {CLR_TEXT_MUTED};")
 
-        self.btn_clear = QPushButton("Bersihkan")
+        self.btn_clear = QPushButton("Clear")
         self.btn_clear.setIcon(qta.icon("mdi6.delete-outline", color=CLR_TEXT_MUTED))
         self.btn_clear.setObjectName("BtnTransparent")
         self.btn_clear.setFixedHeight(34)
         self.btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_clear.setAccessibleName("Bersihkan teks input")
+        self.btn_clear.setAccessibleName("Clear input text")
         self.btn_clear.clicked.connect(self.clear_text)
 
         row_footer.addWidget(self.lbl_char_count)
@@ -224,10 +229,10 @@ class TextInputCard(QFrame):
         # Counter merah saat di batas (hanya relevan untuk plaintext/enkripsi).
         if n >= limit:
             self.lbl_char_count.setStyleSheet(f"font-size: 8.5pt; color: {CLR_DANGER};")
-            self.lbl_char_count.setText(f"{n:,} / {limit:,} karakter (maksimal)".replace(",", "."))
+            self.lbl_char_count.setText(f"{n:,} / {limit:,} characters (max)")
         else:
             self.lbl_char_count.setStyleSheet(f"font-size: 8.5pt; color: {CLR_TEXT_MUTED};")
-            self.lbl_char_count.setText(f"{n:,} karakter".replace(",", "."))
+            self.lbl_char_count.setText(f"{n:,} characters")
         self.text_changed.emit(text)
 
     def _paste_clipboard(self):
@@ -236,7 +241,7 @@ class TextInputCard(QFrame):
         if text:
             self.text_edit.setPlainText(text)
         else:
-            self.text_edit.setPlaceholderText("Clipboard kosong atau tidak berisi teks.")
+            self.text_edit.setPlaceholderText("Clipboard is empty or contains no text.")
 
     # ── Public API ───────────────────────────────────────────────────────────
 
@@ -290,19 +295,19 @@ class TextResultCard(QFrame):
 
         v_hdr = QVBoxLayout()
         v_hdr.setSpacing(2)
-        self.lbl_result_title = QLabel("Hasil Enkripsi")
+        self.lbl_result_title = QLabel("Encryption Result")
         self.lbl_result_title.setObjectName("CardTitle")
-        self.lbl_result_sub = QLabel("Salin dan simpan teks terenkripsi di bawah ini")
+        self.lbl_result_sub = QLabel("Copy and save the encrypted text below")
         self.lbl_result_sub.setObjectName("CardSubtitle")
         v_hdr.addWidget(self.lbl_result_title)
         v_hdr.addWidget(self.lbl_result_sub)
 
-        self.btn_copy = QPushButton(" Salin ke Clipboard")
+        self.btn_copy = QPushButton(" Copy to Clipboard")
         self.btn_copy.setIcon(qta.icon("mdi6.content-copy", color="white"))
         self.btn_copy.setFixedHeight(36)
         self.btn_copy.setObjectName("BtnGen")
         self.btn_copy.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_copy.setAccessibleName("Salin hasil ke clipboard")
+        self.btn_copy.setAccessibleName("Copy result to clipboard")
         self.btn_copy.clicked.connect(self._copy_to_clipboard)
 
         self.btn_qr = QPushButton(" QR")
@@ -310,8 +315,10 @@ class TextResultCard(QFrame):
         self.btn_qr.setFixedHeight(36)
         self.btn_qr.setObjectName("BtnGen")
         self.btn_qr.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_qr.setAccessibleName("Tampilkan QR code hasil enkripsi")
-        self.btn_qr.setToolTip("Tampilkan hasil enkripsi sebagai QR code untuk di-scan kamera HP")
+        self.btn_qr.setAccessibleName("Show QR code of the encryption result")
+        self.btn_qr.setToolTip(
+            "Show the encryption result as a QR code to scan with a phone camera"
+        )
         self.btn_qr.clicked.connect(self._show_qr)
         self.btn_qr.hide()
 
@@ -334,11 +341,12 @@ class TextResultCard(QFrame):
         # [PERBAIKAN] Styling eksplisit untuk Dark Mode
         self.text_output.setStyleSheet(f"""
             QTextEdit {{
-                background-color: rgba(20, 26, 43, 0.5);
+                background-color: {CLR_INSET};
                 color: {CLR_ACCENT};
-                border: 1px solid {CLR_BORDER};
-                border-radius: 6px;
-                padding: 10px;
+                border: 1.5px solid {CLR_BORDER};
+                border-radius: 14px;
+                padding: 12px;
+                font-family: {FONT_MONO};
                 font-size: 10pt;
             }}
         """)
@@ -347,7 +355,7 @@ class TextResultCard(QFrame):
 
         # ── Footer ────────────────────────────────────────────────────────────
         row_footer = QHBoxLayout()
-        self.lbl_out_count = QLabel("0 karakter")
+        self.lbl_out_count = QLabel("0 characters")
         self.lbl_out_count.setObjectName("MutedText")
         self.lbl_out_count.setStyleSheet(f"font-size: 8.5pt; color: {CLR_TEXT_MUTED};")
         self.lbl_copy_confirm = QLabel("")
@@ -365,7 +373,7 @@ class TextResultCard(QFrame):
         text = self.text_output.toPlainText()
         if text:
             QGuiApplication.clipboard().setText(text)
-            self.lbl_copy_confirm.setText("✓ Tersalin!")
+            self.lbl_copy_confirm.setText("✓ Copied!")
             from PySide6.QtCore import QTimer
 
             QTimer.singleShot(2500, lambda: self.lbl_copy_confirm.setText(""))
@@ -385,21 +393,21 @@ class TextResultCard(QFrame):
 
         self.text_output.setPlainText(text)
         n = len(text)
-        self.lbl_out_count.setText(f"{n:,} karakter".replace(",", "."))
+        self.lbl_out_count.setText(f"{n:,} characters")
         self.lbl_copy_confirm.setText("")
 
         if mode == "enkripsi":
-            self.lbl_result_title.setText("Hasil Enkripsi")
+            self.lbl_result_title.setText("Encryption Result")
             self.lbl_result_sub.setText(
-                "Salin dan simpan teks terenkripsi ini — hanya bisa dibuka dengan password yang sama"
+                "Copy and save this encrypted text — it can only be decrypted with the same password"
             )
             self.icon_result.setPixmap(
                 qta.icon("mdi6.lock-check-outline", color=CLR_ACCENT).pixmap(28, 28)
             )
             self.btn_qr.setVisible(n <= QR_MAX_CHARS)
         else:
-            self.lbl_result_title.setText("Hasil Dekripsi")
-            self.lbl_result_sub.setText("Teks asli berhasil dipulihkan")
+            self.lbl_result_title.setText("Decryption Result")
+            self.lbl_result_sub.setText("Your original text has been restored")
             self.icon_result.setPixmap(
                 qta.icon("mdi6.check-circle-outline", color=CLR_SUCCESS).pixmap(28, 28)
             )
@@ -423,7 +431,7 @@ class TextResultCard(QFrame):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _STRENGTH_COLORS = [CLR_DANGER, CLR_WARN, CLR_ACCENT, CLR_SUCCESS]
-_STRENGTH_LABELS = ["Lemah", "Cukup", "Kuat", "Sangat Kuat"]
+_STRENGTH_LABELS = ["Weak", "Fair", "Strong", "Very Strong"]
 
 
 def _pw_score(pw: str) -> int:
@@ -432,6 +440,20 @@ def _pw_score(pw: str) -> int:
         return -1
     skor = zxcvbn(pw)["score"]
     return 0 if skor <= 1 else skor - 1
+
+
+def _password_rules(pw: str) -> list[bool]:
+    """Lima kriteria checklist password — sama persis dengan Tab Kunci.
+
+    Urutan: panjang ≥ 8, huruf besar, huruf kecil, angka, simbol.
+    """
+    return [
+        len(pw) >= 8,
+        any(c.isupper() for c in pw),
+        any(c.islower() for c in pw),
+        any(c.isdigit() for c in pw),
+        any(not c.isalnum() and not c.isspace() for c in pw),
+    ]
 
 
 class PasswordPanelTeks(QFrame):
@@ -457,14 +479,14 @@ class PasswordPanelTeks(QFrame):
         row_hdr = QHBoxLayout()
         row_hdr.setSpacing(10)
         icon_key = QLabel()
-        icon_key.setPixmap(qta.icon("mdi6.key-variant", color="#F39C12").pixmap(32, 32))
+        icon_key.setPixmap(qta.icon("mdi6.key-variant", color=CLR_WARN).pixmap(32, 32))
         icon_key.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         v_hdr = QVBoxLayout()
         v_hdr.setSpacing(3)
-        self.lbl_card_title = QLabel("BUAT PASSWORD")
+        self.lbl_card_title = QLabel("Set a Password")
         self.lbl_card_title.setObjectName("CardTitle")
-        self.lbl_card_sub = QLabel("Password kuat untuk melindungi teks Anda")
+        self.lbl_card_sub = QLabel("A strong password keeps your text safe")
         self.lbl_card_sub.setObjectName("CardSubtitle")
         self.lbl_card_sub.setWordWrap(True)
         v_hdr.addWidget(self.lbl_card_title)
@@ -476,7 +498,7 @@ class PasswordPanelTeks(QFrame):
         self.btn_gen.setFixedHeight(36)
         self.btn_gen.setObjectName("BtnGen")
         self.btn_gen.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_gen.setAccessibleName("Generate Password Kuat")
+        self.btn_gen.setAccessibleName("Generate Strong Password")
         self.btn_gen.clicked.connect(self._generate_pw)
 
         row_hdr.addWidget(icon_key)
@@ -493,9 +515,9 @@ class PasswordPanelTeks(QFrame):
         lay_toggle.setContentsMargins(3, 3, 3, 3)
         lay_toggle.setSpacing(3)
 
-        self.btn_mode_enkripsi = QPushButton(" Enkripsi")
+        self.btn_mode_enkripsi = QPushButton(" Encrypt")
         self.btn_mode_enkripsi.setIcon(
-            qta.icon("mdi6.lock-plus-outline", color="#8B95A5", color_on="white")
+            qta.icon("mdi6.lock-plus-outline", color=CLR_TEXT_DIM, color_on=CLR_ON_ACCENT)
         )
         self.btn_mode_enkripsi.setIconSize(QSize(16, 16))
         self.btn_mode_enkripsi.setObjectName("TabBtn")
@@ -505,9 +527,9 @@ class PasswordPanelTeks(QFrame):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
 
-        self.btn_mode_dekripsi = QPushButton(" Dekripsi")
+        self.btn_mode_dekripsi = QPushButton(" Decrypt")
         self.btn_mode_dekripsi.setIcon(
-            qta.icon("mdi6.lock-open-variant-outline", color="#8B95A5", color_on="white")
+            qta.icon("mdi6.lock-open-variant-outline", color=CLR_TEXT_DIM, color_on=CLR_ON_ACCENT)
         )
         self.btn_mode_dekripsi.setIconSize(QSize(16, 16))
         self.btn_mode_dekripsi.setObjectName("TabBtn")
@@ -530,8 +552,8 @@ class PasswordPanelTeks(QFrame):
         self.lbl_pw1.setObjectName("SectionLabel")
         lay.addWidget(self.lbl_pw1)
 
-        self.entry_pw1 = PasswordLineEdit("Ketik password di sini…")
-        self.entry_pw1.setAccessibleName("Password enkripsi teks")
+        self.entry_pw1 = PasswordLineEdit("Type your password here…")
+        self.entry_pw1.setAccessibleName("Text encryption password")
         self.entry_pw1.textChanged.connect(self._on_pw1_changed)
         lay.addWidget(self.entry_pw1)
 
@@ -566,6 +588,12 @@ class PasswordPanelTeks(QFrame):
 
         lay.addWidget(self._strength_widget)
 
+        # ── Checklist kriteria password (enkripsi saja) ───────────────────────
+        # Disamakan dengan Tab Kunci: tombol baru aktif hanya bila semua kriteria
+        # terpenuhi + skor zxcvbn cukup. Teks sering dibagikan, jadi gate-nya sama.
+        self._checklist_widget = self._build_checklist()
+        lay.addWidget(self._checklist_widget)
+
         # ── Password konfirmasi (enkripsi saja) ───────────────────────────────
         self._confirm_widget = QWidget()
         self._confirm_widget.setMaximumHeight(0)
@@ -575,12 +603,12 @@ class PasswordPanelTeks(QFrame):
         lay_confirm.setContentsMargins(0, 0, 0, 0)
         lay_confirm.setSpacing(6)
 
-        lbl_pw2 = QLabel("Konfirmasi Password")
+        lbl_pw2 = QLabel("Confirm Password")
         lbl_pw2.setObjectName("SectionLabel")
         lay_confirm.addWidget(lbl_pw2)
 
-        self.entry_pw2 = PasswordLineEdit("Ulangi password…")
-        self.entry_pw2.setAccessibleName("Konfirmasi password enkripsi teks")
+        self.entry_pw2 = PasswordLineEdit("Repeat password…")
+        self.entry_pw2.setAccessibleName("Confirm text encryption password")
         self.entry_pw2.textChanged.connect(self._on_pw2_changed)
         lay_confirm.addWidget(self.entry_pw2)
 
@@ -613,12 +641,15 @@ class PasswordPanelTeks(QFrame):
         lay.setSpacing(7)
 
         self._tips: list[tuple[str, str]] = [
-            ("mdi6.shield-key-outline", "Password tidak dapat dipulihkan. Simpan di tempat aman."),
+            (
+                "mdi6.shield-key-outline",
+                "Your password can't be recovered. Keep it somewhere safe.",
+            ),
             (
                 "mdi6.clipboard-text-outline",
-                "Hasil enkripsi bisa disimpan di mana saja — email, catatan, chat.",
+                "The encrypted result can be saved anywhere — email, notes, chat.",
             ),
-            ("mdi6.lock-alert-outline", "Untuk dekripsi, gunakan password yang sama persis."),
+            ("mdi6.lock-alert-outline", "To decrypt, use the exact same password you set here."),
         ]
         self._tip_labels: list[QLabel] = []
 
@@ -650,13 +681,14 @@ class PasswordPanelTeks(QFrame):
         self._current_mode = mode
         is_enc = mode == "enkripsi"
 
-        self.lbl_card_title.setText("BUAT PASSWORD" if is_enc else "MASUKKAN PASSWORD")
+        self.lbl_card_title.setText("Set a Password" if is_enc else "Enter Your Password")
         self.lbl_card_sub.setText(
-            "Password kuat untuk melindungi teks Anda"
+            "A strong password keeps your text safe"
             if is_enc
-            else "Masukkan password yang dipakai saat enkripsi"
+            else "Enter the password you used during encryption"
         )
         self.btn_gen.setVisible(is_enc)
+        self._checklist_widget.setVisible(is_enc)
         self.lbl_pw1.setText("Password" if is_enc else "Password")
 
         # Strength bar TIDAK auto-muncul saat pindah mode — baru tampil ketika
@@ -685,6 +717,7 @@ class PasswordPanelTeks(QFrame):
         self.lbl_match.setText("")
         self._strength_visible = False
         self._update_strength_bars(-1)
+        self._update_checklist("")
         self._check_valid()
 
     # ── Password validation ───────────────────────────────────────────────────
@@ -707,6 +740,7 @@ class PasswordPanelTeks(QFrame):
                     self._anim_strength.setEndValue(44)
                     self._anim_strength.start()
                 self._update_strength_bars(_pw_score(text))
+            self._update_checklist(text)
             self._update_match_label()
         self._check_valid()
 
@@ -724,10 +758,66 @@ class PasswordPanelTeks(QFrame):
         if score >= 0:
             label = _STRENGTH_LABELS[score]
             color = _STRENGTH_COLORS[score]
-            self.lbl_strength.setText(f"Kekuatan password: {label}")
+            self.lbl_strength.setText(f"Password strength: {label}")
             self.lbl_strength.setStyleSheet(f"font-size: 8.5pt; color: {color};")
         else:
             self.lbl_strength.setText("")
+
+    def _build_checklist(self) -> QWidget:
+        """Checklist 5 kriteria, tata letak mirror Tab Kunci."""
+        widget = QWidget()
+        grid = QGridLayout(widget)
+        grid.setContentsMargins(4, 8, 4, 2)
+        grid.setHorizontalSpacing(20)
+        grid.setVerticalSpacing(6)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+
+        def _item(text: str):
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(6)
+            icon = QLabel()
+            icon.setPixmap(qta.icon("mdi6.check-circle-outline", color=CLR_BORDER).pixmap(16, 16))
+            lbl = QLabel(text)
+            lbl.setObjectName("ChecklistLabel")
+            lbl.setProperty("valid", False)
+            lbl.setWordWrap(True)
+            row.addWidget(icon, alignment=Qt.AlignmentFlag.AlignTop)
+            row.addWidget(lbl, 1)
+            return row, icon, lbl
+
+        l1, self.chk_len_icon, self.chk_len_lbl = _item("At least 8 characters")
+        l2, self.chk_upper_icon, self.chk_upper_lbl = _item("Uppercase letter (A-Z)")
+        l3, self.chk_lower_icon, self.chk_lower_lbl = _item("Lowercase letter (a-z)")
+        l4, self.chk_digit_icon, self.chk_digit_lbl = _item("Number (0-9)")
+        l5, self.chk_sym_icon, self.chk_sym_lbl = _item("Symbol (!@#$%^&*)")
+
+        grid.addLayout(l1, 0, 0)
+        grid.addLayout(l4, 0, 1)
+        grid.addLayout(l2, 1, 0)
+        grid.addLayout(l5, 1, 1)
+        grid.addLayout(l3, 2, 0)
+        return widget
+
+    def _update_checklist(self, pw: str) -> None:
+        items = [
+            (self.chk_len_icon, self.chk_len_lbl),
+            (self.chk_upper_icon, self.chk_upper_lbl),
+            (self.chk_lower_icon, self.chk_lower_lbl),
+            (self.chk_digit_icon, self.chk_digit_lbl),
+            (self.chk_sym_icon, self.chk_sym_lbl),
+        ]
+        for ok, (icon, lbl) in zip(_password_rules(pw), items, strict=True):
+            if ok:
+                icon.setPixmap(qta.icon("mdi6.check-circle", color=CLR_SUCCESS).pixmap(16, 16))
+            else:
+                icon.setPixmap(
+                    qta.icon("mdi6.check-circle-outline", color=CLR_BORDER).pixmap(16, 16)
+                )
+            lbl.setProperty("valid", ok)
+            lbl.style().unpolish(lbl)
+            lbl.style().polish(lbl)
 
     def _update_match_label(self):
         pw1 = self.entry_pw1.text()
@@ -736,12 +826,12 @@ class PasswordPanelTeks(QFrame):
             self.lbl_match.setText("")
             return
         if pw1 == pw2:
-            self.lbl_match.setText("✓ Password cocok")
+            self.lbl_match.setText("✓ Passwords match")
             self.lbl_match.setStyleSheet(
                 f"font-size: 8.5pt; font-weight: 500; color: {CLR_SUCCESS};"
             )
         else:
-            self.lbl_match.setText("✗ Password tidak cocok")
+            self.lbl_match.setText("✗ Passwords don't match")
             self.lbl_match.setStyleSheet(
                 f"font-size: 8.5pt; font-weight: 500; color: {CLR_DANGER};"
             )
@@ -750,8 +840,11 @@ class PasswordPanelTeks(QFrame):
         pw1 = self.entry_pw1.text()
         if self._current_mode == "enkripsi":
             pw2 = self.entry_pw2.text()
-            score = _pw_score(pw1)
-            ok = bool(pw1) and pw1 == pw2 and score >= 0
+            # Gate disamakan dengan Tab Kunci: semua kriteria checklist terpenuhi
+            # + skor zxcvbn cukup (≥1 setelah remap = "Fair"+) + konfirmasi cocok.
+            rules_ok = all(_password_rules(pw1))
+            is_strong_enough = _pw_score(pw1) >= 1
+            ok = bool(pw1) and pw1 == pw2 and rules_ok and is_strong_enough
         else:
             ok = bool(pw1)
         self.valid_state_changed.emit(ok)
@@ -760,7 +853,12 @@ class PasswordPanelTeks(QFrame):
 
     def _generate_pw(self):
         alphabet = string.ascii_letters + string.digits + "!@#$%^&*()-_=+"
-        pw = "".join(secrets.choice(alphabet) for _ in range(20))
+        # Pastikan hasil generate selalu lolos checklist (mirror Tab Kunci),
+        # supaya tombol aksi tidak ikut nonaktif setelah generate.
+        while True:
+            pw = "".join(secrets.choice(alphabet) for _ in range(20))
+            if all(_password_rules(pw)):
+                break
         self.entry_pw1.setText(pw)
         self.entry_pw2.setText(pw)
 
@@ -775,7 +873,12 @@ class PasswordPanelTeks(QFrame):
     def is_valid(self) -> bool:
         pw1 = self.entry_pw1.text()
         if self._current_mode == "enkripsi":
-            return bool(pw1) and pw1 == self.entry_pw2.text() and _pw_score(pw1) >= 0
+            return (
+                bool(pw1)
+                and pw1 == self.entry_pw2.text()
+                and all(_password_rules(pw1))
+                and _pw_score(pw1) >= 1
+            )
         return bool(pw1)
 
     def reset(self):
@@ -807,6 +910,7 @@ class TabTeks(QWidget):
     """Controller tab Enkripsi Teks."""
 
     system_notification = Signal(str, str)
+    status_changed = Signal(str, str, str)  # title, subtitle, state (untuk status pill)
 
     def __init__(self):
         super().__init__()
@@ -858,11 +962,11 @@ class TabTeks(QWidget):
 
         # Tombol aksi utama
         self.btn_aksi = BigActionBtn(
-            "ENKRIPSI TEKS",
-            "Masukkan teks dan buat password untuk memulai",
+            "Encrypt Text",
+            "Enter text and create a password to begin",
             icon_name="mdi6.lock-plus",
         )
-        self.btn_aksi.setAccessibleName("Tombol Enkripsi Teks")
+        self.btn_aksi.setAccessibleName("Encrypt Text button")
         self.btn_aksi.setEnabled(False)
         self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         apply_shadow(self.btn_aksi, blur_radius=24, y_offset=5, opacity=85)
@@ -894,7 +998,7 @@ class TabTeks(QWidget):
     def _on_limit_reached(self, limit: int):
         self.notif.show_msg(
             "error",
-            f"Teks mencapai batas maksimal {limit:,} karakter.".replace(",", "."),
+            f"Text reached the maximum of {limit:,} characters.",
             3500,
         )
 
@@ -906,18 +1010,18 @@ class TabTeks(QWidget):
     def _on_mode_changed(self, mode: str):
         is_enc = mode == "enkripsi"
         if is_enc:
-            self.btn_aksi.setTextLabels(
-                "ENKRIPSI TEKS", "Masukkan teks dan buat password untuk memulai"
-            )
+            self.btn_aksi.setTextLabels("Encrypt Text", "Enter text and create a password to begin")
+            self.btn_aksi.icon_name = "mdi6.lock-plus"
             self.btn_aksi.lbl_icon.setPixmap(
-                qta.icon("mdi6.lock-plus", color="white").pixmap(34, 34)
+                qta.icon("mdi6.lock-plus", color=CLR_ON_ACCENT).pixmap(22, 22)
             )
         else:
             self.btn_aksi.setTextLabels(
-                "DEKRIPSI TEKS", "Masukkan teks terenkripsi dan password untuk membuka"
+                "Decrypt Text", "Enter encrypted text and the password to open"
             )
+            self.btn_aksi.icon_name = "mdi6.lock-open-check-outline"
             self.btn_aksi.lbl_icon.setPixmap(
-                qta.icon("mdi6.lock-open-check-outline", color="white").pixmap(34, 34)
+                qta.icon("mdi6.lock-open-check-outline", color=CLR_ON_ACCENT).pixmap(22, 22)
             )
         # Batas input mengikuti mode: plaintext (enkripsi) vs ciphertext (dekripsi).
         self.input_card.set_max_chars(MAX_INPUT_CHARS if is_enc else MAX_DECRYPT_CHARS)
@@ -931,6 +1035,19 @@ class TabTeks(QWidget):
         ok = self._has_text and self._is_password_valid
         self.btn_aksi.setEnabled(ok)
         self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.StrongFocus if ok else Qt.FocusPolicy.NoFocus)
+        self._emit_status()
+
+    def _emit_status(self):
+        """Pancarkan status keamanan tab Teks untuk status pill di header."""
+        if self.worker is not None:
+            return
+        if self._has_text and self._is_password_valid:
+            verb = "encrypt" if self.password_panel.get_mode() == "enkripsi" else "decrypt"
+            self.status_changed.emit(
+                "Ready to process", f"Text & password ready to {verb}", "ready"
+            )
+        else:
+            self.status_changed.emit("AES-256 • GCM", "Local encryption active", "idle")
 
     # ── Proses enkripsi / dekripsi ────────────────────────────────────────────
 
@@ -943,10 +1060,10 @@ class TabTeks(QWidget):
         mode = self.password_panel.get_mode()
 
         if not text:
-            self.notif.show_msg("warn", "Teks tidak boleh kosong.", 3500)
+            self.notif.show_msg("warn", "Text cannot be empty.", 3500)
             return
         if not password:
-            self.notif.show_msg("warn", "Password tidak boleh kosong.", 3500)
+            self.notif.show_msg("warn", "Password cannot be empty.", 3500)
             return
 
         func = encrypt_text if mode == "enkripsi" else decrypt_text
@@ -966,8 +1083,9 @@ class TabTeks(QWidget):
         self.btn_aksi.setEnabled(not busy)
 
         if busy:
-            label = "Mengenkripsi teks…" if mode == "enkripsi" else "Mendekripsi teks…"
-            self.btn_aksi.setTextLabels("Memproses…", label)
+            label = "Encrypting text…" if mode == "enkripsi" else "Decrypting text…"
+            self.btn_aksi.setTextLabels("Processing…", label)
+            self.status_changed.emit("Processing text", "Almost there", "busy")
         else:
             # Restore label sesuai mode saat ini
             self._on_mode_changed(self.password_panel.get_mode())
@@ -993,19 +1111,24 @@ class TabTeks(QWidget):
             self.result_card.show_result(result, mode)
             # Auto-copy ke clipboard
             QGuiApplication.clipboard().setText(result)
-            verb = "dienkripsi" if mode == "enkripsi" else "didekripsi"
+            verb = "encrypted" if mode == "enkripsi" else "decrypted"
             self.system_notification.emit(
-                f"Teks berhasil {verb}",
-                "Hasil sudah otomatis disalin ke clipboard.",
+                f"Text {verb} successfully",
+                "The result was automatically copied to the clipboard.",
             )
             self.notif.show_msg(
                 "ok",
-                f"✓ Teks berhasil {verb} dan disalin ke clipboard.",
+                f"✓ Text {verb} successfully — copied to clipboard.",
                 4000,
             )
             logger.info(f"TabTeks: {mode} berhasil — {len(result)} karakter")
 
         self._validate_state()
+        # Status pill: success/error setelah _validate_state agar tidak ditimpa.
+        if error:
+            self.status_changed.emit("Failed", "Check your password or text format", "error")
+        else:
+            self.status_changed.emit("Success", "Result copied to clipboard", "success")
 
     # ── External busy (dari tab lain yang sedang memproses file) ──────────────
 
@@ -1019,11 +1142,11 @@ class TabTeks(QWidget):
 
 def _format_text_error(error: str, mode: str) -> str:
     err_lower = error.lower()
-    if "password salah" in err_lower or "invalidtag" in err_lower or "dimodifikasi" in err_lower:
-        return "Password salah atau teks terenkripsi sudah dimodifikasi/rusak."
+    if "wrong password" in err_lower or "invalidtag" in err_lower or "modified" in err_lower:
+        return "Incorrect password, or the encrypted text has been modified or corrupted."
     if "format" in err_lower or "valid" in err_lower or "adtn_text" in err_lower:
-        return "Format tidak valid. Pastikan teks terenkripsi dimulai dengan 'ADTN_TEXT:1:'."
-    if "kosong" in err_lower:
+        return "Invalid format. Make sure the encrypted text starts with 'ADTN_TEXT:1:'."
+    if "empty" in err_lower:
         return error
-    prefix = "Enkripsi gagal" if mode == "enkripsi" else "Dekripsi gagal"
+    prefix = "Encryption failed" if mode == "enkripsi" else "Decryption failed"
     return f"{prefix}. {error}"

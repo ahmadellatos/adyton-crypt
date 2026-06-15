@@ -5,6 +5,7 @@ Deskripsi: Kumpulan komponen UI (Widget) kustom yang reusable.
 
 import qtawesome as qta
 from PySide6.QtCore import (
+    Property,
     QEasingCurve,
     QPoint,
     QPropertyAnimation,
@@ -13,7 +14,7 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPixmap
+from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
@@ -27,92 +28,75 @@ from PySide6.QtWidgets import (
 
 from core.paths import get_asset_path
 
-from .styles import CLR_ACCENT, CLR_TEXT_MUTED
+from .styles import (
+    CLR_ACCENT,
+    CLR_ACCENT_HOVER,
+    CLR_BORDER,
+    CLR_DANGER,
+    CLR_DANGER_BG,
+    CLR_HOVER_BG,
+    CLR_INSET,
+    CLR_SUCCESS,
+    CLR_SUCCESS_BG,
+    CLR_TEXT_DIM,
+    CLR_TEXT_MAIN,
+    CLR_TEXT_MUTED,
+    CLR_WARN,
+    CLR_WARN_BG,
+    CLR_WINDOW,
+)
 from .utils import apply_shadow
 
 
 # ── HERO ICON WIDGET (FOLDER GLOWING) ───────────────────────────────
 class HeroIconWidget(QWidget):
+    """Ikon hero drop zone — tenang & minimal (folder kalem + shield aksen).
+
+    Sesuai design system: tanpa glow/halo neon. Saat drag aktif, ikon shield
+    hanya dinaikkan ke aksen hover dengan bayangan aksen yang sangat halus.
+    """
+
     def __init__(self, mode="kunci", parent=None):
         super().__init__(parent)
         self.setFixedSize(160, 110)
 
-        self._sparkle_glows = []
-        sparkles = [
-            (30, 15, 14, "#4A90E2"),
-            (10, 40, 10, "#4A90E2"),
-            (125, 35, 14, "#4A90E2"),
-            (140, 65, 10, "#4A90E2"),
-        ]
-
-        for x, y, sz, col in sparkles:
-            lbl = QLabel(self)
-            lbl.setPixmap(qta.icon("mdi6.star-four-points", color=col).pixmap(sz, sz))
-            lbl.setGeometry(x, y, sz, sz)
-            glow = QGraphicsDropShadowEffect(self)
-            glow.setBlurRadius(15)
-            glow.setColor(QColor(col))
-            glow.setXOffset(0)
-            glow.setYOffset(0)
-            lbl.setGraphicsEffect(glow)
-            self._sparkle_glows.append(glow)
-
         lbl_folder = QLabel(self)
-        lbl_folder.setPixmap(qta.icon("mdi6.folder", color="#2A344A").pixmap(90, 90))
+        lbl_folder.setPixmap(qta.icon("mdi6.folder-outline", color="#2C474E").pixmap(90, 90))
         lbl_folder.setGeometry(35, 10, 90, 90)
         lbl_folder.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         lbl_overlay = QLabel(self)
-        icon_name = "mdi6.shield-lock" if mode == "kunci" else "mdi6.shield-key"
+        icon_name = "mdi6.shield-lock-outline" if mode == "kunci" else "mdi6.shield-key-outline"
 
         self._overlay_icon_name = icon_name
-        lbl_overlay.setPixmap(qta.icon(icon_name, color="#00D2C8").pixmap(36, 36))
+        lbl_overlay.setPixmap(qta.icon(icon_name, color=CLR_ACCENT).pixmap(36, 36))
         lbl_overlay.setGeometry(62, 42, 36, 36)
         lbl_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self._overlay_icon = lbl_overlay
+        # Bayangan halus (bukan glow) — sangat samar saat idle.
         self._glow_overlay = QGraphicsDropShadowEffect(self)
-        self._glow_overlay.setBlurRadius(25)
-        self._glow_overlay.setColor(QColor("#00D2C8"))
+        self._glow_overlay.setBlurRadius(0)
+        self._glow_overlay.setColor(QColor(79, 191, 201, 0))
         self._glow_overlay.setXOffset(0)
         self._glow_overlay.setYOffset(0)
         lbl_overlay.setGraphicsEffect(self._glow_overlay)
 
     def set_drag_active(self, active: bool):
-        """Intensify the icon glow when drag is active over the drop area."""
+        """Beri penekanan halus saat drag aktif — tetap kalem, tanpa neon."""
         if active:
-            # Main shield icon - EXTREMELY bright + brighter base icon
-            if hasattr(self, "_glow_overlay") and self._glow_overlay:
-                self._glow_overlay.setBlurRadius(75)
-                self._glow_overlay.setColor(QColor(200, 255, 255, 255))
-
-            if hasattr(self, "_overlay_icon") and hasattr(self, "_overlay_icon_name"):
-                self._overlay_icon.setPixmap(
-                    qta.icon(self._overlay_icon_name, color="#7FFFFF").pixmap(36, 36)
-                )
-
-            # Sparkles - very bright and large
-            for glow in getattr(self, "_sparkle_glows", []):
-                glow.setBlurRadius(40)
-                glow.setColor(QColor(230, 255, 255, 255))
-
-            self.update()
+            self._glow_overlay.setBlurRadius(22)
+            self._glow_overlay.setColor(QColor(79, 191, 201, 150))
+            self._overlay_icon.setPixmap(
+                qta.icon(self._overlay_icon_name, color=CLR_ACCENT_HOVER).pixmap(36, 36)
+            )
         else:
-            # Return to normal
-            if hasattr(self, "_glow_overlay") and self._glow_overlay:
-                self._glow_overlay.setBlurRadius(25)
-                self._glow_overlay.setColor(QColor("#00D2C8"))
-
-            if hasattr(self, "_overlay_icon") and hasattr(self, "_overlay_icon_name"):
-                self._overlay_icon.setPixmap(
-                    qta.icon(self._overlay_icon_name, color="#00D2C8").pixmap(36, 36)
-                )
-
-            for glow in getattr(self, "_sparkle_glows", []):
-                glow.setBlurRadius(15)
-                glow.setColor(QColor("#4A90E2"))
-
-            self.update()
+            self._glow_overlay.setBlurRadius(0)
+            self._glow_overlay.setColor(QColor(79, 191, 201, 0))
+            self._overlay_icon.setPixmap(
+                qta.icon(self._overlay_icon_name, color=CLR_ACCENT).pixmap(36, 36)
+            )
+        self.update()
 
 
 # ── CUSTOM TOOLTIP ──────────────────────────────────────────────────
@@ -121,15 +105,15 @@ class CustomToolTip(QLabel):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
 
-        self.setStyleSheet("""
-            QLabel {
-                background-color: #111625;
-                color: #FFFFFF;
-                border: 1px solid #232B3E;
-                border-radius: 6px;
-                padding: 6px 10px;
+        self.setStyleSheet(f"""
+            QLabel {{
+                background-color: {CLR_WINDOW};
+                color: {CLR_TEXT_MAIN};
+                border: 1px solid {CLR_BORDER};
+                border-radius: 8px;
+                padding: 7px 12px;
                 font-size: 9pt;
-            }
+            }}
         """)
         self.hide()
 
@@ -242,9 +226,9 @@ class TitleBarButton(QPushButton):
         super().__init__(parent)
         self.icon_name = icon_name
         self.hover_bg = hover_bg_color
-        self.setFixedSize(40, 32)
+        self.setFixedSize(46, 46)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.setIcon(qta.icon(self.icon_name, color="#8B95A5"))
+        self.setIcon(qta.icon(self.icon_name, color=CLR_TEXT_DIM))
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: transparent;
@@ -257,16 +241,16 @@ class TitleBarButton(QPushButton):
         """)
 
     def enterEvent(self, event):
-        self.setIcon(qta.icon(self.icon_name, color="#FFFFFF"))
+        self.setIcon(qta.icon(self.icon_name, color=CLR_TEXT_MAIN))
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        self.setIcon(qta.icon(self.icon_name, color="#8B95A5"))
+        self.setIcon(qta.icon(self.icon_name, color=CLR_TEXT_DIM))
         super().leaveEvent(event)
 
     def change_icon(self, new_icon_name: str):
         self.icon_name = new_icon_name
-        current_color = "#FFFFFF" if self.underMouse() else "#8B95A5"
+        current_color = CLR_TEXT_MAIN if self.underMouse() else CLR_TEXT_DIM
         self.setIcon(qta.icon(self.icon_name, color=current_color))
 
 
@@ -275,19 +259,19 @@ class CustomTitleBar(QFrame):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent_window = parent
-        self.setFixedHeight(32)
-        self.setStyleSheet("background-color: #111625;")
+        self.setFixedHeight(46)
+        self.setStyleSheet(f"background-color: {CLR_INSET};")
 
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(15, 0, 0, 0)
+        lay.setContentsMargins(20, 0, 0, 0)
         lay.setSpacing(10)
 
         self.lbl_icon = QLabel()
         pixmap = QPixmap(get_asset_path("assets/icon_adyton.png"))
         self.lbl_icon.setPixmap(
             pixmap.scaled(
-                16,
-                16,
+                18,
+                18,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
@@ -305,13 +289,13 @@ class CustomTitleBar(QFrame):
         control_lay.setContentsMargins(0, 0, 0, 0)
         control_lay.setSpacing(0)
 
-        self.btn_min = TitleBarButton("mdi6.minus", "#232B3E", self)
+        self.btn_min = TitleBarButton("mdi6.minus", CLR_HOVER_BG, self)
         self.btn_min.clicked.connect(self.parent_window.showMinimized)
 
-        self.btn_max = TitleBarButton("mdi6.window-maximize", "#232B3E", self)
+        self.btn_max = TitleBarButton("mdi6.window-maximize", CLR_HOVER_BG, self)
         self.btn_max.clicked.connect(self._toggle_maximize)
 
-        self.btn_close = TitleBarButton("mdi6.close", "#E74C3C", self)
+        self.btn_close = TitleBarButton("mdi6.close", CLR_DANGER, self)
         self.btn_close.clicked.connect(self.parent_window.close)
 
         control_lay.addWidget(self.btn_min)
@@ -345,7 +329,7 @@ class AnimatedNotifBar(QFrame):
         self.setMinimumWidth(280)
         self.setMaximumWidth(500)
         self.setMinimumHeight(55)
-        self.setStyleSheet("background-color: transparent; border-radius: 8px;")
+        self.setStyleSheet("background-color: transparent; border-radius: 10px;")
 
         apply_shadow(self, blur_radius=30, y_offset=10, opacity=60)
 
@@ -361,7 +345,9 @@ class AnimatedNotifBar(QFrame):
         self.lbl_text.setWordWrap(True)
 
         self.btn_close = QPushButton()
-        self.btn_close.setIcon(qta.icon("mdi6.close", color="#8B95A5", color_active="white"))
+        self.btn_close.setIcon(
+            qta.icon("mdi6.close", color=CLR_TEXT_DIM, color_active=CLR_TEXT_MAIN)
+        )
         self.btn_close.setIconSize(QSize(18, 18))
         self.btn_close.setFixedSize(24, 24)
         self.btn_close.setStyleSheet("background: transparent; border: none;")
@@ -405,8 +391,10 @@ class AnimatedNotifBar(QFrame):
         self.timer.stop()
         self.anim.stop()
 
-        bg_color = "#0D2B1E" if kind == "ok" else ("#2B0D0D" if kind == "err" else "#2B1E0D")
-        fg_color = "#00D2C8" if kind == "ok" else ("#E74C3C" if kind == "err" else "#F39C12")
+        bg_color = (
+            CLR_SUCCESS_BG if kind == "ok" else (CLR_DANGER_BG if kind == "err" else CLR_WARN_BG)
+        )
+        fg_color = CLR_SUCCESS if kind == "ok" else (CLR_DANGER if kind == "err" else CLR_WARN)
         icon_name = (
             "mdi6.check-circle"
             if kind == "ok"
@@ -414,8 +402,8 @@ class AnimatedNotifBar(QFrame):
         )
 
         self.setStyleSheet(
-            f"QFrame#NotifBar {{ background-color: {bg_color}; border-radius: 8px; border: none; }}"
-            f"QLabel {{ border: none; background: transparent; color: {fg_color}; font-weight: 600; font-size: 10pt; }}"
+            f"QFrame#NotifBar {{ background-color: {bg_color}; border-radius: 10px; border: none; }}"
+            f"QLabel {{ border: none; background: transparent; color: {fg_color}; font-weight: 700; font-size: 10pt; }}"
         )
         self.lbl_icon.setPixmap(qta.icon(icon_name, color=fg_color).pixmap(24, 24))
         self.lbl_text.setStyleSheet(f"color: {fg_color}; font-weight: 600; font-size: 10pt;")
@@ -484,7 +472,7 @@ class PasswordLineEdit(QFrame):
 
         self.line_edit = QLineEdit()
         self.line_edit.setObjectName("InputInside")
-        self.line_edit.setFixedHeight(45)
+        self.line_edit.setFixedHeight(52)
         self.line_edit.setEchoMode(QLineEdit.EchoMode.Password)
         if placeholder:
             self.line_edit.setPlaceholderText(placeholder)
@@ -495,12 +483,14 @@ class PasswordLineEdit(QFrame):
         self.btn_toggle.setIcon(qta.icon("mdi6.eye-outline", color=CLR_TEXT_MUTED))
         self.btn_toggle.setIconSize(QSize(22, 22))
         self.btn_toggle.setObjectName("BtnEye")
-        self.btn_toggle.setFixedSize(44, 45)
+        self.btn_toggle.setFixedSize(40, 52)
         self.btn_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_toggle.clicked.connect(self._toggle_visibility)
         self.btn_toggle.installEventFilter(self)
-        self.btn_toggle.setAccessibleName("Tampilkan atau sembunyikan password")
-        self.btn_toggle.setToolTip("Tampilkan password")
+        # Highlight InputBox saat field/tombol mata fokus (state 'focused' di QSS).
+        self.line_edit.installEventFilter(self)
+        self.btn_toggle.setAccessibleName("Show or hide password")
+        self.btn_toggle.setToolTip("Show password")
         self.line_edit.returnPressed.connect(self.returnPressed)
         lay.addWidget(self.btn_toggle)
 
@@ -513,17 +503,32 @@ class PasswordLineEdit(QFrame):
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
                 self.btn_toggle.click()
                 return True
+        if obj in (self.line_edit, self.btn_toggle) and event.type() in (
+            event.Type.FocusIn,
+            event.Type.FocusOut,
+        ):
+            # Tunda satu siklus agar perpindahan fokus field <-> tombol mata tidak
+            # mematikan highlight sekejap (anti-flicker).
+            QTimer.singleShot(0, self._sync_focus_style)
         return super().eventFilter(obj, event)
+
+    def _sync_focus_style(self):
+        """Aktifkan border aksen InputBox saat field ATAU tombol mata memegang fokus."""
+        focused = self.line_edit.hasFocus() or self.btn_toggle.hasFocus()
+        if bool(self.property("focused")) != focused:
+            self.setProperty("focused", focused)
+            self.style().unpolish(self)
+            self.style().polish(self)
 
     def _toggle_visibility(self):
         if self.line_edit.echoMode() == QLineEdit.EchoMode.Password:
             self.line_edit.setEchoMode(QLineEdit.EchoMode.Normal)
             self.btn_toggle.setIcon(qta.icon("mdi6.eye-off-outline", color=self._accent_color))
-            self.btn_toggle.setToolTip("Sembunyikan password")
+            self.btn_toggle.setToolTip("Hide password")
         else:
             self.line_edit.setEchoMode(QLineEdit.EchoMode.Password)
             self.btn_toggle.setIcon(qta.icon("mdi6.eye-outline", color=self._muted_color))
-            self.btn_toggle.setToolTip("Tampilkan password")
+            self.btn_toggle.setToolTip("Show password")
 
     # --- Public API ---
     def text(self) -> str:
@@ -563,3 +568,103 @@ class PasswordLineEdit(QFrame):
             self.btn_toggle.setIcon(qta.icon("mdi6.eye-outline", color=self._muted_color))
         else:
             self.btn_toggle.setIcon(qta.icon("mdi6.eye-off-outline", color=self._accent_color))
+
+
+# ── TOGGLE SWITCH (iOS-style pill) ────────────────────────────────
+class ToggleSwitch(QFrame):
+    """Toggle switch (track + knob) dengan animasi geser & dukungan keyboard."""
+
+    toggled = Signal(bool)
+
+    def __init__(self, checked: bool = False, parent=None):
+        super().__init__(parent)
+        self._checked = bool(checked)
+        self._knob = 1.0 if self._checked else 0.0
+        self.setFixedSize(46, 26)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+
+        self._anim = QPropertyAnimation(self, b"knobPos")
+        self._anim.setDuration(160)
+        self._anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
+
+    # --- properti animasi knob (0=off, 1=on) ---
+    def _get_knob(self) -> float:
+        return self._knob
+
+    def _set_knob(self, value: float):
+        self._knob = value
+        self.update()
+
+    knobPos = Property(float, _get_knob, _set_knob)
+
+    # --- API publik ---
+    def isChecked(self) -> bool:
+        return self._checked
+
+    def setChecked(self, state: bool, animate: bool = True):
+        state = bool(state)
+        if state == self._checked:
+            return
+        self._checked = state
+        target = 1.0 if state else 0.0
+        if animate and self.isVisible():
+            self._anim.stop()
+            self._anim.setStartValue(self._knob)
+            self._anim.setEndValue(target)
+            self._anim.start()
+        else:
+            self._set_knob(target)
+        self.toggled.emit(self._checked)
+
+    def toggle(self):
+        self.setChecked(not self._checked)
+
+    # --- interaksi ---
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.isEnabled():
+            self.toggle()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if self.isEnabled():
+                self.toggle()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        r = self.rect()
+        radius = r.height() / 2
+        t = self._knob
+
+        # Track — interpolasi warna off → on (abu-abu → aksen)
+        off, on = QColor(CLR_BORDER), QColor(CLR_ACCENT)
+        track = QColor(
+            int(off.red() + (on.red() - off.red()) * t),
+            int(off.green() + (on.green() - off.green()) * t),
+            int(off.blue() + (on.blue() - off.blue()) * t),
+        )
+        if not self.isEnabled():
+            track.setAlpha(110)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(track)
+        painter.drawRoundedRect(r, radius, radius)
+
+        # Knob putih yang menggeser
+        margin = 3
+        knob_d = r.height() - margin * 2
+        x = margin + t * (r.width() - knob_d - margin * 2)
+        painter.setBrush(QColor("#FFFFFF"))
+        painter.drawEllipse(int(round(x)), margin, knob_d, knob_d)
+
+        # Ring fokus keyboard
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(CLR_ACCENT), 1.5))
+            painter.drawRoundedRect(r.adjusted(1, 1, -1, -1), radius, radius)

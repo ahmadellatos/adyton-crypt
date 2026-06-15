@@ -23,7 +23,7 @@ class CenteredMenuStyle(QProxyStyle):
             option.displayAlignment = Qt.AlignmentFlag.AlignCenter
             # Gambar background highlight manual saat item selected/fokus
             if option.state & QStyle.StateFlag.State_Selected:
-                painter.fillRect(option.rect, QColor("#181F32"))
+                painter.fillRect(option.rect, QColor(79, 191, 201, 30))
         super().drawControl(element, option, painter, widget)
 
 
@@ -59,11 +59,11 @@ class HoverMenuWidget(QWidget):
     def _apply_style(self):
         if self._highlighted:
             self.setStyleSheet(
-                "QWidget#CenteredMenuItem { background-color: #181F32; border-radius: 4px; }"
+                "QWidget#CenteredMenuItem { background-color: rgba(79, 191, 201, 0.12); border-radius: 7px; }"
             )
         else:
             self.setStyleSheet(
-                "QWidget#CenteredMenuItem { background-color: transparent; border-radius: 4px; }"
+                "QWidget#CenteredMenuItem { background-color: transparent; border-radius: 7px; }"
             )
 
     def set_highlighted(self, highlighted: bool):
@@ -129,9 +129,9 @@ class CenteredMenuAction(QWidgetAction):
         self.w.set_highlighted(highlighted)
         if highlighted:
             self.w.setStyleSheet(
-                "QWidget#CenteredMenuItem { background-color: #181F32; border-radius: 4px; }"
+                "QWidget#CenteredMenuItem { background-color: rgba(79, 191, 201, 0.12); border-radius: 7px; }"
             )
         else:
             self.w.setStyleSheet(
-                "QWidget#CenteredMenuItem { background-color: transparent; border-radius: 4px; }"
+                "QWidget#CenteredMenuItem { background-color: transparent; border-radius: 7px; }"
             )

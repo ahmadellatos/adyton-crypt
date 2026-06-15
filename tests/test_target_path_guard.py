@@ -4,7 +4,6 @@ Regression tests for output-path safety when locking a vault.
 
 from core.vault import VaultStatus, kunci_brankas
 
-
 PASSWORD = "P@ssw0rd!Kuat123"
 
 
@@ -23,7 +22,7 @@ def test_kunci_rejects_vault_saved_inside_source_folder(tmp_path):
     )
 
     assert status == VaultStatus.ERROR
-    assert "tidak boleh" in message
+    assert "can't be the same" in message
     assert source.exists(), "Folder sumber harus tetap ada jika target tidak aman"
     assert not target.exists(), "Vault tidak boleh dibuat di dalam folder sumber"
 
@@ -40,7 +39,7 @@ def test_kunci_rejects_vault_same_path_as_source_file(tmp_path):
     )
 
     assert status == VaultStatus.ERROR
-    assert "tidak boleh" in message
+    assert "can't be the same" in message
     assert source.read_text(encoding="utf-8") == "file asli"
 
 

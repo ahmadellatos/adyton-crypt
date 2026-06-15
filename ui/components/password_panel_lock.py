@@ -37,7 +37,7 @@ def pw_strength(pw: str) -> int:
 
 
 STRENGTH_COLORS = [CLR_DANGER, CLR_WARN, CLR_ACCENT, CLR_ACCENT]
-STRENGTH_LABELS = ["Lemah", "Cukup", "Kuat", "Sangat Kuat"]
+STRENGTH_LABELS = ["Weak", "Fair", "Strong", "Very Strong"]
 
 
 class PasswordPanelLock(QFrame):
@@ -61,14 +61,14 @@ class PasswordPanelLock(QFrame):
         # Header card password
         row_hdr_pw = QHBoxLayout()
         icon_key = QLabel()
-        icon_key.setPixmap(qta.icon("mdi6.key-variant", color="#F39C12").pixmap(32, 32))
+        icon_key.setPixmap(qta.icon("mdi6.key-variant", color=CLR_WARN).pixmap(32, 32))
         icon_key.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         v_hdr_pw_txt = QVBoxLayout()
         v_hdr_pw_txt.setSpacing(3)
-        lbl_pw = QLabel("BUAT PASSWORD")
+        lbl_pw = QLabel("Set a Password")
         lbl_pw.setObjectName("CardTitle")
-        lbl_pw_sub = QLabel("Buat password yang kuat untuk melindungi data Anda")
+        lbl_pw_sub = QLabel("A strong password keeps your data safe")
         lbl_pw_sub.setObjectName("CardSubtitle")
         lbl_pw_sub.setWordWrap(True)
         v_hdr_pw_txt.addWidget(lbl_pw)
@@ -79,7 +79,7 @@ class PasswordPanelLock(QFrame):
         self.btn_gen.setFixedHeight(36)  # lebih seimbang dengan header & icon 32px
         self.btn_gen.setObjectName("BtnGen")
         self.btn_gen.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_gen.setAccessibleName("Generate Password Kuat")
+        self.btn_gen.setAccessibleName("Generate Strong Password")
         self.btn_gen.clicked.connect(self._generate_pw)
 
         row_hdr_pw.addWidget(icon_key)
@@ -98,8 +98,8 @@ class PasswordPanelLock(QFrame):
         v_pw1_group = QVBoxLayout()
         v_pw1_group.setSpacing(0)
 
-        self.entry_pw1 = PasswordLineEdit("Buat password yang kuat...")
-        self.entry_pw1.setAccessibleName("Password Baru")
+        self.entry_pw1 = PasswordLineEdit("Enter a strong password…")
+        self.entry_pw1.setAccessibleName("New password")
         self.entry_pw1.textChanged.connect(self._on_pw_change)
         v_pw1_group.addWidget(self.entry_pw1)
 
@@ -120,7 +120,7 @@ class PasswordPanelLock(QFrame):
             self.str_bars.append(bar)
             row_str.addWidget(bar, 1)
 
-        self.lbl_str = QLabel("Kekuatan: -")
+        self.lbl_str = QLabel("Strength")
         self.lbl_str.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.lbl_str.setStyleSheet(muted_label_style("9pt") + " font-weight: 600;")
         self.lbl_str.setMinimumWidth(140)
@@ -147,7 +147,7 @@ class PasswordPanelLock(QFrame):
             lay.setContentsMargins(0, 0, 0, 0)
             lay.setSpacing(6)
             icon = QLabel()
-            icon.setPixmap(qta.icon("mdi6.check-circle", color="#232B3E").pixmap(16, 16))
+            icon.setPixmap(qta.icon("mdi6.check-circle-outline", color=CLR_BORDER).pixmap(16, 16))
             lbl = QLabel(text)
             lbl.setObjectName("ChecklistLabel")
             lbl.setProperty("valid", False)
@@ -156,11 +156,11 @@ class PasswordPanelLock(QFrame):
             lay.addWidget(lbl, 1)
             return lay, icon, lbl
 
-        l1, self.chk_len_icon, self.chk_len_lbl = _create_chk_item("Minimal 8 karakter")
-        l2, self.chk_upper_icon, self.chk_upper_lbl = _create_chk_item("Huruf besar (A-Z)")
-        l3, self.chk_lower_icon, self.chk_lower_lbl = _create_chk_item("Huruf kecil (a-z)")
-        l4, self.chk_digit_icon, self.chk_digit_lbl = _create_chk_item("Angka (0-9)")
-        l5, self.chk_sym_icon, self.chk_sym_lbl = _create_chk_item("Simbol (!@#$%^&*)")
+        l1, self.chk_len_icon, self.chk_len_lbl = _create_chk_item("At least 8 characters")
+        l2, self.chk_upper_icon, self.chk_upper_lbl = _create_chk_item("Uppercase letter (A-Z)")
+        l3, self.chk_lower_icon, self.chk_lower_lbl = _create_chk_item("Lowercase letter (a-z)")
+        l4, self.chk_digit_icon, self.chk_digit_lbl = _create_chk_item("Number (0-9)")
+        l5, self.chk_sym_icon, self.chk_sym_lbl = _create_chk_item("Symbol (!@#$%^&*)")
 
         grid_chk.addLayout(l1, 0, 0)
         grid_chk.addLayout(l4, 0, 1)
@@ -176,12 +176,12 @@ class PasswordPanelLock(QFrame):
         lay_pw.addSpacing(6)
 
         # Input konfirmasi password
-        lbl_in2 = QLabel("Konfirmasi Password")
+        lbl_in2 = QLabel("Confirm Password")
         lbl_in2.setObjectName("SectionLabel")
         lay_pw.addWidget(lbl_in2)
 
-        self.entry_pw2 = PasswordLineEdit("Ketik ulang password...")
-        self.entry_pw2.setAccessibleName("Konfirmasi Password Baru")
+        self.entry_pw2 = PasswordLineEdit("Repeat your password…")
+        self.entry_pw2.setAccessibleName("Confirm new password")
         self.entry_pw2.textChanged.connect(self._on_pw_change)
         lay_pw.addWidget(self.entry_pw2)
 
@@ -191,7 +191,7 @@ class PasswordPanelLock(QFrame):
         self.lay_match.setSpacing(6)
         self.icon_match = QLabel()
         self.icon_match.setFixedSize(16, 16)
-        self.lbl_match_txt = QLabel("Password cocok")
+        self.lbl_match_txt = QLabel("Passwords match")
         self.lbl_match_txt.setObjectName("PwMatchLabel")
         self.lbl_match_txt.setWordWrap(True)
         self.lay_match.addWidget(self.icon_match, alignment=Qt.AlignmentFlag.AlignTop)
@@ -266,10 +266,10 @@ class PasswordPanelLock(QFrame):
                     bar.setStyleSheet(f"background-color: {CLR_BORDER}; border-radius: 3px;")
 
             if score < 0:
-                self.lbl_str.setText("Kekuatan: -")
+                self.lbl_str.setText("Strength: -")
                 self.lbl_str.setStyleSheet(muted_label_style("9pt") + " font-weight: 600;")
             else:
-                self.lbl_str.setText(f"Kekuatan: {STRENGTH_LABELS[score]}")
+                self.lbl_str.setText(f"Strength: {STRENGTH_LABELS[score]}")
                 self.lbl_str.setStyleSheet(
                     f"color: {STRENGTH_COLORS[score]}; font-size: 9pt; font-weight: bold;"
                 )
@@ -289,10 +289,12 @@ class PasswordPanelLock(QFrame):
 
         for is_valid, icon, lbl in rules:
             if is_valid:
-                icon.setPixmap(qta.icon("mdi6.check-circle", color="#28c75d").pixmap(16, 16))
+                icon.setPixmap(qta.icon("mdi6.check-circle", color=CLR_SUCCESS).pixmap(16, 16))
                 lbl.setProperty("valid", True)
             else:
-                icon.setPixmap(qta.icon("mdi6.check-circle", color="#232B3E").pixmap(16, 16))
+                icon.setPixmap(
+                    qta.icon("mdi6.check-circle-outline", color=CLR_BORDER).pixmap(16, 16)
+                )
                 lbl.setProperty("valid", False)
             lbl.style().unpolish(lbl)
             lbl.style().polish(lbl)
@@ -304,15 +306,19 @@ class PasswordPanelLock(QFrame):
         elif pw1 == pw2:
             self.icon_match.show()
             self.lbl_match_txt.show()
-            self.icon_match.setPixmap(qta.icon("mdi6.check-circle", color="#28c75d").pixmap(16, 16))
-            self.lbl_match_txt.setText("Password cocok")
+            self.icon_match.setPixmap(
+                qta.icon("mdi6.check-circle", color=CLR_SUCCESS).pixmap(16, 16)
+            )
+            self.lbl_match_txt.setText("Passwords match")
             self.lbl_match_txt.setStyleSheet(f"color: {CLR_SUCCESS};")
         else:
             self.icon_match.show()
             self.lbl_match_txt.show()
-            self.icon_match.setPixmap(qta.icon("mdi6.close-circle", color="#E74C3C").pixmap(16, 16))
-            self.lbl_match_txt.setText("Password tidak cocok")
-            self.lbl_match_txt.setStyleSheet("color: #E74C3C;")
+            self.icon_match.setPixmap(
+                qta.icon("mdi6.close-circle", color=CLR_DANGER).pixmap(16, 16)
+            )
+            self.lbl_match_txt.setText("Passwords don't match")
+            self.lbl_match_txt.setStyleSheet(f"color: {CLR_DANGER};")
 
         # Evaluasi final state
         # Tombol kunci hanya aktif jika seluruh checklist yang ditampilkan

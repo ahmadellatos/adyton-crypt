@@ -1,6 +1,6 @@
 Thank you for installing Adyton Crypt!
 
-Adyton Crypt uses AES-256-GCM with PBKDF2 (600,000 iterations) to protect your files with military-grade encryption.
+Adyton Crypt protects your files with AES-256-GCM authenticated encryption and Argon2id key derivation — a slow, memory-hard function built to resist password guessing. (Vaults created by older versions remain readable.)
 
 IMPORTANT NOTES:
 - Your files are encrypted locally on your device. No data is sent to any server.

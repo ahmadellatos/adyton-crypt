@@ -81,25 +81,28 @@ def setup_qt_env() -> None:
 
 
 def setup_fonts(app: QApplication) -> None:
-    """Load IBM Plex Sans (semua weight yang tersedia) + fallback ke Segoe UI."""
+    """Load Plus Jakarta Sans (UI) + JetBrains Mono (kode/payload) sesuai design system.
+
+    Plus Jakarta Sans dipakai untuk seluruh UI; JetBrains Mono khusus
+    token/kode/payload. Fallback ke Segoe UI bila file font tidak tersedia.
+    """
     fonts_loaded = False
 
-    # Load main weights (user added many variants)
-    main_weights = ["Thin", "ExtraLight", "Light", "Regular", "Medium", "SemiBold", "Bold"]
-    for weight in main_weights:
-        font_path = get_asset_path(f"assets/fonts/IBMPlexSans-{weight}.ttf")
+    # Plus Jakarta Sans — keluarga UI utama (400/500/600/700/800)
+    jakarta_weights = ["Regular", "Medium", "SemiBold", "Bold", "ExtraBold"]
+    for weight in jakarta_weights:
+        font_path = get_asset_path(f"assets/fonts/PlusJakartaSans-{weight}.ttf")
         if os.path.exists(font_path):
             QFontDatabase.addApplicationFont(font_path)
             fonts_loaded = True
 
-    # Also load a few Condensed variants (useful for tight labels / size text)
-    condensed_weights = ["Condensed-Regular", "Condensed-Medium", "Condensed-SemiBold"]
-    for weight in condensed_weights:
-        font_path = get_asset_path(f"assets/fonts/IBMPlexSans_{weight}.ttf")
+    # JetBrains Mono — khusus payload/token/kode
+    for weight in ["Regular", "Medium"]:
+        font_path = get_asset_path(f"assets/fonts/JetBrainsMono-{weight}.ttf")
         if os.path.exists(font_path):
             QFontDatabase.addApplicationFont(font_path)
 
-    font = QFont("IBM Plex Sans" if fonts_loaded else "Segoe UI")
+    font = QFont("Plus Jakarta Sans" if fonts_loaded else "Segoe UI")
     font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
     font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
     app.setFont(font)
@@ -116,13 +119,11 @@ def global_exception_handler(exc_type, exc_value, exc_traceback) -> None:
     if app:
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Icon.Critical)
-        msg.setWindowTitle(f"Fatal Error - {APP_NAME}")
-        msg.setText("Terjadi kesalahan sistem yang tidak terduga.")
-        msg.setInformativeText(
-            "Aplikasi harus ditutup. Silakan periksa file log untuk detail lebih lanjut."
-        )
+        msg.setWindowTitle(f"Unexpected Error — {APP_NAME}")
+        msg.setText("Something went wrong unexpectedly.")
+        msg.setInformativeText("Adyton needs to close. Check the log file for details.")
         tb_string = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
-        msg.setDetailedText(f"Tipe Error: {exc_type.__name__}\n\nTraceback:\n{tb_string}")
+        msg.setDetailedText(f"Error type: {exc_type.__name__}\n\nTraceback:\n{tb_string}")
         msg.exec()
 
 

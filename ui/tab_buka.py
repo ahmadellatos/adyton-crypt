@@ -20,6 +20,7 @@ from .components.drop_zone_open import DropZoneOpen
 from .components.password_panel_open import PasswordPanelOpen
 from .constants import APP_NAME
 from .dialogs import ModernMessageBox
+from .styles import CLR_DANGER
 from .utils import (
     ProgressETA,
     apply_cancelling_state,
@@ -51,7 +52,7 @@ class TabBuka(QWidget):
 
         self._build_ui()
         self._connect_signals()
-        self.status_changed.emit("AES-256 • GCM", "Enkripsi lokal aktif", "idle")
+        self.status_changed.emit("AES-256 • GCM", "Local encryption active", "idle")
 
     def _build_ui(self):
         main_layout = QVBoxLayout(self)
@@ -69,11 +70,11 @@ class TabBuka(QWidget):
         main_layout.addLayout(h_container)
 
         self.btn_aksi = BigActionBtn(
-            "BUKA BRANKAS",
-            "Masukkan password untuk membuka",
+            "Open Vault",
+            "Enter the password to open",
             icon_name="mdi6.lock-open-variant",
         )
-        self.btn_aksi.setAccessibleName("Tombol Buka Brankas")
+        self.btn_aksi.setAccessibleName("Open Vault button")
         self.btn_aksi.setEnabled(False)
         self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         apply_shadow(
@@ -98,14 +99,14 @@ class TabBuka(QWidget):
         if path:
             if self._has_file:
                 self.status_changed.emit(
-                    "Vault siap dibuka", "Format valid • Belum diverifikasi", "ready"
+                    "Vault ready to open", "Valid format • Not yet verified", "ready"
                 )
             else:
                 self.status_changed.emit(
-                    "File tidak valid", self.drop_zone.get_format_status(), "error"
+                    "Invalid file", self.drop_zone.get_format_status(), "error"
                 )
         else:
-            self.status_changed.emit("AES-256 • GCM", "Enkripsi lokal aktif", "idle")
+            self.status_changed.emit("AES-256 • GCM", "Local encryption active", "idle")
         self._validate_state()
 
     def _on_password_valid_changed(self, is_valid: bool):
@@ -131,7 +132,7 @@ class TabBuka(QWidget):
         self._konfirmasi_timpa = False
         self.btn_aksi.resetVisualIcons("mdi6.lock-open-variant")
         self.btn_aksi.setProgressVisible(False)
-        self.btn_aksi.setTextLabels("Buka Brankas", "Masukkan password untuk membuka kunci")
+        self.btn_aksi.setTextLabels("Open Vault", "Enter the password to unlock")
 
     def set_external_busy(self, busy: bool) -> None:
         """Kunci aksi buka saat tab lain sedang menjalankan operasi crypto.
@@ -147,7 +148,7 @@ class TabBuka(QWidget):
             self.btn_aksi.setEnabled(False)
             self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             self.btn_aksi.setTextLabels(
-                "Operasi lain berjalan", "Tunggu atau batalkan proses saat ini"
+                "Another operation is running", "Wait for it to finish, or cancel it first"
             )
         else:
             self._reset_timpa()
@@ -157,7 +158,7 @@ class TabBuka(QWidget):
         if self._external_busy and self.worker is None:
             self.notif.show_msg(
                 "warn",
-                "Operasi lain sedang berjalan. Tunggu selesai atau batalkan proses saat ini.",
+                "Another operation is running. Wait for it to finish or cancel the current process.",
                 4000,
             )
             return
@@ -215,25 +216,23 @@ class TabBuka(QWidget):
         if busy:
             self.drop_zone.set_verification_state("checking")
             file_name, size_text = self._current_file_summary()
-            self.password_panel.set_processing_state(file_name, size_text, "Memverifikasi password")
-            self.status_changed.emit("Memverifikasi vault", "Jangan tutup aplikasi", "busy")
+            self.password_panel.set_processing_state(file_name, size_text, "Verifying password")
+            self.status_changed.emit("Verifying vault", "Keep the app open", "busy")
             self.btn_aksi.setVisualIcons("mdi6.close-circle", "mdi6.close")
             self.btn_aksi.setProgressVisible(True, 0.0)
-            self.btn_aksi.setTextLabels(
-                "Membuka brankas", "Menyiapkan vault • Klik untuk membatalkan"
-            )
+            self.btn_aksi.setTextLabels("Opening vault", "Preparing vault • Click to cancel")
             self.btn_aksi.setEnabled(True)
             self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         else:
             self.btn_aksi.resetVisualIcons("mdi6.lock-open-variant")
             self.btn_aksi.setProgressVisible(False)
-            self.btn_aksi.setTextLabels("Buka Brankas", "Masukkan password untuk membuka")
+            self.btn_aksi.setTextLabels("Open Vault", "Enter the password to open")
             if self._has_file:
                 self.password_panel.set_idle_state()
-                self.status_changed.emit("Vault siap dibuka", "Belum diverifikasi", "ready")
+                self.status_changed.emit("Vault ready to open", "Not yet verified", "ready")
             else:
                 self.password_panel.set_idle_state()
-                self.status_changed.emit("AES-256 • GCM", "Enkripsi lokal aktif", "idle")
+                self.status_changed.emit("AES-256 • GCM", "Local encryption active", "idle")
             self._validate_state()
             self._progress_eta.reset()
 
@@ -250,43 +249,43 @@ class TabBuka(QWidget):
         if status == VaultStatus.SUCCESS:
             self.drop_zone.set_verification_state("verified")
             self.drop_zone.reset_zone()
-            self.status_changed.emit("Terverifikasi", "Data berhasil dibuka", "success")
+            self.status_changed.emit("Verified", "Data opened successfully", "success")
             logger.info(f"Dekripsi sukses: {msg}")
-            self.notif.show_msg("ok", f"Folder/File '{msg}' berhasil dikembalikan!", 6000)
+            self.notif.show_msg("ok", f"'{msg}' restored successfully.", 6000)
 
             # PANCARKAN SINYAL KE APP.PY UNTUK WINOTIFY
-            self.system_notification.emit(APP_NAME, f"Brankas '{msg}' berhasil dibuka.")
+            self.system_notification.emit(APP_NAME, f"Vault opened — '{msg}' is ready.")
 
         elif status == VaultStatus.CANCELLED:
             logger.info("Dekripsi dibatalkan pengguna.")
-            self.drop_zone.set_verification_state("pending", "Menunggu password")
-            self.status_changed.emit("Proses dibatalkan", "File sementara dibersihkan", "warn")
-            self.notif.show_msg("warn", "Dekripsi dibatalkan pengguna.", 4000)
+            self.drop_zone.set_verification_state("pending", "Waiting for password")
+            self.status_changed.emit("Cancelled", "Temporary files cleaned up", "warn")
+            self.notif.show_msg("warn", "Operation cancelled.", 4000)
 
         elif status == VaultStatus.WRONG_PASSWORD:
             logger.warning("Dekripsi gagal: Password salah.")
             user_msg = format_user_error(status, msg, "buka")
             self.drop_zone.set_verification_state("failed")
             self.status_changed.emit(
-                "Gagal diverifikasi", "Password salah atau file rusak", "error"
+                "Verification failed", "Wrong password or corrupted file", "error"
             )
             self.password_panel.set_error_state(user_msg)
             self.notif.show_msg("err", user_msg, 8000)
 
         elif status == VaultStatus.OVERWRITE_NEEDED:
-            self.drop_zone.set_verification_state("verified", "Terverifikasi, menunggu konfirmasi")
+            self.drop_zone.set_verification_state("verified", "Verified, awaiting confirmation")
             dialog = ModernMessageBox(
-                title="Konfirmasi Timpa File",
+                title="File Already Exists",
                 message=(
-                    f"Folder/file bernama '{msg}' sudah ada di lokasi tujuan.\n\n"
-                    "Adyton akan mengekstrak ke lokasi sementara terlebih dahulu, lalu mengganti data lama hanya setelah proses buka brankas sukses.\n\n"
-                    "Lanjutkan menimpa data lama?"
+                    f"A file or folder named '{msg}' already exists at this location.\n\n"
+                    "Adyton will extract to a temporary folder first, and only replace the existing data once the vault opens successfully.\n\n"
+                    "Replace the existing data?"
                 ),
                 icon_name="mdi6.alert-decagram",
-                icon_color="#E74C3C",
+                icon_color=CLR_DANGER,
                 parent=self,
             )
-            dialog.btn_yes.setText("Timpa Data")
+            dialog.btn_yes.setText("Replace Data")
 
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 self._konfirmasi_timpa = True
@@ -299,16 +298,16 @@ class TabBuka(QWidget):
         else:
             logger.error(f"Dekripsi gagal: {msg}")
             user_msg = format_user_error(status, msg, "buka")
-            self.drop_zone.set_verification_state("failed", "Gagal membuka file")
+            self.drop_zone.set_verification_state("failed", "Failed to open file")
             self.status_changed.emit(
-                "Gagal membuka", "Periksa file, izin, atau ruang disk", "error"
+                "Failed to open", "Check your file, permissions, or available disk space", "error"
             )
             self.password_panel.set_error_state(user_msg)
             self.notif.show_msg("err", user_msg, 8000)
 
     def _retry_after_error(self) -> None:
         self.password_panel.set_idle_state()
-        self.drop_zone.set_verification_state("pending", "Menunggu password")
+        self.drop_zone.set_verification_state("pending", "Waiting for password")
         self._validate_state()
 
     def auto_load_file(self, path: str) -> None:

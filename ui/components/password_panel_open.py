@@ -34,18 +34,18 @@ class PasswordPanelOpen(QFrame):
         self.v_pw.setContentsMargins(24, 18, 24, 18)
         self.v_pw.setSpacing(11)
 
-        self.lbl_title_pw = QLabel("Masukkan Password")
+        self.lbl_title_pw = QLabel("Enter Your Password")
         self.lbl_title_pw.setObjectName("CardTitle")
         self.v_pw.addWidget(self.lbl_title_pw)
 
-        self.sub_pw = QLabel("Masukkan password untuk membuka brankas Anda.")
+        self.sub_pw = QLabel("Enter the password you used when locking this vault.")
         self.sub_pw.setObjectName("CardSubtitle")
         self.sub_pw.setWordWrap(True)
         self.v_pw.addWidget(self.sub_pw)
         self.v_pw.addSpacing(4)
 
-        self.entry_pw = PasswordLineEdit("Ketik password di sini…")
-        self.entry_pw.setAccessibleName("Password untuk Membuka Brankas")
+        self.entry_pw = PasswordLineEdit("Type your password here…")
+        self.entry_pw.setAccessibleName("Password to open the vault")
         self.entry_pw.textChanged.connect(self._on_pw_change)
         self.v_pw.addWidget(self.entry_pw)
 
@@ -72,17 +72,17 @@ class PasswordPanelOpen(QFrame):
             (
                 "mdi6.shield-key-outline",
                 CLR_ACCENT,
-                "Password tidak dapat dipulihkan. Simpan di tempat yang aman.",
+                "Your password can't be recovered. Keep it somewhere safe.",
             ),
             (
                 "mdi6.lock-alert-outline",
                 CLR_WARN,
-                "Pastikan password sama persis dengan yang digunakan saat mengunci.",
+                "Use the exact password you created when locking this vault.",
             ),
             (
                 "mdi6.file-lock-outline",
                 CLR_TEXT_MUTED,
-                "Hanya file .adtn yang dibuat oleh Adyton Crypt yang dapat dibuka.",
+                "Only .adtn files created by Adyton Crypt can be opened.",
             ),
         ]
 
@@ -110,15 +110,15 @@ class PasswordPanelOpen(QFrame):
         lay.setSpacing(10)
 
         intro = QLabel(
-            "Vault sedang diverifikasi dan diekstrak. Jangan tutup aplikasi atau cabut drive sampai proses selesai."
+            "Your vault is being verified and extracted. Keep the app open and the drive connected until it finishes."
         )
         intro.setObjectName("ProcessText")
         intro.setWordWrap(True)
         lay.addWidget(intro)
 
         self.lbl_status_file = self._make_status_row(lay, "File", "—")
-        self.lbl_status_size = self._make_status_row(lay, "Ukuran", "—")
-        self.lbl_status_stage = self._make_status_row(lay, "Tahap", "Menyiapkan vault")
+        self.lbl_status_size = self._make_status_row(lay, "Size", "—")
+        self.lbl_status_stage = self._make_status_row(lay, "Stage", "Preparing vault")
 
         return box
 
@@ -129,20 +129,20 @@ class PasswordPanelOpen(QFrame):
         lay.setContentsMargins(16, 14, 16, 14)
         lay.setSpacing(12)
 
-        self.lbl_error_msg = QLabel("Password salah atau file brankas rusak.")
+        self.lbl_error_msg = QLabel("Incorrect password or corrupted vault file.")
         self.lbl_error_msg.setObjectName("OpenErrorText")
         self.lbl_error_msg.setWordWrap(True)
         lay.addWidget(self.lbl_error_msg)
 
         row = QHBoxLayout()
         row.setSpacing(10)
-        self.btn_retry = QPushButton("Coba Lagi")
+        self.btn_retry = QPushButton("Try Again")
         self.btn_retry.setObjectName("BtnInlinePrimary")
         self.btn_retry.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_retry.clicked.connect(self.retry_requested.emit)
         row.addWidget(self.btn_retry)
 
-        self.btn_pick_file = QPushButton("Pilih File Lain")
+        self.btn_pick_file = QPushButton("Choose Another File")
         self.btn_pick_file.setObjectName("BtnInlineSecondary")
         self.btn_pick_file.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_pick_file.clicked.connect(self.pick_file_requested.emit)
@@ -184,8 +184,8 @@ class PasswordPanelOpen(QFrame):
         if self.error_box.isVisible():
             self.error_box.hide()
             self.info_box.show()
-            self.lbl_title_pw.setText("Masukkan Password")
-            self.sub_pw.setText("Masukkan password untuk membuka brankas Anda.")
+            self.lbl_title_pw.setText("Enter Your Password")
+            self.sub_pw.setText("Enter the password you used when locking this vault.")
         self.valid_state_changed.emit(bool(pw))
 
     # --- PUBLIC API ---
@@ -202,8 +202,8 @@ class PasswordPanelOpen(QFrame):
         self.entry_pw.returnPressed.connect(slot_func)
 
     def set_idle_state(self) -> None:
-        self.lbl_title_pw.setText("Masukkan Password")
-        self.sub_pw.setText("Masukkan password untuk membuka brankas Anda.")
+        self.lbl_title_pw.setText("Enter Your Password")
+        self.sub_pw.setText("Enter the password you used when locking this vault.")
         self.entry_pw.show()
         self.entry_pw.setEnabled(True)
         self.status_box.hide()
@@ -211,8 +211,8 @@ class PasswordPanelOpen(QFrame):
         self.info_box.show()
 
     def set_processing_state(self, file_name: str, size_text: str, stage: str) -> None:
-        self.lbl_title_pw.setText("Membuka Brankas")
-        self.sub_pw.setText("Vault sedang diverifikasi dan diekstrak.")
+        self.lbl_title_pw.setText("Opening Vault")
+        self.sub_pw.setText("The vault is being verified and extracted.")
         self.entry_pw.hide()
         self.entry_pw.setEnabled(False)
         self.info_box.hide()
@@ -220,14 +220,14 @@ class PasswordPanelOpen(QFrame):
         self.status_box.show()
         self.lbl_status_file.setText(file_name or "—")
         self.lbl_status_size.setText(size_text or "—")
-        self.lbl_status_stage.setText(stage or "Menyiapkan vault")
+        self.lbl_status_stage.setText(stage or "Preparing vault")
 
     def update_processing_stage(self, stage: str) -> None:
-        self.lbl_status_stage.setText(stage or "Memproses")
+        self.lbl_status_stage.setText(stage or "Processing")
 
     def set_error_state(self, message: str) -> None:
-        self.lbl_title_pw.setText("Gagal Membuka Brankas")
-        self.sub_pw.setText("Password salah, file rusak, atau vault tidak didukung.")
+        self.lbl_title_pw.setText("Failed to Open Vault")
+        self.sub_pw.setText("Wrong password, corrupted file, or unsupported format.")
         self.entry_pw.show()
         self.entry_pw.setEnabled(True)
         self.status_box.hide()

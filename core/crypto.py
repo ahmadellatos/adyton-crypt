@@ -5,18 +5,20 @@ Primitif kriptografi: key derivation dan helper enkripsi/dekripsi AES-256-GCM.
 
 from __future__ import annotations
 
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from loguru import logger
 
 from .constants import (
     ARGON2ID_ITERATIONS,
     ARGON2ID_LANES,
+    ARGON2ID_MAX_ITERATIONS,
+    ARGON2ID_MAX_LANES,
+    ARGON2ID_MAX_MEMORY_COST_KIB,
     ARGON2ID_MEMORY_COST_KIB,
-    CHUNK_SIZE,
     KDF_ID_ARGON2ID,
     KDF_ID_PBKDF2_SHA256,
     PBKDF2_ITERATIONS,
@@ -58,7 +60,15 @@ def derive_key_argon2id(
     ``memory_cost`` memakai satuan KiB sesuai API ``cryptography``.
     """
     if iterations <= 0 or lanes <= 0 or memory_cost <= 0:
-        raise ValueError("Parameter Argon2id tidak valid.")
+        raise ValueError("Invalid Argon2id parameter.")
+    if (
+        iterations > ARGON2ID_MAX_ITERATIONS
+        or lanes > ARGON2ID_MAX_LANES
+        or memory_cost > ARGON2ID_MAX_MEMORY_COST_KIB
+    ):
+        # Defense in depth: never hand absurd cost factors to the KDF, even if a
+        # caller bypassed header decoding. Prevents OOM/hang on crafted input.
+        raise ValueError("Argon2id parameters exceed the safe maximum.")
 
     kdf = Argon2id(
         salt=salt,
@@ -95,7 +105,7 @@ def derive_key_for_kdf(
             memory_cost=params.get("memory_cost", ARGON2ID_MEMORY_COST_KIB),
         )
 
-    raise ValueError("KDF vault tidak didukung oleh versi aplikasi ini.")
+    raise ValueError("This vault KDF isn't supported by this app version.")
 
 
 def derive_key(password: str, salt: bytes) -> bytes:

@@ -149,6 +149,30 @@ def test_kdf_params_are_bound_to_metadata_aad(tmp_path):
     assert not source.exists()
 
 
+def test_oversized_argon2id_memory_cost_is_rejected_not_oom(tmp_path):
+    """A crafted header asking for absurd Argon2id memory must be rejected at
+    open time, never handed to the KDF (which would try to allocate it)."""
+    source = _make_source_folder(tmp_path)
+    vault_path = tmp_path / "argon2-oom.adtn"
+
+    status, message = kunci_brankas([str(source)], str(vault_path), PASSWORD)
+    assert status == VaultStatus.SUCCESS, message
+    shutil.rmtree(source)
+
+    # Extended header: base header + kdf_id(1) + params_len(2) + params(12).
+    # params = iterations(4) + lanes(4) + memory_cost(4); overwrite memory_cost
+    # with ~4 TiB worth of KiB so the open path must refuse it.
+    data = bytearray(vault_path.read_bytes())
+    memory_cost_offset = HEADER_SIZE_V2 + 1 + 2 + 8
+    data[memory_cost_offset : memory_cost_offset + 4] = (0xFFFFFFFF).to_bytes(4, "big")
+    vault_path.write_bytes(data)
+
+    status, message = buka_brankas(str(vault_path), PASSWORD)
+    assert status == VaultStatus.ERROR
+    assert "safe maximum" in (message or "").lower()
+    assert not source.exists()
+
+
 def test_explicit_argon2id_key_derivation_dispatch_is_deterministic():
     salt = os.urandom(16)
     params = _encode_argon2id_params()

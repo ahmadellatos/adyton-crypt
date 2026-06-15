@@ -61,9 +61,9 @@ def encrypt_text(plaintext: str, password: str) -> str:
         ValueError: Jika plaintext atau password kosong.
     """
     if not plaintext:
-        raise ValueError("Teks tidak boleh kosong.")
+        raise ValueError("Text cannot be empty.")
     if not password:
-        raise ValueError("Password tidak boleh kosong.")
+        raise ValueError("Password cannot be empty.")
 
     data = plaintext.encode("utf-8")
     salt = os.urandom(SALT_SIZE)
@@ -102,14 +102,14 @@ def decrypt_text(encrypted: str, password: str) -> str:
         InvalidTag:  Password salah atau data telah dimodifikasi/rusak.
     """
     if not password:
-        raise ValueError("Password tidak boleh kosong.")
+        raise ValueError("Password cannot be empty.")
 
     encrypted = encrypted.strip()
 
     if not encrypted.startswith(TEXT_VAULT_PREFIX):
         raise ValueError(
-            "Bukan format Adyton Crypt Text yang valid.\n"
-            "Pastikan teks terenkripsi dimulai dengan 'ADTN_TEXT:1:'."
+            "Not a valid Adyton Crypt Text format.\n"
+            "Make sure the encrypted text starts with 'ADTN_TEXT:1:'."
         )
 
     b64_part = encrypted[len(TEXT_VAULT_PREFIX) :]
@@ -118,10 +118,10 @@ def decrypt_text(encrypted: str, password: str) -> str:
         padding_needed = (4 - len(b64_part) % 4) % 4
         payload = base64.urlsafe_b64decode(b64_part + "=" * padding_needed)
     except Exception as exc:
-        raise ValueError(f"Data base64 tidak bisa di-decode: {exc}") from exc
+        raise ValueError(f"Base64 data could not be decoded: {exc}") from exc
 
     if len(payload) < _MIN_PAYLOAD_LEN:
-        raise ValueError("Data terlalu pendek — kemungkinan rusak atau terpotong.")
+        raise ValueError("Data too short — possibly corrupted or truncated.")
 
     salt = payload[:SALT_SIZE]
     nonce = payload[SALT_SIZE : SALT_SIZE + NONCE_SIZE_V1]
@@ -140,12 +140,12 @@ def decrypt_text(encrypted: str, password: str) -> str:
     try:
         plaintext_bytes = dec.update(ciphertext) + dec.finalize()
     except InvalidTag as exc:
-        raise InvalidTag("Password salah atau data sudah dimodifikasi.") from exc
+        raise InvalidTag("Wrong password or the data was modified.") from exc
 
     try:
         return plaintext_bytes.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise ValueError(f"Data terdekripsi bukan UTF-8 yang valid: {exc}") from exc
+        raise ValueError(f"Decrypted data is not valid UTF-8: {exc}") from exc
 
 
 def is_encrypted_text(s: str) -> bool:

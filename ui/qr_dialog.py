@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from .styles import CLR_TEXT_MUTED
+from .styles import CLR_ACCENT, CLR_TEXT_MUTED
 from .widgets import apply_shadow
 
 # ─── Kapasitas ────────────────────────────────────────────────────────────────
@@ -114,8 +114,8 @@ class QRShareDialog(QDialog):
         row_hdr = QHBoxLayout()
         row_hdr.setSpacing(10)
         lbl_icon = QLabel()
-        lbl_icon.setPixmap(qta.icon("mdi6.qrcode", color="#00D2C8").pixmap(28, 28))
-        lbl_title = QLabel("Bagikan via QR Code")
+        lbl_icon.setPixmap(qta.icon("mdi6.qrcode", color=CLR_ACCENT).pixmap(28, 28))
+        lbl_title = QLabel("Share via QR Code")
         lbl_title.setObjectName("CardTitle")
         row_hdr.addWidget(lbl_icon)
         row_hdr.addWidget(lbl_title, 1)
@@ -140,8 +140,8 @@ class QRShareDialog(QDialog):
 
         # ── Keterangan ────────────────────────────────────────────────────────
         lbl_info = QLabel(
-            "Scan dengan kamera HP untuk memindahkan teks terenkripsi.\n"
-            "QR ini aman dilihat siapa pun — isinya tetap terkunci tanpa password."
+            "Scan with a phone camera to transfer the encrypted text.\n"
+            "This QR is safe for anyone to see — its contents stay locked without the password."
         )
         lbl_info.setWordWrap(True)
         lbl_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -155,14 +155,14 @@ class QRShareDialog(QDialog):
         btn_lay.setSpacing(10)
         btn_lay.addStretch()
 
-        self.btn_save = QPushButton(" Simpan PNG")
+        self.btn_save = QPushButton(" Save PNG")
         self.btn_save.setIcon(qta.icon("mdi6.download-outline", color="white"))
         self.btn_save.setObjectName("BtnDialogCancel")
         self.btn_save.setFixedHeight(42)
         self.btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_save.clicked.connect(self._save_png)
 
-        self.btn_close = QPushButton("Tutup")
+        self.btn_close = QPushButton("Close")
         self.btn_close.setObjectName("BtnAlertConfirm")
         self.btn_close.setFixedHeight(42)
         self.btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -181,7 +181,7 @@ class QRShareDialog(QDialog):
             return
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "Simpan QR Code",
+            "Save QR Code",
             "adyton_qr.png",
             "PNG Image (*.png)",
         )
@@ -189,8 +189,8 @@ class QRShareDialog(QDialog):
             return
         if self._qr_image.save(path, "PNG"):
             logger.info(f"QR disimpan ke: {path}")
-            self.btn_save.setText(" Tersimpan ✓")
-            QTimer.singleShot(2200, lambda: self.btn_save.setText(" Simpan PNG"))
+            self.btn_save.setText(" Saved ✓")
+            QTimer.singleShot(2200, lambda: self.btn_save.setText(" Save PNG"))
         else:
             logger.error(f"Gagal menyimpan QR ke: {path}")
 

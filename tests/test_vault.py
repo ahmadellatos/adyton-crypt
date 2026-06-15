@@ -46,7 +46,7 @@ class TestHappyPath:
         path_simpan = os.path.join(base_dir, "test_file.adtn")
 
         _, pesan = kunci_brankas([sample_folder], path_simpan, PASSWORD_BENAR)
-        assert "Brankas berhasil dikunci" in pesan
+        assert "Vault locked successfully" in pesan
 
     def test_kunci_lalu_buka_isi_sama(self, sample_folder):
         checksum_sebelum = folder_checksum(sample_folder)
@@ -171,7 +171,7 @@ class TestHeaderFormat:
 
         status, msg = buka_brankas(path, PASSWORD_BENAR)
         assert status == VaultStatus.ERROR
-        assert "bukan format brankas Adyton Crypt" in (msg or "")
+        assert "isn't a valid Adyton Crypt vault" in (msg or "")
 
     def test_unsupported_version_returns_error(self, tmp_dir):
         """Future version must tell user to update the app."""
@@ -181,7 +181,7 @@ class TestHeaderFormat:
 
         status, msg = buka_brankas(path, PASSWORD_BENAR)
         assert status == VaultStatus.ERROR
-        assert "terlalu baru" in (msg or "").lower()
+        assert "newer version" in (msg or "").lower()
 
     def test_garbage_name_length_on_wrong_password_returns_wrong_password_not_error(
         self, sample_folder, tmp_dir

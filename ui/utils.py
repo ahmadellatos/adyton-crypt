@@ -9,18 +9,18 @@ import time
 def _format_eta_seconds(remaining: float) -> str:
     """Format ETA dengan pembulatan stabil dan bahasa yang mudah dipahami."""
     if remaining < 1:
-        return "Hampir selesai"
+        return "Almost done"
     if remaining < 60:
-        return f"sekitar {int(round(remaining))} detik lagi"
+        return f"about {int(round(remaining))} sec left"
 
     minutes = int(remaining // 60)
     seconds = int(remaining % 60)
     if minutes < 60:
-        return f"sekitar {minutes}m {seconds:02d}s lagi"
+        return f"about {minutes}m {seconds:02d}s left"
 
     hours = minutes // 60
     minutes = minutes % 60
-    return f"sekitar {hours}j {minutes:02d}m lagi"
+    return f"about {hours}h {minutes:02d}m left"
 
 
 def get_eta_string(start_time: float | None, progress: float) -> str:
@@ -31,11 +31,11 @@ def get_eta_string(start_time: float | None, progress: float) -> str:
     smoothed transfer rate agar ETA tidak meloncat-loncat.
     """
     if start_time is None or progress <= 0.01:
-        return "Menghitung..."
+        return "Calculating…"
 
     elapsed = time.monotonic() - start_time
     if elapsed < 0.75:
-        return "Menghitung..."
+        return "Calculating…"
 
     remaining = max((elapsed / max(progress, 1e-6)) - elapsed, 0.0)
     return _format_eta_seconds(remaining)
@@ -61,7 +61,7 @@ class ProgressETA:
         self.last_display_time: float | None = None
         self.last_progress = 0.0
         self.smoothed_rate: float | None = None
-        self.last_eta = "Menghitung..."
+        self.last_eta = "Calculating…"
 
     def update(self, progress: float) -> str:
         now = time.monotonic()
@@ -125,20 +125,20 @@ def progress_stage_label(val: float, mode: str) -> str:
 
     if mode == "buka":
         if val < 0.08:
-            return "Memverifikasi password"
+            return "Verifying password"
         if val < 0.88:
-            return "Mengekstrak data"
+            return "Extracting data"
         if val < 0.97:
-            return "Memindahkan hasil"
-        return "Membersihkan file sementara"
+            return "Moving result"
+        return "Cleaning up temp files"
 
     if val < 0.08:
-        return "Menyiapkan data"
+        return "Preparing data"
     if val < 0.88:
-        return "Mengenkripsi data"
+        return "Encrypting data"
     if val < 0.97:
-        return "Menulis brankas"
-    return "Finalisasi"
+        return "Writing vault"
+    return "Finalizing"
 
 
 def format_progress_label(val: float, mode: str, eta_str: str) -> tuple[str, str]:
@@ -151,11 +151,11 @@ def format_progress_label(val: float, mode: str, eta_str: str) -> tuple[str, str
     stage = progress_stage_label(val, mode)
 
     if mode == "buka":
-        title = "Membuka brankas"
-        subtitle = f"{pct}% • {eta_str} • {stage} • Klik untuk membatalkan"
+        title = "Opening vault"
+        subtitle = f"{pct}% • {eta_str} • {stage} • Click to cancel"
     else:
-        title = "Mengunci brankas"
-        subtitle = f"{pct}% • {eta_str} • {stage} • Klik untuk membatalkan"
+        title = "Locking vault"
+        subtitle = f"{pct}% • {eta_str} • {stage} • Click to cancel"
 
     return title, subtitle
 
@@ -167,16 +167,16 @@ def format_user_error(status, message: str | None, mode: str) -> str:
 
     if "wrong_password" in status_name:
         return (
-            "Password tidak cocok, file bukan brankas Adyton yang valid, "
-            "atau isi brankas sudah rusak. Periksa password dan coba lagi."
+            "Wrong password, or the vault file is invalid or corrupted. "
+            "Double-check your password and try again."
         )
 
     if "cancelled" in status_name:
-        return "Proses dibatalkan. File tujuan belum diganti."
+        return "Operation cancelled. No changes were made to your files."
 
-    prefix = "Tidak bisa membuka brankas" if mode == "buka" else "Tidak bisa mengunci brankas"
+    prefix = "Couldn't open the vault" if mode == "buka" else "Couldn't lock the vault"
     if not raw:
-        return f"{prefix}. Coba ulangi proses atau periksa ruang disk."
+        return f"{prefix}. Try again or check your disk space."
 
     # Hindari label teknis seperti “Error:” di UI utama, tapi tetap tampilkan detail
     # yang memang sudah dibuat aman oleh core.
@@ -216,7 +216,7 @@ def apply_shadow(widget, blur_radius=20, y_offset=6, opacity=60):
 
 def apply_cancelling_state(button) -> None:
     """Set tombol aksi ke state 'sedang membatalkan'."""
-    button.setTextLabels("Membatalkan proses", "Membersihkan file sementara...")
+    button.setTextLabels("Cancelling", "Cleaning up temp files…")
     button.setEnabled(False)
 
 

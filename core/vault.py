@@ -23,6 +23,9 @@ from loguru import logger
 from .constants import (
     ARGON2ID_ITERATIONS,
     ARGON2ID_LANES,
+    ARGON2ID_MAX_ITERATIONS,
+    ARGON2ID_MAX_LANES,
+    ARGON2ID_MAX_MEMORY_COST_KIB,
     ARGON2ID_MEMORY_COST_KIB,
     ARGON2ID_PARAMS_SIZE,
     CHUNK_RECORD_HEADER_SIZE,
@@ -193,7 +196,7 @@ class EncryptingStream:
 
     def write(self, data: bytes):
         if self.is_cancelled and self.is_cancelled():
-            raise InterruptedError("Operasi dibatalkan oleh pengguna.")
+            raise InterruptedError("Operation cancelled by the user.")
 
         self.buffer.extend(data)
         self.bytes_written += len(data)
@@ -397,7 +400,7 @@ def _encode_argon2id_params(
     """Encode parameter Argon2id ke format header v2 extended."""
     for value in (iterations, lanes, memory_cost):
         if value <= 0 or value >= 2**32:
-            raise ValueError("Parameter Argon2id di luar rentang.")
+            raise ValueError("Argon2id parameter out of range.")
 
     return (
         iterations.to_bytes(4, byteorder="big")
@@ -409,14 +412,24 @@ def _encode_argon2id_params(
 def _decode_argon2id_params(params: bytes) -> dict[str, int]:
     """Decode parameter Argon2id dari header v2 extended."""
     if len(params) != ARGON2ID_PARAMS_SIZE:
-        raise ValueError("Ukuran parameter Argon2id tidak valid.")
+        raise ValueError("Invalid Argon2id parameter size.")
 
     iterations = int.from_bytes(params[0:4], byteorder="big")
     lanes = int.from_bytes(params[4:8], byteorder="big")
     memory_cost = int.from_bytes(params[8:12], byteorder="big")
 
     if iterations <= 0 or lanes <= 0 or memory_cost <= 0:
-        raise ValueError("Parameter Argon2id tidak valid.")
+        raise ValueError("Invalid Argon2id parameter.")
+
+    # Reject crafted headers that request absurd cost factors. Without this an
+    # attacker-supplied vault could make Argon2id allocate gigabytes/terabytes
+    # and OOM the app the moment someone tries to open it.
+    if (
+        iterations > ARGON2ID_MAX_ITERATIONS
+        or lanes > ARGON2ID_MAX_LANES
+        or memory_cost > ARGON2ID_MAX_MEMORY_COST_KIB
+    ):
+        raise ValueError("Argon2id parameters exceed the safe maximum.")
 
     return {
         "iterations": iterations,
@@ -428,9 +441,9 @@ def _decode_argon2id_params(params: bytes) -> dict[str, int]:
 def _v2_kdf_section(kdf_id: int, params: bytes) -> bytes:
     """Bangun section KDF untuk header v2 extended."""
     if not 0 <= kdf_id <= 255:
-        raise ValueError("kdf_id di luar rentang")
+        raise ValueError("kdf_id out of range")
     if len(params) >= 2**16:
-        raise ValueError("Parameter KDF terlalu panjang")
+        raise ValueError("KDF parameter too long")
     return bytes([kdf_id]) + len(params).to_bytes(2, byteorder="big") + params
 
 
@@ -444,7 +457,7 @@ def _v2_parse_kdf_section(
     tidak memiliki section ini dan diperlakukan sebagai PBKDF2 legacy.
     """
     if flags & ~V2_SUPPORTED_FLAGS:
-        raise ValueError("Flag vault tidak didukung oleh versi aplikasi ini.")
+        raise ValueError("This vault flag isn't supported by this app version.")
 
     if not (flags & V2_FLAG_KDF_PARAMS):
         return KDF_ID_PBKDF2_SHA256, {}, b""
@@ -461,22 +474,22 @@ def _v2_parse_kdf_section(
     if kdf_id == KDF_ID_PBKDF2_SHA256:
         # Reserved for future explicit PBKDF2 headers. Current legacy v2 uses no section.
         if len(params_raw) != 4:
-            raise ValueError("Parameter PBKDF2 tidak valid.")
+            raise ValueError("Invalid PBKDF2 parameter.")
         iterations = int.from_bytes(params_raw, byteorder="big")
         if iterations <= 0:
-            raise ValueError("Parameter PBKDF2 tidak valid.")
+            raise ValueError("Invalid PBKDF2 parameter.")
         return kdf_id, {"iterations": iterations}, kdf_section
 
-    raise ValueError("KDF vault tidak didukung oleh versi aplikasi ini.")
+    raise ValueError("This vault KDF isn't supported by this app version.")
 
 
 def _v2_record_header(record_type: int, record_index: int, plaintext_len: int) -> bytes:
     if not 0 <= record_type <= 255:
-        raise ValueError("record_type di luar rentang")
+        raise ValueError("record_type out of range")
     if record_index < 0 or record_index >= 2**64:
-        raise ValueError("record_index di luar rentang")
+        raise ValueError("record_index out of range")
     if plaintext_len < 0 or plaintext_len >= 2**32:
-        raise ValueError("plaintext_len di luar rentang")
+        raise ValueError("plaintext_len out of range")
     return (
         record_type.to_bytes(1, byteorder="big")
         + record_index.to_bytes(8, byteorder="big")
@@ -491,7 +504,7 @@ def _v2_nonce(record_index: int) -> bytes:
     dalam vault yang sama memakai indeks unik yang diverifikasi berurutan.
     """
     if record_index < 0 or record_index >= 2**96:
-        raise ValueError("record_index di luar rentang nonce")
+        raise ValueError("record_index out of nonce range")
     return record_index.to_bytes(12, byteorder="big")
 
 
@@ -566,7 +579,7 @@ class ChunkedAEADEncryptingStream:
 
     def write(self, data: bytes):
         if self.is_cancelled and self.is_cancelled():
-            raise InterruptedError("Operasi dibatalkan oleh pengguna.")
+            raise InterruptedError("Operation cancelled by the user.")
 
         self.buffer.extend(data)
         self.bytes_written += len(data)
@@ -652,7 +665,7 @@ def _verify_gcm_before_plaintext_write(
 
     while remaining_bytes > 0:
         if is_cancelled and is_cancelled():
-            raise InterruptedError("Operasi dibatalkan oleh pengguna.")
+            raise InterruptedError("Operation cancelled by the user.")
 
         chunk_sz = min(CHUNK_SIZE, remaining_bytes)
         chunk = input_file.read(chunk_sz)
@@ -703,7 +716,7 @@ def _write_decrypted_to_temp_tar(
 
         while remaining_bytes > 0:
             if is_cancelled and is_cancelled():
-                raise InterruptedError("Operasi dibatalkan oleh pengguna.")
+                raise InterruptedError("Operation cancelled by the user.")
 
             chunk_sz = min(CHUNK_SIZE, remaining_bytes)
             chunk = input_file.read(chunk_sz)
@@ -742,11 +755,11 @@ def _extract_and_place_vault(
     with tarfile.open(temp_tar_path, mode="r") as tar:
         for member in tar:
             if is_cancelled and is_cancelled():
-                raise InterruptedError("Operasi dibatalkan oleh pengguna.")
+                raise InterruptedError("Operation cancelled by the user.")
 
             # --- SECURITY CHECK (TarSlip) ---
             if not _is_safe_tar_member(member.name, temp_ext_dir):
-                raise Exception("Anomali Keamanan: Terdeteksi Path Traversal (TarSlip).")
+                raise Exception("Security anomaly: path traversal (TarSlip) detected.")
             # --------------------------------
 
             member_path = (temp_ext_dir.resolve() / member.name).resolve()
@@ -758,7 +771,7 @@ def _extract_and_place_vault(
                 with tar.extractfile(member) as source, open(member_path, "wb") as target:
                     while True:
                         if is_cancelled and is_cancelled():
-                            raise InterruptedError("Operasi dibatalkan oleh pengguna.")
+                            raise InterruptedError("Operation cancelled by the user.")
 
                         chunk = source.read(CHUNK_SIZE)
                         if not chunk:
@@ -788,7 +801,7 @@ def _extract_and_place_vault(
     # FASE 3: PINDAH FOLDER & CLEANUP
     src = temp_ext_dir / nama_folder
     if not src.exists():
-        raise ValueError("Isi brankas tidak sesuai format ekspektasi.")
+        raise ValueError("Vault contents don't match the expected format.")
 
     backup_existing: Path | None = None
     if path_tujuan.exists():
@@ -866,7 +879,7 @@ def _make_unique_backup_path(target_path: Path) -> Path:
         candidate = target_path.with_name(f"{target_path.name}.bak-{uuid.uuid4().hex[:8]}")
         if not candidate.exists():
             return candidate
-    raise FileExistsError("Tidak bisa membuat nama backup unik untuk vault lama.")
+    raise FileExistsError("Couldn't create a unique backup name for the old vault.")
 
 
 def _make_unique_replace_backup_path(target_path: Path) -> Path:
@@ -875,7 +888,7 @@ def _make_unique_replace_backup_path(target_path: Path) -> Path:
         candidate = target_path.with_name(f"{target_path.name}.replace-{uuid.uuid4().hex[:8]}")
         if not candidate.exists():
             return candidate
-    raise FileExistsError("Tidak bisa membuat staging backup unik untuk data lama.")
+    raise FileExistsError("Couldn't create a unique staging backup for the old data.")
 
 
 def _validate_virtual_folder_name(name: str) -> str:
@@ -942,7 +955,7 @@ def _buka_brankas_v2_from_open_file(
 
     try:
         if total_size < HEADER_SIZE_V2 + (2 * CHUNK_RECORD_OVERHEAD):
-            return VaultStatus.ERROR, "File brankas terlalu kecil atau tidak lengkap."
+            return VaultStatus.ERROR, "The vault file is too small or incomplete."
 
         salt = _v2_read_exact(fk, 16)
         file_id = _v2_read_exact(fk, 16)
@@ -952,7 +965,7 @@ def _buka_brankas_v2_from_open_file(
         if stored_chunk_size <= 0 or stored_chunk_size > CHUNK_SIZE:
             return (
                 VaultStatus.ERROR,
-                "Parameter chunk brankas tidak valid atau file sudah rusak.",
+                "The vault's chunk parameters are invalid, or the file is corrupted.",
             )
 
         try:
@@ -996,7 +1009,7 @@ def _buka_brankas_v2_from_open_file(
         try:
             nama_folder, name_offset = _parse_virtual_folder_name(metadata_plaintext)
             if name_offset != len(metadata_plaintext):
-                raise ValueError("metadata ekstra tidak valid")
+                raise ValueError("invalid extra metadata")
         except ValueError:
             return VaultStatus.WRONG_PASSWORD, None
 
@@ -1007,7 +1020,7 @@ def _buka_brankas_v2_from_open_file(
         with temp_tar_path.open("wb") as ftar:
             while True:
                 if is_cancelled and is_cancelled():
-                    raise InterruptedError("Operasi dibatalkan oleh pengguna.")
+                    raise InterruptedError("Operation cancelled by the user.")
 
                 record_type, record_index, plaintext_len, record_header = _v2_read_record_header(fk)
                 if record_index != expected_index:
@@ -1083,11 +1096,11 @@ def _buka_brankas_v2_from_open_file(
     except InterruptedError:
         return (
             VaultStatus.CANCELLED,
-            "Proses dibatalkan. Tidak ada data lama yang diganti.",
+            "Operation cancelled. No existing data was changed.",
         )
     except Exception as exc:
         logger.exception("Gagal membuka brankas v2 chunked AEAD.")
-        return VaultStatus.ERROR, f"Terjadi kesalahan internal: {str(exc)}"
+        return VaultStatus.ERROR, f"An internal error occurred: {str(exc)}"
     finally:
         if temp_ext_dir and temp_ext_dir.exists():
             _cleanup_temp_decrypt_dir(temp_ext_dir)
@@ -1120,10 +1133,10 @@ def kunci_brankas(
 ) -> tuple[VaultStatus, str]:
     valid_paths = [p for p in paths if Path(p).exists()]
     if not valid_paths:
-        return VaultStatus.ERROR, "Tidak ada file/folder valid untuk dikunci."
+        return VaultStatus.ERROR, "No valid file/folder to lock."
 
     if not password or not password.strip():
-        return VaultStatus.ERROR, "Password tidak boleh kosong."
+        return VaultStatus.ERROR, "Password cannot be empty."
 
     target_path = Path(path_simpan)
 
@@ -1132,9 +1145,9 @@ def kunci_brankas(
         if _target_conflicts_with_source(target_path, source_path):
             return (
                 VaultStatus.ERROR,
-                "Lokasi penyimpanan vault tidak boleh sama dengan atau berada di dalam "
-                "file/folder yang sedang dikunci. Pilih lokasi lain agar vault tidak ikut "
-                "terhapus atau ikut masuk ke arsip.",
+                "The vault's save location can't be the same as, or inside, the "
+                "file/folder being locked. Choose another location so the vault isn't "
+                "deleted along with it or pulled into the archive.",
             )
 
     if len(valid_paths) == 1:
@@ -1157,7 +1170,7 @@ def kunci_brankas(
             free_mb = free_space / (1024 * 1024)
             return (
                 VaultStatus.ERROR,
-                f"Ruang penyimpanan tidak cukup!\nSisa disk: {free_mb:.1f} MB. Butuh minimal {req_mb:.1f} MB.",
+                f"Not enough storage space.\nDisk free: {free_mb:.1f} MB. At least {req_mb:.1f} MB is required.",
             )
 
         if target_path.exists():
@@ -1230,8 +1243,8 @@ def kunci_brankas(
             if not _quick_verify_vault(target_path):
                 return (
                     VaultStatus.ERROR,
-                    "Vault gagal diverifikasi ke disk fisik. File asli tidak dihapus. "
-                    "Coba periksa ruang disk dan kondisi hardware penyimpanan.",
+                    "The vault couldn't be verified on the physical disk. The original file was not deleted. "
+                    "Try checking your disk space and the condition of your storage hardware.",
                 )
             safe_cb(progress_cb, 0.90)  # Verification done
 
@@ -1260,7 +1273,7 @@ def kunci_brankas(
         safe_cb(progress_cb, 1.0)
         return (
             VaultStatus.SUCCESS,
-            f"Brankas berhasil dikunci!\nUkuran: {size_mb:.1f} MB",
+            f"Vault locked successfully!\nSize: {size_mb:.1f} MB",
         )
 
     except InterruptedError:
@@ -1270,7 +1283,7 @@ def kunci_brankas(
             backup_path.replace(target_path)
         return (
             VaultStatus.CANCELLED,
-            "Proses dibatalkan. Tidak ada data lama yang diganti.",
+            "Operation cancelled. No existing data was changed.",
         )
     except Exception as exc:
         if target_path.exists():
@@ -1308,7 +1321,7 @@ def buka_brankas(
     try:
         total_size = target_path.stat().st_size
         if total_size < OVERHEAD:
-            return VaultStatus.ERROR, "File brankas terlalu kecil atau tidak lengkap."
+            return VaultStatus.ERROR, "The vault file is too small or incomplete."
 
         cipher_len = total_size - OVERHEAD
         base_dir = target_path.parent
@@ -1321,7 +1334,7 @@ def buka_brankas(
             free_mb = free_space / (1024 * 1024)
             return (
                 VaultStatus.ERROR,
-                f"Ruang penyimpanan tidak cukup!\nSisa disk: {free_mb:.1f} MB. Butuh minimal {req_mb:.1f} MB.",
+                f"Not enough storage space.\nDisk free: {free_mb:.1f} MB. At least {req_mb:.1f} MB is required.",
             )
 
         safe_cb(progress_cb, 0.01)  # Mulai proses buka
@@ -1342,7 +1355,7 @@ def buka_brankas(
             if magic != MAGIC_BYTES:
                 return (
                     VaultStatus.ERROR,
-                    "File ini bukan format brankas Adyton Crypt yang valid.",
+                    "This file isn't a valid Adyton Crypt vault.",
                 )
 
             # 2. Validasi Versi
@@ -1363,7 +1376,7 @@ def buka_brankas(
             else:
                 return (
                     VaultStatus.ERROR,
-                    "Versi brankas ini terlalu baru. Silakan update aplikasi Adyton Crypt Anda.",
+                    "This vault was made by a newer version. Please update Adyton Crypt.",
                 )
 
             # 3. Baca Salt dan Nonce (format v1)
@@ -1401,7 +1414,7 @@ def buka_brankas(
             except InterruptedError:
                 return (
                     VaultStatus.CANCELLED,
-                    "Proses dibatalkan. Tidak ada data lama yang diganti.",
+                    "Operation cancelled. No existing data was changed.",
                 )
 
             # Parse nama folder dan prompt overwrite hanya setelah tag GCM valid.
@@ -1458,7 +1471,7 @@ def buka_brankas(
             except InterruptedError:
                 return (
                     VaultStatus.CANCELLED,
-                    "Proses dibatalkan. Tidak ada data lama yang diganti.",
+                    "Operation cancelled. No existing data was changed.",
                 )
 
         safe_cb(progress_cb, 1.0)
@@ -1468,7 +1481,7 @@ def buka_brankas(
         logger.exception(
             "Gagal membuka brankas karena error internal saat proses dekripsi/ekstraksi."
         )
-        return VaultStatus.ERROR, f"Terjadi kesalahan internal: {str(exc)}"
+        return VaultStatus.ERROR, f"An internal error occurred: {str(exc)}"
     finally:
         if temp_ext_dir and temp_ext_dir.exists():
             _cleanup_temp_decrypt_dir(temp_ext_dir)

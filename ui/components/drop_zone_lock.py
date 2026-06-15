@@ -29,6 +29,16 @@ from PySide6.QtWidgets import (
 from ..buttons import ClearButton, TambahClearSplitButton
 from ..dialogs import ModernMessageBox
 from ..menus import AccessibleCenteredMenu, CenteredMenuAction
+from ..styles import (
+    CLR_ACCENT,
+    CLR_DANGER,
+    CLR_INSET,
+    CLR_ON_ACCENT,
+    CLR_SCROLL_HANDLE,
+    CLR_TEXT_DIM,
+    CLR_TEXT_MAIN,
+    CLR_WARN,
+)
 from ..utils import format_file_size
 from ..widgets import (
     CustomToolTip,
@@ -202,16 +212,16 @@ class TargetListDelegate(QStyledItemDelegate):
         exists = os.path.exists(path)
         is_dir = os.path.isdir(path) if exists else False
         if is_dir:
-            icon = qta.icon("mdi6.folder", color="#F1C40F")
+            icon = qta.icon("mdi6.folder-outline", color=CLR_WARN)
         else:
-            icon = qta.icon("mdi6.file-document-outline", color="#00D2C8")
+            icon = qta.icon("mdi6.file-document-outline", color=CLR_ACCENT)
         pix = icon.pixmap(size, size)
         self._icon_cache[key] = pix
         return pix
 
     def _get_delete_pixmap(self, is_hovered: bool, size: int = 18):
         # Use the same icon as ClearButton ("mdi6.close")
-        color = "#FFFFFF" if is_hovered else "#8B95A5"
+        color = CLR_ON_ACCENT if is_hovered else CLR_TEXT_DIM
         return qta.icon("mdi6.close", color=color).pixmap(size, size)
 
     def _update_font_cache(self, base_font: QFont):
@@ -252,40 +262,48 @@ class TargetListDelegate(QStyledItemDelegate):
         is_selected = bool(option.state & QStyle.State_Selected)
         is_hovered = index.row() == self._hovered_row
 
-        # Background highlight
-        if is_selected:
-            painter.fillRect(rect, QColor("#1E2A40"))
-            accent = QRect(rect.left(), rect.top() + 2, 3, rect.height() - 4)
-            painter.fillRect(accent, QColor("#00D2C8"))
-        elif is_hovered:
-            painter.fillRect(rect, QColor("#182033"))
-        else:
-            painter.setPen(QPen(QColor("#232B3E"), 1))
-            painter.drawLine(
-                rect.left() + 14,
-                rect.bottom() - 1,
-                rect.right() - 14,
-                rect.bottom() - 1,
-            )
+        # Setiap baris = "kartu" rounded mandiri (mengikuti desain target):
+        # default halus, hover lebih terang, terpilih ber-tint + tepi aksen.
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        row = rect.adjusted(8, 5, -8, -5)
+        radius = 12
 
-        # Keyboard focus indicator
-        is_focused_item = bool(option.state & QStyle.State_HasFocus)
-        if is_focused_item and (is_selected or is_hovered):
-            painter.setPen(QPen(QColor("#00D2C8"), 1, Qt.PenStyle.DashLine))
-            focus_rect = rect.adjusted(1, 1, -1, -1)
-            painter.drawRect(focus_rect)
+        if is_selected:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(79, 191, 201, 30))
+            painter.drawRoundedRect(row, radius, radius)
+
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(CLR_ACCENT), 1.5))
+            painter.drawRoundedRect(row.adjusted(1, 1, -1, -1), radius - 1, radius - 1)
+        elif is_hovered:
+            painter.setPen(QPen(QColor(255, 255, 255, 30), 1))
+            painter.setBrush(QColor(255, 255, 255, 20))
+            painter.drawRoundedRect(row.adjusted(0, 0, -1, -1), radius, radius)
+        else:
+            painter.setPen(QPen(QColor(255, 255, 255, 16), 1))
+            painter.setBrush(QColor(255, 255, 255, 10))
+            painter.drawRoundedRect(row.adjusted(0, 0, -1, -1), radius, radius)
 
         pad_x = 14
         pad_y = 8
         content = rect.adjusted(pad_x, pad_y, -pad_x, -pad_y)
 
-        # Icon
-        icon_size = 24
-        icon_pix = self._get_icon(path, icon_size)
-        icon_y = content.top() + (content.height() - icon_size) // 2
-        painter.drawPixmap(content.left(), icon_y, icon_pix)
+        # === Icon dalam "badge" rounded (kontainer) ===
+        badge_size = 38
+        badge_x = content.left()
+        badge_y = content.top() + (content.height() - badge_size) // 2
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(79, 191, 201, 40) if is_selected else QColor(255, 255, 255, 16))
+        painter.drawRoundedRect(badge_x, badge_y, badge_size, badge_size, 10, 10)
 
-        text_x = content.left() + icon_size + 10
+        icon_size = 22
+        icon_pix = self._get_icon(path, icon_size)
+        ic_x = badge_x + (badge_size - icon_size) // 2
+        ic_y = badge_y + (badge_size - icon_size) // 2
+        painter.drawPixmap(ic_x, ic_y, icon_pix)
+
+        text_x = badge_x + badge_size + 13
 
         # === Layout constants for right side (delete + size) ===
         del_size = 20
@@ -297,65 +315,65 @@ class TargetListDelegate(QStyledItemDelegate):
         if show_delete:
             # Red rounded background on hover (matching ClearButton style from Buka tab)
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor("#E74C3C"))
-            painter.drawRoundedRect(del_x, del_y, del_size, del_size, 4, 4)
+            painter.setBrush(QColor(CLR_DANGER))
+            painter.drawRoundedRect(del_x, del_y, del_size, del_size, 7, 7)
 
             # White close icon
             del_pix = self._get_delete_pixmap(True, del_size - 4)
-            icon_x = del_x + (del_size - (del_size - 4)) // 2
-            icon_y = del_y + (del_size - (del_size - 4)) // 2
-            painter.drawPixmap(icon_x, icon_y, del_pix)
+            dic_x = del_x + (del_size - (del_size - 4)) // 2
+            dic_y = del_y + (del_size - (del_size - 4)) // 2
+            painter.drawPixmap(dic_x, dic_y, del_pix)
 
-        # Use cached fonts (performance optimization)
+        # === SIZE (warna aksen, di-center vertikal di kanan) ===
         size_str = format_file_size(size_bytes if size_bytes is not None else -1)
-
         size_w = self.fm_size.horizontalAdvance(size_str)
 
-        # Right reservation: always leave room for size + comfortable gap.
-        # When hovering, also reserve space for the delete button.
-        right_reserve = 8
+        right_reserve = 10
         if show_delete:
-            right_reserve += del_size + 8
-
-        # Size right-aligned within reserved area
+            right_reserve += del_size + 10
         size_right = content.right() - right_reserve
         size_x = size_right - size_w
 
-        # Path stops before gap + size (use path font metrics for correct eliding)
-        path_to_size_gap = 12
+        # Lebar maksimum path & name (sisakan ruang untuk size + delete)
+        path_to_size_gap = 14
         max_path_w = max(50, (size_x - path_to_size_gap) - text_x)
-
-        # Name reservation
         name_right_reserve = 6 if show_delete else 2
         max_name_w = max(
             80,
-            (content.right() - name_right_reserve - (del_size + 6 if show_delete else 0)) - text_x,
+            (content.right() - name_right_reserve - (del_size + 8 if show_delete else 0)) - text_x,
         )
 
-        # === NAME (SemiBold 9.5pt) ===
+        # === Blok NAME + PATH, di-center vertikal terhadap badge ===
+        line_gap = 4
+        block_h = self.fm_name.height() + line_gap + self.fm_path.height()
+        block_top = content.top() + (content.height() - block_h) // 2
+
         painter.setFont(self.name_font)
         elided_name = self.fm_name.elidedText(name, Qt.TextElideMode.ElideMiddle, max_name_w)
-        painter.setPen(QColor("#FFFFFF"))
-        name_y = content.top() + 13
+        painter.setPen(QColor(CLR_TEXT_MAIN))
+        name_y = block_top + self.fm_name.ascent()
         painter.drawText(text_x, name_y, elided_name)
 
-        # === PATH (Light 8pt) + SIZE (Regular 8pt) ===
         painter.setFont(self.path_font)
         dirname = os.path.dirname(path) or ""
         path_elided = self.fm_path.elidedText(dirname, Qt.TextElideMode.ElideMiddle, max_path_w)
-        painter.setPen(QColor("#8B95A5"))
-        painter.drawText(text_x, name_y + 15, path_elided)
+        painter.setPen(QColor(CLR_TEXT_DIM))
+        path_y = block_top + self.fm_name.height() + line_gap + self.fm_path.ascent()
+        painter.drawText(text_x, path_y, path_elided)
 
         painter.setFont(self.size_font)
-        painter.setPen(QColor("#6B7688"))
-        painter.drawText(size_x, name_y + 15, size_str)
+        painter.setPen(QColor(CLR_ACCENT))
+        size_baseline = (
+            content.top() + (content.height() + self.fm_size.ascent() - self.fm_size.descent()) // 2
+        )
+        painter.drawText(size_x, size_baseline, size_str)
 
         painter.restore()
 
     def sizeHint(self, option, index):
         # Fixed height for consistent rich rows (using richer typography now)
         w = option.rect.width() if option.rect.width() > 80 else 420
-        return QSize(w, 58)
+        return QSize(w, 60)
 
     def editorEvent(self, event, model, option, index):
         """Tangani klik pada tombol hapus (hanya muncul saat hover)."""
@@ -437,22 +455,22 @@ class DropZoneLock(QWidget):
         if hasattr(self, "card_target"):
             self.card_target.drag_state_changed.connect(self.icon_empty.set_drag_active)
 
-        self.lbl_main_empty = QLabel("Drag & drop file atau folder ke sini")
+        self.lbl_main_empty = QLabel("Drag & drop a file or folder here")
         self.lbl_main_empty.setObjectName("DropZoneMainText")
         self.lbl_main_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.lbl_sub_empty = QLabel("atau klik tombol di bawah untuk memilih secara manual")
+        self.lbl_sub_empty = QLabel("or click the button below to choose manually")
         self.lbl_sub_empty.setObjectName("DropZoneSubText")
         self.lbl_sub_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.btn_empty_browse = QPushButton(" Pilih Target")
+        self.btn_empty_browse = QPushButton(" Choose Target")
         self.btn_empty_browse.setIcon(qta.icon("mdi6.folder-plus", color="white"))
         self.btn_empty_browse.setObjectName("BtnBrowseLg")
         self.btn_empty_browse.setFixedSize(220, 42)
         self.btn_empty_browse.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_empty_browse.setMenu(self.menu)
 
-        self.lbl_footer_empty = QLabel("Mendukung semua format file dan folder tak terbatas")
+        self.lbl_footer_empty = QLabel("Supports all file formats and unlimited folders")
         self.lbl_footer_empty.setObjectName("DropZoneFooter")
         self.lbl_footer_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -478,21 +496,21 @@ class DropZoneLock(QWidget):
 
         row_hdr = QHBoxLayout()
         icon_folder = QLabel()
-        icon_folder.setPixmap(qta.icon("mdi6.folder-open", color="#F1C40F").pixmap(32, 32))
+        icon_folder.setPixmap(qta.icon("mdi6.folder-open-outline", color=CLR_WARN).pixmap(32, 32))
 
         v_hdr_text = QVBoxLayout()
         v_hdr_text.setSpacing(3)
-        lbl_target = QLabel("DAFTAR TARGET")
+        lbl_target = QLabel("Target list")
         lbl_target.setObjectName("TargetHeaderTitle")  # bigger specific title for daftar target
-        lbl_target_sub = QLabel("Pilih file atau folder yang akan dikunci")
-        lbl_target_sub.setObjectName("CardSubtitle")
+        self.lbl_target_sub = QLabel("Choose the file or folder to lock")
+        self.lbl_target_sub.setObjectName("CardSubtitle")
         v_hdr_text.addWidget(lbl_target)
-        v_hdr_text.addWidget(lbl_target_sub)
+        v_hdr_text.addWidget(self.lbl_target_sub)
 
         self.btn_split_add = TambahClearSplitButton(self.menu, self._clear_all_paths)
         self.btn_add = self.btn_split_add.btn_add
-        self.btn_add.setAccessibleName("Tambah Target")
-        self.btn_split_add.btn_clear.setAccessibleName("Bersihkan Semua Target")
+        self.btn_add.setAccessibleName("Add Target")
+        self.btn_split_add.btn_clear.setAccessibleName("Clear All Targets")
 
         row_hdr.addWidget(icon_folder)
         row_hdr.addLayout(v_hdr_text)
@@ -511,22 +529,22 @@ class DropZoneLock(QWidget):
         # PERBAIKAN: Selalu gunakan selector class (QListView) saat mencampur
         # property utama dengan child selector (QScrollBar). Ini mencegah Qt
         # membuang seluruh stylesheet dan menghasilkan error parse berulang.
-        self.list_view.setStyleSheet("""
-            QListView {
+        self.list_view.setStyleSheet(f"""
+            QListView {{
                 background: transparent;
                 border: none;
                 outline: none;
-            }
+            }}
 
-            QScrollBar:vertical {
+            QScrollBar:vertical {{
                 width: 6px;
-                background: #1A2235;
-            }
-            QScrollBar::handle:vertical {
-                background: #3A4558;
+                background: {CLR_INSET};
+            }}
+            QScrollBar::handle:vertical {{
+                background: {CLR_SCROLL_HANDLE};
                 border-radius: 3px;
                 min-height: 20px;
-            }
+            }}
         """)
         self.list_view.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.list_view.setMouseTracking(True)
@@ -541,9 +559,9 @@ class DropZoneLock(QWidget):
         self.list_view.setAcceptDrops(False)
         self.list_view.setDropIndicatorShown(False)
 
-        self.list_view.setAccessibleName("Daftar Target")
+        self.list_view.setAccessibleName("Target List")
         self.list_view.setAccessibleDescription(
-            "Daftar file dan folder yang akan dikunci. Gunakan tombol hapus atau tombol Delete pada keyboard."
+            "List of files and folders to lock. Use the delete button or the Delete key on your keyboard."
         )
 
         self.target_model = TargetListModel()
@@ -559,7 +577,19 @@ class DropZoneLock(QWidget):
 
         inner_lay.addWidget(self.list_view)
         lay_list.addWidget(self.inner_frame, 1)
+
+        # Slot opsi (mis. "Delete original") di dasar card — diisi oleh TabKunci.
+        self.options_host = QVBoxLayout()
+        self.options_host.setContentsMargins(0, 0, 0, 0)
+        self.options_host.setSpacing(0)
+        lay_list.addLayout(self.options_host)
+
         self.stack_target.addWidget(page_list)
+
+    def embed_options(self, widget):
+        """Sisipkan widget opsi (mis. 'Delete original') ke dasar card target."""
+        if hasattr(self, "options_host"):
+            self.options_host.addWidget(widget)
 
     def _update_card_style(self, is_empty: bool):
         """Update visual state via properties (styled globally in styles.py)."""
@@ -638,19 +668,41 @@ class DropZoneLock(QWidget):
             return
         self._paths = self.target_model.getPaths()
         self.paths_changed.emit(self._paths)
+        self._update_target_summary()
         # Reset hover state setelah perubahan struktural
         if hasattr(self, "target_delegate"):
             self.target_delegate._hovered_row = -1
             if hasattr(self, "list_view") and self.list_view.viewport():
                 self.list_view.viewport().update()
 
+    def _update_target_summary(self):
+        """Subtitle header daftar target: 'N files · UKURAN total' (mengikuti desain)."""
+        if not hasattr(self, "lbl_target_sub"):
+            return
+        n = len(self._paths)
+        if n == 0:
+            self.lbl_target_sub.setStyleSheet("")
+            self.lbl_target_sub.setText("Choose the file or folder to lock")
+            return
+        total = 0
+        for p in self._paths:
+            try:
+                if os.path.isfile(p):
+                    total += os.path.getsize(p)
+            except OSError:
+                pass
+        noun = "file" if n == 1 else "files"
+        # Ringkasan diberi warna aksen (mengikuti desain target).
+        self.lbl_target_sub.setStyleSheet(f"color: {CLR_ACCENT}; font-weight: 600;")
+        self.lbl_target_sub.setText(f"{n} {noun} · {format_file_size(total)} total")
+
     def _pilih_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Pilih Folder")
+        folder = QFileDialog.getExistingDirectory(self, "Choose Folder")
         if folder:
             self._add_paths([folder])
 
     def _pilih_file(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "Pilih File")
+        files, _ = QFileDialog.getOpenFileNames(self, "Choose Files")
         if files:
             self._add_paths(files)
 
@@ -658,7 +710,7 @@ class DropZoneLock(QWidget):
         added = []
         for p in new_paths:
             if p.lower().endswith(".adtn"):
-                self.warning_emitted.emit(f"⚠ '{os.path.basename(p)}' sudah jadi file brankas!")
+                self.warning_emitted.emit(f"⚠ '{os.path.basename(p)}' is already a vault file!")
                 continue
             if p not in self._paths:
                 self._paths.append(p)
@@ -687,13 +739,13 @@ class DropZoneLock(QWidget):
             return
         if len(self._paths) > 1:
             dialog = ModernMessageBox(
-                title="Bersihkan Daftar Target",
-                message=f"Apakah Anda yakin ingin menghapus semua {len(self._paths)} target dari daftar?",
+                title="Clear Target List",
+                message=f"Are you sure you want to remove all {len(self._paths)} targets from the list?",
                 icon_name="mdi6.trash-can-outline",
-                icon_color="#E74C3C",
+                icon_color=CLR_DANGER,
                 parent=self,
             )
-            dialog.btn_yes.setText("Bersihkan")
+            dialog.btn_yes.setText("Clear")
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return
         self._paths.clear()

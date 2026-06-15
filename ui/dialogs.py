@@ -17,13 +17,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .styles import CLR_WARN
 from .widgets import apply_shadow
 
 
 class ModernMessageBox(QDialog):
     """Dialog konfirmasi modern dengan style dark dan centering yang reliable."""
 
-    def __init__(self, title, message, icon_name="mdi6.alert", icon_color="#F39C12", parent=None):
+    def __init__(self, title, message, icon_name="mdi6.alert", icon_color=CLR_WARN, parent=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -72,13 +73,13 @@ class ModernMessageBox(QDialog):
         btn_lay.setSpacing(10)  # Premium tight button spacing
         btn_lay.addStretch()
 
-        self.btn_cancel = QPushButton("Batal")
+        self.btn_cancel = QPushButton("Cancel")
         self.btn_cancel.setObjectName("BtnDialogCancel")
         self.btn_cancel.setFixedHeight(42)
         self.btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_cancel.clicked.connect(self.reject)
 
-        self.btn_yes = QPushButton("Lanjutkan")
+        self.btn_yes = QPushButton("Continue")
         self.btn_yes.setFixedHeight(42)
         self.btn_yes.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_yes.setObjectName("BtnAlertConfirm")
