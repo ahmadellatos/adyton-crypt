@@ -716,6 +716,10 @@ class DropZoneLock(QWidget):
         self.paths_changed.emit(self._paths)
 
     # --- PUBLIC API ---
+    def add_paths(self, paths) -> None:
+        """Tambah path secara programatik (mis. dari context menu)."""
+        self._add_paths(list(paths))
+
     def get_paths(self) -> list:
         return self._paths
 

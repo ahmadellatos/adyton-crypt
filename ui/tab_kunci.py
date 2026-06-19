@@ -171,6 +171,10 @@ class TabKunci(QWidget):
             self.btn_aksi.setTextLabels(title, subtitle)
             self.btn_aksi.setProgressAnimated(val)
 
+    def auto_load_paths(self, paths: list[str]) -> None:
+        """Muat path dari luar (context menu hybrid) ke drop zone tab Kunci."""
+        self.drop_zone.add_paths(list(paths))
+
     def _proses(self):
         if self._external_busy and self.worker is None:
             self.notif.show_msg(

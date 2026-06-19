@@ -406,11 +406,14 @@ class TitleBarButton(QPushButton):
 
 # ── TITLE BAR CUSTOM ────────────────────────────────────────────────
 class CustomTitleBar(QFrame):
-    def __init__(self, parent):
+    def __init__(self, parent, compact: bool = False, title: str = "Adyton Crypt"):
         super().__init__(parent)
         self.parent_window = parent
         self.setFixedHeight(46)
-        self.setStyleSheet(f"background-color: {CLR_INSET};")
+        # Mode compact (quick-action) menyatu dengan badan window; app utama tetap
+        # memakai warna inset agar titlebar terbaca terpisah dari konten.
+        bar_bg = CLR_WINDOW if compact else CLR_INSET
+        self.setStyleSheet(f"background-color: {bar_bg};")
 
         lay = QHBoxLayout(self)
         lay.setContentsMargins(20, 0, 0, 0)
@@ -428,7 +431,7 @@ class CustomTitleBar(QFrame):
         )
 
         # Judul bersih
-        lbl_title = QLabel("Adyton Crypt")
+        lbl_title = QLabel(title)
         lbl_title.setObjectName("MutedText")
 
         lay.addWidget(self.lbl_icon)
@@ -453,6 +456,12 @@ class CustomTitleBar(QFrame):
         control_lay.addWidget(self.btn_close)
 
         lay.addLayout(control_lay)
+
+        # Window transient (mis. quick-action dari context menu) hanya perlu tombol
+        # tutup — minimize/maximize tidak relevan untuk dialog satu-tugas.
+        if compact:
+            self.btn_min.hide()
+            self.btn_max.hide()
 
     def _toggle_maximize(self):
         if self.parent_window.isMaximized():

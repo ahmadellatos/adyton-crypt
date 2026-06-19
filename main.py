@@ -4,6 +4,7 @@ Entry point Adyton Crypt dengan Loguru, kapabilitas System Tray,
 Single Instance Lock (IPC) dengan File Association Support, dan Global Exception Handler.
 """
 
+import argparse
 import contextlib
 import ctypes
 import os
@@ -132,24 +133,46 @@ def global_exception_handler(exc_type, exc_value, exc_traceback) -> None:
 # =========================================================================
 
 
+def _bring_to_front(window: "AppBrankas") -> None:
+    window.showNormal()
+    window.activateWindow()
+    window.raise_()
+
+
 def handle_wakeup(server: QLocalServer, window: "AppBrankas") -> None:
-    """Terima payload WAKEUP dari instance kedua, lalu bawa window ke depan."""
+    """Terima payload dari instance kedua dan tangani.
+
+    Dua jenis pesan:
+      WAKEUP|<path>            → asosiasi file (double-click .adtn) → buka decrypt
+      QUICK|<mode>|<p1>|<p2>…  → context menu (hybrid) → encrypt/decrypt di app ini
+    """
     client = server.nextPendingConnection()
-    if not client.waitForReadyRead(500):
+    if client is None:
+        return
+    # Data bisa sudah ter-buffer sebelum slot ini jalan (umum di koneksi pertama);
+    # hanya tunggu bila belum ada apa pun, agar tidak melewatkan payload.
+    if client.bytesAvailable() == 0 and not client.waitForReadyRead(1000):
         client.disconnectFromServer()
         return
     try:
         payload = client.readAll().data().decode("utf-8")
-        if payload.startswith("WAKEUP|"):
+        if payload.startswith("QUICK|"):
+            parts = payload.split("|")
+            mode = parts[1] if len(parts) > 1 else ""
+            paths = [p for p in parts[2:] if p and os.path.exists(p)]
+            _bring_to_front(window)
+            if mode == "encrypt" and paths:
+                window.kunci_file_dari_luar(paths)
+            elif mode == "decrypt" and paths:
+                window.buka_file_dari_luar(paths[0])
+        elif payload.startswith("WAKEUP|"):
             parts = payload.split("|", 1)
             path = parts[1] if len(parts) > 1 else ""
-            window.showNormal()
-            window.activateWindow()
-            window.raise_()
+            _bring_to_front(window)
             if path and os.path.exists(path):
                 window.buka_file_dari_luar(path)
     except Exception as e:
-        logger.error(f"Gagal parsing IPC Wakeup payload: {e}")
+        logger.error(f"Gagal parsing IPC payload: {e}")
     finally:
         client.disconnectFromServer()
 
@@ -177,6 +200,30 @@ def try_send_to_existing_instance(file_arg: str) -> bool:
     return True
 
 
+def try_forward_quick_action(mode: str, paths: list[str]) -> bool:
+    """Teruskan aksi context menu ke instance yang sudah berjalan (hybrid).
+
+    Return True jika app aktif menerima (dialog mini tak perlu dibuka),
+    False jika tidak ada instance → fallback ke dialog mini.
+    """
+    socket = QLocalSocket()
+    socket.connectToServer(APP_AUMID)
+    if not socket.waitForConnected(500):
+        socket.deleteLater()
+        return False
+
+    payload = ("QUICK|" + mode + "|" + "|".join(paths)).encode("utf-8")
+    socket.write(payload)
+    socket.waitForBytesWritten(1000)
+    socket.flush()
+    # Tunggu server selesai membaca lalu menutup koneksi — mencegah race di mana
+    # proses ini keluar dan merobohkan pipe sebelum server sempat membaca.
+    socket.waitForDisconnected(2000)
+    socket.deleteLater()
+    logger.info(f"Quick action diteruskan ke instance aktif: {mode} ({len(paths)} path).")
+    return True
+
+
 def create_ipc_server() -> QLocalServer | None:
     """Buat IPC server untuk single instance lock.
     Return QLocalServer jika berhasil, None jika gagal.
@@ -198,36 +245,88 @@ def create_ipc_server() -> QLocalServer | None:
 # =========================================================================
 
 
-def main() -> None:
-    # Urutan setup ini kritis — jangan diubah
-    setup_windows_aumid()  # 1. AUMID harus di-set sebelum QApplication
-    register_dev_shortcut()  # 2. Register icon di registry (no-op saat build)
-    setup_qt_env()  # 3. Env Qt harus di-set sebelum QApplication
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    """Parse argumen CLI.
 
-    log_path = setup_logging()
-    logger.info(f"Log disimpan di: {log_path}")
-    sys.excepthook = global_exception_handler
+    Flag quick-action (dipakai oleh context menu Windows) berdiri sendiri;
+    argumen posisional `file` mempertahankan perilaku asosiasi file lama
+    (double-click .adtn membuka full app).
+    """
+    parser = argparse.ArgumentParser(prog="adyton", add_help=False)
+    parser.add_argument("--encrypt", nargs="+", metavar="PATH")
+    parser.add_argument("--decrypt", metavar="VAULT")
+    parser.add_argument("--shred", nargs="+", metavar="PATH")
+    parser.add_argument("file", nargs="?", default=None)
+    args, _ = parser.parse_known_args(argv[1:])
+    return args
 
-    app = QApplication(sys.argv)
-    app.setApplicationName(APP_NAME)
-    app.setOrganizationName(APP_ORG)
-    app.setQuitOnLastWindowClosed(False)
 
-    file_arg = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1].lower().endswith(".adtn") else ""
-
-    if try_send_to_existing_instance(file_arg):
-        sys.exit(0)
-
-    ipc_server = create_ipc_server()
-
-    logger.info(f"=== Memulai {APP_NAME} ===")
-
+def apply_theme(app: QApplication) -> None:
+    """Font + stylesheet design-system. Dibutuhkan SEMUA mode."""
     setup_fonts(app)
-
     try:
         app.setStyleSheet(load_stylesheet())
     except Exception as e:
         logger.error(f"Gagal memuat stylesheet: {e}")
+
+
+def run_quick_action(app: QApplication, args: argparse.Namespace) -> int:
+    """Mode transient untuk context menu — satu window, tutup = proses keluar.
+
+    Sengaja melewati single-instance lock + tray: tiap aksi berdiri sendiri.
+    """
+    from ui.quick_action import QuickActionWindow, QuickMode
+
+    app.setQuitOnLastWindowClosed(True)
+
+    if args.encrypt:
+        mode, paths, forward_mode = QuickMode.ENCRYPT, args.encrypt, "encrypt"
+    elif args.decrypt:
+        mode, paths, forward_mode = QuickMode.DECRYPT, [args.decrypt], "decrypt"
+    else:
+        # Shred tak punya padanan di full app → selalu dialog mini, tak diteruskan.
+        mode, paths, forward_mode = QuickMode.SHRED, args.shred, None
+
+    paths = [p for p in paths if os.path.exists(p)]
+    if not paths:
+        QMessageBox.warning(None, APP_NAME, "File atau folder tidak ditemukan.")
+        return 1
+
+    # Vault tidak boleh dikunci ulang (mencegah nested lock).
+    if mode is QuickMode.ENCRYPT:
+        non_vault = [p for p in paths if not p.lower().endswith(".adtn")]
+        if not non_vault:
+            QMessageBox.warning(
+                None,
+                APP_NAME,
+                "File .adtn sudah berupa vault terkunci — tidak bisa dikunci lagi.",
+            )
+            return 1
+        paths = non_vault
+
+    # HYBRID: kalau app sudah berjalan di tray, teruskan ke instance itu (instan,
+    # tanpa cold-start). Kalau tidak ada → buka dialog mini yang ringan.
+    if forward_mode is not None and try_forward_quick_action(forward_mode, paths):
+        return 0
+
+    logger.info(f"=== Quick action (dialog): {mode.name} ({len(paths)} path) ===")
+    window = QuickActionWindow(mode, paths)
+    window.show()
+    return app.exec()
+
+
+def run_full_app(app: QApplication, args: argparse.Namespace) -> int:
+    """Mode default — tray, IPC, single-instance lock (perilaku lama)."""
+    app.setQuitOnLastWindowClosed(False)
+
+    file_arg = args.file if (args.file and args.file.lower().endswith(".adtn")) else ""
+
+    if try_send_to_existing_instance(file_arg):
+        return 0
+
+    ipc_server = create_ipc_server()
+
+    logger.info(f"=== Memulai {APP_NAME} ===")
 
     window = AppBrankas()
 
@@ -239,7 +338,28 @@ def main() -> None:
     if file_arg and os.path.exists(file_arg):
         window.buka_file_dari_luar(file_arg)
 
-    sys.exit(app.exec())
+    return app.exec()
+
+
+def main() -> None:
+    # Urutan setup ini kritis — jangan diubah
+    setup_windows_aumid()  # 1. AUMID harus di-set sebelum QApplication
+    register_dev_shortcut()  # 2. Register icon di registry (no-op saat build)
+    setup_qt_env()  # 3. Env Qt harus di-set sebelum QApplication
+
+    log_path = setup_logging()
+    logger.info(f"Log disimpan di: {log_path}")
+    sys.excepthook = global_exception_handler
+
+    args = parse_args(sys.argv)
+
+    app = QApplication(sys.argv)
+    app.setApplicationName(APP_NAME)
+    app.setOrganizationName(APP_ORG)
+    apply_theme(app)
+
+    is_quick = bool(args.encrypt or args.decrypt or args.shred)
+    sys.exit(run_quick_action(app, args) if is_quick else run_full_app(app, args))
 
 
 if __name__ == "__main__":

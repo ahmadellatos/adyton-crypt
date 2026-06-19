@@ -601,6 +601,18 @@ class AppBrankas(FramelessMainWindow):
         self.btn_nav_buka.setFocus(Qt.FocusReason.OtherFocusReason)
         self.tab_buka.auto_load_file(path)
 
+    def kunci_file_dari_luar(self, paths: list[str]) -> None:
+        """Quick encrypt dari context menu (hybrid): muat path ke tab Kunci."""
+        logger.info(f"Quick encrypt dipicu untuk {len(paths)} path.")
+        self.btn_nav_kunci.setChecked(True)
+        self.btn_nav_buka.setChecked(False)
+        self.btn_nav_teks.setChecked(False)
+        self.stacked_tabs.setCurrentIndex(0)
+        self._update_page_header(0)
+        self._refresh_status_for_tab(0)
+        self.btn_nav_kunci.setFocus(Qt.FocusReason.OtherFocusReason)
+        self.tab_kunci.auto_load_paths(paths)
+
     def _update_action_button_tab_order(self):
         current_tab = self.stacked_tabs.currentWidget()
         if hasattr(current_tab, "btn_aksi"):
