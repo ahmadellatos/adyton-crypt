@@ -33,7 +33,7 @@ from .styles import (
 class BigActionBtn(QPushButton):
     """Tombol aksi besar utama (Kunci / Buka)."""
 
-    def __init__(self, title, subtitle, icon_name="mdi6.lock", parent=None):
+    def __init__(self, title, subtitle, icon_name="mdi6.lock-outline", parent=None):
         super().__init__(parent)
         self.setObjectName("BtnAksiBesar")
         self.setFixedHeight(58)  # pill ramping, satu baris (design system CTA)

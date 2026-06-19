@@ -1,4 +1,3 @@
-import qtawesome as qta
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
@@ -13,7 +12,7 @@ from ..styles import (
     CLR_TEXT_MUTED,
     CLR_WARN,
 )
-from ..widgets import PasswordLineEdit, apply_shadow
+from ..widgets import PasswordLineEdit, apply_shadow, build_tips_box
 
 
 class PasswordPanelOpen(QFrame):
@@ -62,45 +61,24 @@ class PasswordPanelOpen(QFrame):
         self.v_pw.addWidget(self.info_box)
 
     def _build_info_box(self) -> QFrame:
-        info_box = QFrame()
-        info_box.setObjectName("TipsBox")
-        lay_info = QVBoxLayout(info_box)
-        lay_info.setContentsMargins(14, 12, 14, 12)
-        lay_info.setSpacing(10)
-
         tips = [
             (
-                "mdi6.shield-key-outline",
+                "mdi6.shield-check-outline",
                 CLR_ACCENT,
                 "Your password can't be recovered. Keep it somewhere safe.",
             ),
             (
-                "mdi6.lock-alert-outline",
+                "mdi6.lock-outline",
                 CLR_WARN,
                 "Use the exact password you created when locking this vault.",
             ),
             (
-                "mdi6.file-lock-outline",
+                "mdi6.file-document-outline",
                 CLR_TEXT_MUTED,
                 "Only .adtn files created by Adyton Crypt can be opened.",
             ),
         ]
-
-        for icon_name, color, text in tips:
-            row = QHBoxLayout()
-            row.setSpacing(8)
-            lbl_ic = QLabel()
-            lbl_ic.setPixmap(qta.icon(icon_name, color=color).pixmap(15, 15))
-            lbl_ic.setFixedSize(15, 15)
-            row.addWidget(lbl_ic, alignment=Qt.AlignmentFlag.AlignTop)
-
-            lbl_tx = QLabel(text)
-            lbl_tx.setWordWrap(True)
-            lbl_tx.setObjectName("TipText")
-            row.addWidget(lbl_tx, 1)
-            lay_info.addLayout(row)
-
-        return info_box
+        return build_tips_box(tips, content_margins=(14, 12, 14, 12), spacing=10, icon_px=15)
 
     def _build_status_box(self) -> QFrame:
         box = QFrame()

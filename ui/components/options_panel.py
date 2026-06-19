@@ -31,9 +31,7 @@ class KeyboardCheckbox(QFrame):
 
         if state:
             icon_sz = self.width() - 4
-            self.lbl_icon.setPixmap(
-                qta.icon("mdi6.check-bold", color="white").pixmap(icon_sz, icon_sz)
-            )
+            self.lbl_icon.setPixmap(qta.icon("mdi6.check", color="white").pixmap(icon_sz, icon_sz))
         else:
             self.lbl_icon.clear()
 
@@ -167,7 +165,7 @@ class OptionsPanel(QWidget):
                 "• Avoid this on SSDs — repeated overwrites accelerate drive wear.\n"
                 "• Use it only for traditional hard drives (HDD).\n\n"
                 "Enable Secure Wipe?",
-                icon_name="mdi6.alert-decagram",
+                icon_name="mdi6.alert-octagon-outline",
                 icon_color=CLR_WARN_DK,
                 parent=self,
             )

@@ -50,52 +50,11 @@ from ..styles import (
 from ..utils import format_file_size
 from ..widgets import (
     CustomToolTip,
+    DragDropFrame,
     ElidedLabel,
     HeroIconWidget,
     apply_shadow,
 )
-
-
-class DropTargetFrame(QFrame):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("DropArea")
-        self.setAcceptDrops(True)
-        self.on_file_dropped = None
-        # Default empty state (consistent with DropZoneLock)
-        self.setProperty("empty", True)
-
-    def set_empty_state(self, is_empty: bool):
-        """Set empty state via property so global stylesheet applies (same as DropZoneLock)."""
-        self.setProperty("empty", is_empty)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-    def _set_drag_state(self, state: bool):
-        self.setProperty("dragActive", state)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            for url in event.mimeData().urls():
-                if url.toLocalFile().lower().endswith(".adtn"):
-                    self._set_drag_state(True)
-                    event.acceptProposedAction()
-                    return
-        event.ignore()
-
-    def dragLeaveEvent(self, event):
-        self._set_drag_state(False)
-
-    def dropEvent(self, event):
-        self._set_drag_state(False)
-        for url in event.mimeData().urls():
-            path = url.toLocalFile()
-            if path.lower().endswith(".adtn"):
-                if self.on_file_dropped:
-                    self.on_file_dropped(path)
-                break
 
 
 class DropZoneOpen(QWidget):
@@ -116,9 +75,9 @@ class DropZoneOpen(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.card_file = DropTargetFrame()
+        self.card_file = DragDropFrame(multi=False, accept=lambda p: p.lower().endswith(".adtn"))
         apply_shadow(self.card_file, blur_radius=30, opacity=40)
-        self.card_file.on_file_dropped = self._set_file
+        self.card_file.on_drop = lambda paths: self._set_file(paths[0])
 
         layout_card = QVBoxLayout(self.card_file)
         layout_card.setContentsMargins(2, 2, 2, 2)
@@ -150,7 +109,7 @@ class DropZoneOpen(QWidget):
         self.lbl_sub_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.btn_browse_center = QPushButton(" Choose Vault File")
-        self.btn_browse_center.setIcon(qta.icon("mdi6.folder-search", color="white"))
+        self.btn_browse_center.setIcon(qta.icon("mdi6.folder-open-outline", color="white"))
         self.btn_browse_center.setFixedSize(220, 42)
         self.btn_browse_center.setObjectName("BtnBrowseLg")
         self.btn_browse_center.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -223,7 +182,7 @@ class DropZoneOpen(QWidget):
         self.icon_file = QLabel()
         self.icon_file.setObjectName("SelectedFileIcon")
         self.icon_file.setPixmap(
-            qta.icon("mdi6.file-lock-outline", color=CLR_ACCENT).pixmap(38, 38)
+            qta.icon("mdi6.file-document-outline", color=CLR_ACCENT).pixmap(38, 38)
         )
         self.icon_file.setFixedSize(44, 44)
         self.icon_file.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -317,8 +276,8 @@ class DropZoneOpen(QWidget):
         enc_grid.setVerticalSpacing(10)
         self.enc_items = []
         enc_defs = [
-            ("mdi6.shield-lock", "Encryption", "AES-256-GCM"),
-            ("mdi6.key-variant", "KDF", "—"),
+            ("mdi6.shield-outline", "Encryption", "AES-256-GCM"),
+            ("mdi6.key-outline", "KDF", "—"),
             ("mdi6.package-variant-closed", "Format", "—"),
             ("mdi6.fingerprint", "Integrity", "Not yet verified"),
         ]

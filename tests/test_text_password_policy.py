@@ -19,19 +19,20 @@ def test_text_encrypt_mode_requires_lock_grade_password(qtbot):
 
     assert panel.get_mode() == "enkripsi"
 
+    # In encrypt mode the password fields live in the shared CreatePasswordForm.
     # Weak password (too short, missing character classes) — even when the
     # confirmation matches, the gate must reject it.
-    panel.entry_pw1.setText("weak")
-    panel.entry_pw2.setText("weak")
+    panel.form.entry_pw1.setText("weak")
+    panel.form.entry_pw2.setText("weak")
     assert panel.is_valid() is False
 
     # Strong password meeting all five rules + matching confirm → accepted.
-    panel.entry_pw1.setText(STRONG_PW)
-    panel.entry_pw2.setText(STRONG_PW)
+    panel.form.entry_pw1.setText(STRONG_PW)
+    panel.form.entry_pw2.setText(STRONG_PW)
     assert panel.is_valid() is True
 
     # Mismatched confirmation → rejected again.
-    panel.entry_pw2.setText(STRONG_PW + "x")
+    panel.form.entry_pw2.setText(STRONG_PW + "x")
     assert panel.is_valid() is False
 
 
@@ -41,12 +42,24 @@ def test_text_decrypt_mode_accepts_any_nonempty_password(qtbot):
     qtbot.addWidget(panel)
 
     # Strength can't be enforced on a password that was chosen previously.
-    panel.btn_mode_dekripsi.setChecked(True)
-    panel._on_mode_button_clicked(panel.btn_mode_dekripsi)
+    panel.set_mode("dekripsi")
     assert panel.get_mode() == "dekripsi"
 
-    panel.entry_pw1.setText("x")
+    panel.entry_decrypt.setText("x")
     assert panel.is_valid() is True
 
-    panel.entry_pw1.setText("")
+    panel.entry_decrypt.setText("")
     assert panel.is_valid() is False
+
+
+@pytest.mark.qt
+def test_set_mode_emits_only_on_change(qtbot):
+    panel = PasswordPanelTeks()
+    qtbot.addWidget(panel)
+
+    with qtbot.assertNotEmitted(panel.mode_changed):
+        panel.set_mode("enkripsi")  # already in this mode → no signal
+
+    with qtbot.waitSignal(panel.mode_changed) as blocker:
+        panel.set_mode("dekripsi")
+    assert blocker.args == ["dekripsi"]

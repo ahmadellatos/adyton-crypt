@@ -24,7 +24,9 @@ from .widgets import apply_shadow
 class ModernMessageBox(QDialog):
     """Dialog konfirmasi modern dengan style dark dan centering yang reliable."""
 
-    def __init__(self, title, message, icon_name="mdi6.alert", icon_color=CLR_WARN, parent=None):
+    def __init__(
+        self, title, message, icon_name="mdi6.alert-outline", icon_color=CLR_WARN, parent=None
+    ):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)

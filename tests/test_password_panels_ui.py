@@ -1,0 +1,127 @@
+"""Qt-level tests for the shared password widgets: CreatePasswordForm, the thin
+PasswordPanelLock wrapper, and the reusable widget builders."""
+
+import pytest
+
+pytest.importorskip("PySide6")
+
+from PySide6.QtWidgets import QSizePolicy
+
+from ui.components.create_password_form import CreatePasswordForm
+from ui.components.password_panel_lock import PasswordPanelLock
+from ui.widgets import (
+    PasswordLineEdit,
+    build_card_header,
+    build_tips_box,
+    make_generator_button,
+)
+
+# 14 chars, no dictionary words, all four character classes present.
+STRONG_PW = "Zr4!qP9mWk2$tL"
+
+
+@pytest.mark.qt
+def test_create_form_enforces_full_gate(qtbot):
+    form = CreatePasswordForm()
+    qtbot.addWidget(form)
+
+    assert form.is_valid() is False  # empty
+
+    form.entry_pw1.setText("weak")
+    form.entry_pw2.setText("weak")
+    assert form.is_valid() is False  # fails checklist
+
+    form.entry_pw1.setText(STRONG_PW)
+    form.entry_pw2.setText(STRONG_PW)
+    assert form.is_valid() is True
+    assert form.get_password() == STRONG_PW
+
+    form.entry_pw2.setText(STRONG_PW + "x")
+    assert form.is_valid() is False  # mismatched confirmation
+
+
+@pytest.mark.qt
+def test_create_form_generate_produces_valid_matching_password(qtbot):
+    form = CreatePasswordForm()
+    qtbot.addWidget(form)
+
+    form.generate()
+    assert form.is_valid() is True
+    assert form.get_password() == form.entry_pw2.text()
+
+
+@pytest.mark.qt
+def test_create_form_reset_clears_and_invalidates(qtbot):
+    form = CreatePasswordForm()
+    qtbot.addWidget(form)
+
+    form.generate()
+    form.reset()
+    assert form.get_password() == ""
+    assert form.is_valid() is False
+
+
+@pytest.mark.qt
+def test_create_form_emits_valid_state(qtbot):
+    form = CreatePasswordForm()
+    qtbot.addWidget(form)
+
+    seen: list[bool] = []
+    form.valid_state_changed.connect(seen.append)
+    form.entry_pw1.setText(STRONG_PW)
+    form.entry_pw2.setText(STRONG_PW)
+    assert seen[-1] is True
+
+
+@pytest.mark.qt
+def test_lock_panel_delegates_to_form(qtbot):
+    panel = PasswordPanelLock()
+    qtbot.addWidget(panel)
+
+    assert panel.get_password() == ""
+
+    panel.btn_gen.click()  # generator fills the embedded form
+    assert panel.get_password() != ""
+    assert panel.form.is_valid() is True
+
+    panel.reset_fields()
+    assert panel.get_password() == ""
+
+
+@pytest.mark.qt
+def test_lock_panel_reemits_valid_signal(qtbot):
+    panel = PasswordPanelLock()
+    qtbot.addWidget(panel)
+
+    seen: list[bool] = []
+    panel.valid_state_changed.connect(seen.append)
+    panel.btn_gen.click()
+    assert seen[-1] is True
+
+
+@pytest.mark.qt
+def test_shared_builders(qtbot):
+    btn = make_generator_button()
+    assert btn.objectName() == "BtnGen"
+
+    _, title, sub = build_card_header(
+        "mdi6.key-outline", "#ffffff", "Title", "Subtitle", button=btn
+    )
+    assert title.objectName() == "CardTitle"
+    assert sub.objectName() == "CardSubtitle"
+    assert title.text() == "Title"
+    assert sub.text() == "Subtitle"
+
+    box = build_tips_box([("mdi6.lock-outline", "#ffffff", "hello")])
+    assert box.objectName() == "TipsBox"
+
+
+@pytest.mark.qt
+def test_password_input_height_is_fixed_and_uniform(qtbot):
+    # Every password field is a PasswordLineEdit; pinning its vertical policy
+    # keeps the box a uniform 52px regardless of surrounding layout space
+    # (regression guard for the Text-tab decrypt field looking taller).
+    pe = PasswordLineEdit("placeholder")
+    qtbot.addWidget(pe)
+    assert pe.sizePolicy().verticalPolicy() == QSizePolicy.Policy.Fixed
+    assert pe.sizeHint().height() == 52

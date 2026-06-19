@@ -42,49 +42,9 @@ from ..styles import (
 from ..utils import format_file_size
 from ..widgets import (
     CustomToolTip,
+    DragDropFrame,
     HeroIconWidget,
 )
-
-
-class MultiDropFrame(QFrame):
-    drag_state_changed = Signal(bool)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("DropArea")
-        self.setAcceptDrops(True)
-        self.on_paths_dropped = None
-        # Default state
-        self.setProperty("empty", True)
-
-    def set_empty_state(self, is_empty: bool):
-        """Set empty state via property (global stylesheet will handle visual)."""
-        self.setProperty("empty", is_empty)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-    def _set_drag_state(self, state: bool):
-        self.setProperty("dragActive", state)
-        self.style().unpolish(self)
-        self.style().polish(self)
-        self.drag_state_changed.emit(state)
-
-    def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
-            self._set_drag_state(True)
-            event.acceptProposedAction()
-        else:
-            event.ignore()
-
-    def dragLeaveEvent(self, event):
-        self._set_drag_state(False)
-
-    def dropEvent(self, event):
-        self._set_drag_state(False)
-        paths = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
-        valid_paths = [p for p in paths if os.path.exists(p)]
-        if valid_paths and self.on_paths_dropped:
-            self.on_paths_dropped(valid_paths)
 
 
 class TargetListModel(QAbstractListModel):
@@ -418,16 +378,16 @@ class DropZoneLock(QWidget):
 
         # Buat Menu Dropdown internal
         self.menu = AccessibleCenteredMenu(self)
-        action_file = CenteredMenuAction("File", "mdi6.file-document", parent=self.menu)
+        action_file = CenteredMenuAction("File", "mdi6.file-document-outline", parent=self.menu)
         action_file.triggered.connect(self._pilih_file)
         self.menu.addAction(action_file)
 
-        action_folder = CenteredMenuAction("Folder", "mdi6.folder", parent=self.menu)
+        action_folder = CenteredMenuAction("Folder", "mdi6.folder-outline", parent=self.menu)
         action_folder.triggered.connect(self._pilih_folder)
         self.menu.addAction(action_folder)
 
-        self.card_target = MultiDropFrame()
-        self.card_target.on_paths_dropped = self._add_paths
+        self.card_target = DragDropFrame(multi=True, accept=lambda p: bool(p) and os.path.exists(p))
+        self.card_target.on_drop = self._add_paths
         # Shadow sekarang dihandle oleh wrapper di TabKunci (LeftColumn)
 
         lay_target = QVBoxLayout(self.card_target)
@@ -464,7 +424,7 @@ class DropZoneLock(QWidget):
         self.lbl_sub_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.btn_empty_browse = QPushButton(" Choose Target")
-        self.btn_empty_browse.setIcon(qta.icon("mdi6.folder-plus", color="white"))
+        self.btn_empty_browse.setIcon(qta.icon("mdi6.folder-plus-outline", color="white"))
         self.btn_empty_browse.setObjectName("BtnBrowseLg")
         self.btn_empty_browse.setFixedSize(220, 42)
         self.btn_empty_browse.setCursor(Qt.CursorShape.PointingHandCursor)

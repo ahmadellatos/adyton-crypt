@@ -72,7 +72,7 @@ class TabBuka(QWidget):
         self.btn_aksi = BigActionBtn(
             "Open Vault",
             "Enter the password to open",
-            icon_name="mdi6.lock-open-variant",
+            icon_name="mdi6.lock-open-variant-outline",
         )
         self.btn_aksi.setAccessibleName("Open Vault button")
         self.btn_aksi.setEnabled(False)
@@ -130,7 +130,7 @@ class TabBuka(QWidget):
 
     def _reset_timpa(self):
         self._konfirmasi_timpa = False
-        self.btn_aksi.resetVisualIcons("mdi6.lock-open-variant")
+        self.btn_aksi.resetVisualIcons("mdi6.lock-open-variant-outline")
         self.btn_aksi.setProgressVisible(False)
         self.btn_aksi.setTextLabels("Open Vault", "Enter the password to unlock")
 
@@ -218,13 +218,13 @@ class TabBuka(QWidget):
             file_name, size_text = self._current_file_summary()
             self.password_panel.set_processing_state(file_name, size_text, "Verifying password")
             self.status_changed.emit("Verifying vault", "Keep the app open", "busy")
-            self.btn_aksi.setVisualIcons("mdi6.close-circle", "mdi6.close")
+            self.btn_aksi.setVisualIcons("mdi6.close-circle-outline", "mdi6.close")
             self.btn_aksi.setProgressVisible(True, 0.0)
             self.btn_aksi.setTextLabels("Opening vault", "Preparing vault • Click to cancel")
             self.btn_aksi.setEnabled(True)
             self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         else:
-            self.btn_aksi.resetVisualIcons("mdi6.lock-open-variant")
+            self.btn_aksi.resetVisualIcons("mdi6.lock-open-variant-outline")
             self.btn_aksi.setProgressVisible(False)
             self.btn_aksi.setTextLabels("Open Vault", "Enter the password to open")
             if self._has_file:
@@ -281,7 +281,7 @@ class TabBuka(QWidget):
                     "Adyton will extract to a temporary folder first, and only replace the existing data once the vault opens successfully.\n\n"
                     "Replace the existing data?"
                 ),
-                icon_name="mdi6.alert-decagram",
+                icon_name="mdi6.alert-octagon-outline",
                 icon_color=CLR_DANGER,
                 parent=self,
             )

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSizePolicy,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -47,6 +48,155 @@ from .styles import (
 )
 from .utils import apply_shadow
 
+# ── SHARED BUILDERS ─────────────────────────────────────────────────
+
+
+def make_generator_button() -> QPushButton:
+    """Tombol "Generator" standar (dipakai panel password Kunci & Teks)."""
+    btn = QPushButton(" Generator")
+    btn.setIcon(qta.icon("mdi6.creation", color="white"))
+    btn.setFixedHeight(36)
+    btn.setObjectName("BtnGen")
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.setAccessibleName("Generate Strong Password")
+    return btn
+
+
+def build_card_header(
+    icon_name: str,
+    icon_color: str,
+    title: str,
+    subtitle: str,
+    button: QPushButton | None = None,
+    *,
+    spacing: int = 10,
+):
+    """Header kartu standar: ikon 32px + CardTitle + CardSubtitle (+ tombol kanan).
+
+    Mengembalikan (layout, title_label, subtitle_label). `button` opsional dipasang
+    rata-kanan & top-aligned; caller tetap memegang referensinya.
+    """
+    row = QHBoxLayout()
+    row.setSpacing(spacing)
+
+    icon = QLabel()
+    icon.setPixmap(qta.icon(icon_name, color=icon_color).pixmap(32, 32))
+    icon.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+    v = QVBoxLayout()
+    v.setSpacing(3)
+    lbl_title = QLabel(title)
+    lbl_title.setObjectName("CardTitle")
+    lbl_sub = QLabel(subtitle)
+    lbl_sub.setObjectName("CardSubtitle")
+    lbl_sub.setWordWrap(True)
+    v.addWidget(lbl_title)
+    v.addWidget(lbl_sub)
+
+    row.addWidget(icon)
+    row.addLayout(v, 1)
+    if button is not None:
+        row.addSpacing(8)
+        row.addWidget(button, alignment=Qt.AlignmentFlag.AlignTop)
+    return row, lbl_title, lbl_sub
+
+
+def build_tips_box(
+    tips: list[tuple[str, str, str]],
+    *,
+    content_margins: tuple[int, int, int, int] = (14, 10, 14, 10),
+    spacing: int = 7,
+    icon_px: int = 14,
+    row_spacing: int = 8,
+) -> QFrame:
+    """Kotak tips standar (#TipsBox). `tips` = list of (icon_name, color, text)."""
+    box = QFrame()
+    box.setObjectName("TipsBox")
+    lay = QVBoxLayout(box)
+    lay.setContentsMargins(*content_margins)
+    lay.setSpacing(spacing)
+
+    for icon_name, color, text in tips:
+        row = QHBoxLayout()
+        row.setSpacing(row_spacing)
+        lbl_ic = QLabel()
+        lbl_ic.setPixmap(qta.icon(icon_name, color=color).pixmap(icon_px, icon_px))
+        lbl_ic.setFixedSize(icon_px, icon_px)
+        row.addWidget(lbl_ic, alignment=Qt.AlignmentFlag.AlignTop)
+        lbl_tx = QLabel(text)
+        lbl_tx.setWordWrap(True)
+        lbl_tx.setObjectName("TipText")
+        row.addWidget(lbl_tx, 1)
+        lay.addLayout(row)
+
+    return box
+
+
+# ── DRAG-DROP FRAME ─────────────────────────────────────────────────
+class DragDropFrame(QFrame):
+    """Area drop file standar (#DropArea), diparametrikan untuk dua mode.
+
+    - Tab Kunci: ``multi=True`` — terima semua path yang lolos ``accept``.
+    - Tab Buka:  ``multi=False`` — ambil item pertama yang lolos ``accept``
+      (mis. hanya ``.adtn``).
+
+    Set ``on_drop`` ke ``callable(list[str])`` (untuk single-mode list selalu 1
+    item). ``drag_state_changed(bool)`` dipancarkan saat drag masuk/keluar dan
+    boleh diabaikan oleh pemanggil yang tak memerlukannya.
+    """
+
+    drag_state_changed = Signal(bool)
+
+    def __init__(self, parent=None, *, multi: bool = True, accept=None):
+        super().__init__(parent)
+        self.setObjectName("DropArea")
+        self.setAcceptDrops(True)
+        self._multi = multi
+        self._accept = accept  # callable(path)->bool, atau None = terima non-kosong
+        self.on_drop = None  # callable(list[str])
+        self.setProperty("empty", True)
+
+    def set_empty_state(self, is_empty: bool):
+        """Set state kosong via property (stylesheet global yang menanganinya)."""
+        self.setProperty("empty", is_empty)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def _set_drag_state(self, state: bool):
+        self.setProperty("dragActive", state)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.drag_state_changed.emit(state)
+
+    def _accepts(self, path: str) -> bool:
+        if self._accept is not None:
+            return self._accept(path)
+        return bool(path)
+
+    def dragEnterEvent(self, event):
+        urls = event.mimeData().urls() if event.mimeData().hasUrls() else []
+        if any(self._accepts(u.toLocalFile()) for u in urls):
+            self._set_drag_state(True)
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event):
+        self._set_drag_state(False)
+
+    def _selected_paths(self, local_files: list[str]) -> list[str]:
+        """Saring lewat `accept` dan batasi sesuai `multi`. Dipisah agar mudah diuji."""
+        accepted = [p for p in local_files if self._accepts(p)]
+        if not accepted:
+            return []
+        return accepted if self._multi else accepted[:1]
+
+    def dropEvent(self, event):
+        self._set_drag_state(False)
+        paths = self._selected_paths([u.toLocalFile() for u in event.mimeData().urls()])
+        if paths and self.on_drop:
+            self.on_drop(paths)
+
 
 # ── HERO ICON WIDGET (FOLDER GLOWING) ───────────────────────────────
 class HeroIconWidget(QWidget):
@@ -66,7 +216,7 @@ class HeroIconWidget(QWidget):
         lbl_folder.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         lbl_overlay = QLabel(self)
-        icon_name = "mdi6.shield-lock-outline" if mode == "kunci" else "mdi6.shield-key-outline"
+        icon_name = "mdi6.shield-outline" if mode == "kunci" else "mdi6.shield-check-outline"
 
         self._overlay_icon_name = icon_name
         lbl_overlay.setPixmap(qta.icon(icon_name, color=CLR_ACCENT).pixmap(36, 36))
@@ -396,9 +546,9 @@ class AnimatedNotifBar(QFrame):
         )
         fg_color = CLR_SUCCESS if kind == "ok" else (CLR_DANGER if kind == "err" else CLR_WARN)
         icon_name = (
-            "mdi6.check-circle"
+            "mdi6.check-circle-outline"
             if kind == "ok"
-            else ("mdi6.close-circle" if kind == "err" else "mdi6.alert-circle")
+            else ("mdi6.close-circle-outline" if kind == "err" else "mdi6.alert-circle-outline")
         )
 
         self.setStyleSheet(
@@ -466,6 +616,10 @@ class PasswordLineEdit(QFrame):
         super().__init__(parent)
 
         self.setObjectName("InputBox")
+        # Tinggi dipatok agar SEMUA input password seragam 52px di mana pun
+        # dipakai — frame tak ikut melar saat layout punya ruang vertikal lebih
+        # (mis. Tab Teks mode dekripsi yang field-nya sedikit).
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         lay = QHBoxLayout(self)
         lay.setContentsMargins(12, 0, 6, 0)
         lay.setSpacing(0)

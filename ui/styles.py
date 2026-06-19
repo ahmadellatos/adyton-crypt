@@ -48,6 +48,8 @@ CLR_WARN_TEXT = "#E8C79A"  # Teks warning lebih terang (pill bertint warning)
 CLR_SUCCESS = "#86CBA3"  # Valid / berhasil / match
 CLR_SUCCESS_BG = "#16322A"  # Notification bar — ok
 
+CLR_YELLOW = "#E8CD5A"  # Meter kekuatan password — tier "Strong"
+
 # --- TEKS ---
 CLR_TEXT_MAIN = "#EAF4F5"  # Judul & nilai penting
 CLR_TEXT_MUTED = "#A7C0C4"  # Label / teks sekunder

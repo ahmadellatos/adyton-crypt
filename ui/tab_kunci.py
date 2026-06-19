@@ -80,7 +80,7 @@ class TabKunci(QWidget):
         main_layout.addLayout(h_cols)
 
         self.btn_aksi = BigActionBtn(
-            "Lock Now", "Click to start encrypting your files", icon_name="mdi6.lock"
+            "Lock Now", "Click to start encrypting your files", icon_name="mdi6.lock-outline"
         )
         self.btn_aksi.setAccessibleName("Lock Vault button")
         self.btn_aksi.setEnabled(False)

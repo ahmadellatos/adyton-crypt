@@ -212,7 +212,7 @@ class AppBrankas(FramelessMainWindow):
     def _init_tray(self, app_icon: QIcon) -> None:
         self.tray = QSystemTrayIcon(self)
         self.tray.setIcon(
-            app_icon if not app_icon.isNull() else qta.icon("mdi6.shield-lock", color="white")
+            app_icon if not app_icon.isNull() else qta.icon("mdi6.shield-outline", color="white")
         )
 
         tray_menu = AccessibleCenteredMenu()
@@ -296,15 +296,15 @@ class AppBrankas(FramelessMainWindow):
             "error": "#E89089",
         }
         icons = {
-            "idle": "mdi6.shield-check",
-            "ready": "mdi6.shield-search",
-            "busy": "mdi6.shield-sync",
-            "success": "mdi6.shield-check",
-            "warn": "mdi6.alert-circle",
-            "error": "mdi6.shield-alert",
+            "idle": "mdi6.shield-check-outline",
+            "ready": "mdi6.shield-outline",
+            "busy": "mdi6.shield-outline",
+            "success": "mdi6.shield-check-outline",
+            "warn": "mdi6.alert-circle-outline",
+            "error": "mdi6.shield-alert-outline",
         }
         color = colors.get(state, CLR_ACCENT)
-        icon_name = icons.get(state, "mdi6.shield-check")
+        icon_name = icons.get(state, "mdi6.shield-check-outline")
         self.lbl_status_icon.setPixmap(qta.icon(icon_name, color=color).pixmap(16, 16))
         self.lbl_status_text.setText(title)
         self.lbl_status_text.setStyleSheet(f"color: {color}; font-weight: 700; font-size: 9pt;")
@@ -364,7 +364,7 @@ class AppBrankas(FramelessMainWindow):
                     "Quitting now may corrupt the file or cause data loss. "
                     "Please wait for it to finish, or cancel the operation first."
                 ),
-                icon_name="mdi6.alert-decagram",
+                icon_name="mdi6.alert-octagon-outline",
                 icon_color="#E89089",
                 parent=self,
             )
@@ -476,7 +476,7 @@ class AppBrankas(FramelessMainWindow):
 
         self.lbl_status_icon = QLabel()
         self.lbl_status_icon.setPixmap(
-            qta.icon("mdi6.shield-check", color=CLR_ACCENT).pixmap(16, 16)
+            qta.icon("mdi6.shield-check-outline", color=CLR_ACCENT).pixmap(16, 16)
         )
         self.lbl_status_text = QLabel("AES-256 • GCM")
         self.lbl_status_text.setObjectName("StatusPillText")
@@ -516,7 +516,9 @@ class AppBrankas(FramelessMainWindow):
         lay_safe = QHBoxLayout()
         lay_safe.setSpacing(6)
         lbl_safe_icon = QLabel()
-        lbl_safe_icon.setPixmap(qta.icon("mdi6.shield-check", color=CLR_TEXT_MUTED).pixmap(15, 15))
+        lbl_safe_icon.setPixmap(
+            qta.icon("mdi6.shield-check-outline", color=CLR_TEXT_MUTED).pixmap(15, 15)
+        )
         lbl_safe_text = QLabel("Your password is never sent anywhere")
         lbl_safe_text.setObjectName("MutedText")
         lay_safe.addWidget(lbl_safe_icon)
@@ -527,7 +529,9 @@ class AppBrankas(FramelessMainWindow):
         lbl_ver_text = QLabel(f"Version {APP_VERSION}")
         lbl_ver_text.setObjectName("MutedText")
         lbl_ver_icon = QLabel()
-        lbl_ver_icon.setPixmap(qta.icon("mdi6.check-circle", color=CLR_TEXT_MUTED).pixmap(15, 15))
+        lbl_ver_icon.setPixmap(
+            qta.icon("mdi6.check-circle-outline", color=CLR_TEXT_MUTED).pixmap(15, 15)
+        )
         lay_ver.addWidget(lbl_ver_text)
         lay_ver.addWidget(lbl_ver_icon)
 
