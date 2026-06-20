@@ -11,11 +11,14 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
+from core.crypto import generate_recovery_code
 from core.vault import VaultStatus, kunci_brankas
 from core.worker import CryptoWorker
 
@@ -26,7 +29,7 @@ from .components.drop_zone_lock import DropZoneLock
 from .components.options_panel import OptionsPanel
 from .components.password_panel_lock import PasswordPanelLock
 from .constants import APP_NAME
-from .dialogs import ModernMessageBox
+from .dialogs import ModernMessageBox, RecoveryCodeDialog
 from .utils import (
     ProgressETA,
     apply_cancelling_state,
@@ -69,6 +72,24 @@ class TabKunci(QWidget):
         # Opsi "Delete original" kini berada di dalam card target (dasar daftar).
         self.drop_zone.embed_options(self.options_panel)
 
+        # Panel password bisa lebih tinggi dari kolom (form + recovery + hint),
+        # jadi dibungkus scroll area sendiri agar isinya tidak terpotong dan hanya
+        # panel ini yang menggulir — drop zone di kiri tetap diam.
+        self.pw_scroll = QScrollArea()
+        self.pw_scroll.setObjectName("PwScrollArea")
+        self.pw_scroll.setWidget(self.password_panel)
+        self.pw_scroll.setWidgetResizable(True)
+        self.pw_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.pw_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Hanya scroll area + viewport-nya yang transparan. JANGAN sertakan
+        # "> QWidget > QWidget" karena itu mengenai panel (Card) langsung dan
+        # menghapus latarnya — beda dari tab lain. Card di-set widget langsung,
+        # jadi viewport-nya cukup satu "> QWidget".
+        self.pw_scroll.setStyleSheet(
+            "QScrollArea#PwScrollArea, QScrollArea#PwScrollArea > QWidget"
+            " { background: transparent; }"
+        )
+
         h_cols = QHBoxLayout()
         h_cols.setSpacing(28)
 
@@ -76,7 +97,7 @@ class TabKunci(QWidget):
         v_left.addWidget(self.drop_zone, 1)
 
         h_cols.addLayout(v_left, 1)
-        h_cols.addWidget(self.password_panel, 1)
+        h_cols.addWidget(self.pw_scroll, 1)
         main_layout.addLayout(h_cols)
 
         self.btn_aksi = BigActionBtn(
@@ -195,6 +216,15 @@ class TabKunci(QWidget):
         hapus_asli = self.options_panel.is_hapus_asli()
         secure_wipe = self.options_panel.is_secure_wipe()
 
+        # Recovery passphrase kosong: cegah lebih awal sebelum dialog apa pun.
+        if self.password_panel.has_pending_passphrase_error():
+            self.notif.show_msg(
+                "warn",
+                "Enter a recovery passphrase, or turn off the recovery key.",
+                4000,
+            )
+            return
+
         if hapus_asli:
             dialog = ModernMessageBox(
                 title="Confirm Delete",
@@ -216,6 +246,23 @@ class TabKunci(QWidget):
         if not path_simpan:
             return
 
+        # Resolusi recovery key (opsional). Untuk mode "code", tampilkan kode dan
+        # minta user mengonfirmasi sudah menyimpannya SEBELUM lock dimulai.
+        recovery_secret = None
+        recovery_type = "code"
+        if self.password_panel.recovery_enabled():
+            if self.password_panel.recovery_mode() == "passphrase":
+                recovery_secret = self.password_panel.recovery_passphrase()
+                recovery_type = "passphrase"
+            else:
+                code = generate_recovery_code()
+                if RecoveryCodeDialog(code, parent=self).exec() != QDialog.DialogCode.Accepted:
+                    return
+                recovery_secret = code
+                recovery_type = "code"
+
+        hint = self.password_panel.get_hint() or None
+
         self._progress_eta.reset()
         self._set_busy(True)
         self.worker = CryptoWorker(
@@ -225,6 +272,9 @@ class TabKunci(QWidget):
             pw,
             hapus_asli=hapus_asli,
             secure_wipe=secure_wipe,
+            recovery_secret=recovery_secret,
+            recovery_type=recovery_type,
+            hint=hint,
             parent=self,
         )
 

@@ -32,12 +32,16 @@ from .constants import (
     CHUNK_RECORD_OVERHEAD,
     CHUNK_SIZE,
     DISK_OVERHEAD_BYTES,
+    FILE_ID_SIZE,
     FIRST_DECRYPT_CHUNK_SIZE,
     HEADER_SIZE,
     HEADER_SIZE_V2,
     KDF_ID_ARGON2ID,
     KDF_ID_PBKDF2_SHA256,
     MAGIC_BYTES,
+    MASTER_KEY_SIZE,
+    MAX_HINT_LENGTH,
+    MAX_KEYSLOTS,
     MAX_VIRTUAL_NAME_LENGTH,
     OLD_TEMP_MAX_AGE_SECONDS,
     OVERHEAD,
@@ -45,19 +49,33 @@ from .constants import (
     RECORD_TYPE_DATA,
     RECORD_TYPE_FINAL,
     RECORD_TYPE_METADATA,
+    RECOVERY_SLOT_TYPES,
+    SALT_SIZE,
+    SLOT_TYPE_PASSWORD,
+    SLOT_TYPE_RECOVERY_CODE,
+    SLOT_TYPE_RECOVERY_PASSPHRASE,
     TAG_SIZE,
     V2_FLAG_KDF_PARAMS,
     V2_FLAG_NONE,
     V2_KDF_SECTION_HEADER_SIZE,
     V2_SUPPORTED_FLAGS,
+    V3_CORE_HEADER_SIZE,
+    V3_FLAG_HINT,
+    V3_FLAG_NONE,
+    V3_MAX_HEADER_SIZE,
+    V3_SUPPORTED_FLAGS,
+    VALID_SLOT_TYPES,
     VERSION_V1,
     VERSION_V2,
+    VERSION_V3,
+    WRAP_NONCE_SIZE,
+    WRAPPED_KEY_SIZE,
 )
 from .crypto import (
     derive_key,
-    derive_key_argon2id,
     derive_key_for_kdf,
     make_decryptor,
+    normalize_recovery_code,
     safe_cb,
 )
 
@@ -306,9 +324,7 @@ def _hitung_kebutuhan_disk_kunci(
     estimated_tar_size = _estimate_tar_plaintext_size(paths, target_dir)
     data_records = max(1, (estimated_tar_size + CHUNK_SIZE - 1) // CHUNK_SIZE)
     return (
-        HEADER_SIZE_V2
-        + V2_KDF_SECTION_HEADER_SIZE
-        + ARGON2ID_PARAMS_SIZE
+        V3_MAX_HEADER_SIZE  # header v3 (bound atas: hint maksimal + slot penuh)
         + CHUNK_RECORD_OVERHEAD  # metadata record
         + metadata_size
         + (data_records * CHUNK_RECORD_OVERHEAD)
@@ -632,6 +648,208 @@ class ChunkedAEADEncryptingStream:
         self._finished = True
 
 
+# ── Format v3 — Envelope / Keyslot ──────────────────────────────────────────────
+#
+# Master Key (MK) acak mengenkripsi seluruh record (memakai mesin record v2 yang
+# sudah teruji). MK dibungkus per-credential di keyslot. Karena key record adalah
+# MK yang tidak berubah, ganti password / tambah recovery cukup menulis ulang
+# region keyslot — record tidak perlu dienkripsi ulang.
+
+
+def _v3_record_context(file_id: bytes, chunk_size: int, flags: int) -> bytes:
+    """AAD setiap record v3. Sengaja TANPA keyslot/hint agar re-key murah.
+
+    FILE_ID acak mengikat record ke vault ini; chunk_size & flags ditetapkan saat
+    pembuatan dan tidak berubah seumur hidup vault.
+    """
+    return (
+        MAGIC_BYTES
+        + VERSION_V3
+        + file_id
+        + chunk_size.to_bytes(4, byteorder="big")
+        + flags.to_bytes(4, byteorder="big")
+    )
+
+
+def _slot_meta(
+    slot_type: int,
+    kdf_id: int,
+    kdf_params_raw: bytes,
+    salt: bytes,
+    wrap_nonce: bytes,
+) -> bytes:
+    """Bagian keyslot yang dibawa di AAD wrap (semua kecuali wrapped master key)."""
+    return (
+        bytes([slot_type, kdf_id])
+        + len(kdf_params_raw).to_bytes(2, byteorder="big")
+        + kdf_params_raw
+        + salt
+        + wrap_nonce
+    )
+
+
+def _slot_wrap_aad(file_id: bytes, meta: bytes) -> bytes:
+    """AAD untuk membungkus MK: mengikat ke identitas vault + parameter slot.
+
+    Mencegah slot ditukar antar-vault (file_id) dan mencegah parameter slot
+    (kdf, salt, nonce) diutak-atik diam-diam.
+    """
+    return MAGIC_BYTES + VERSION_V3 + file_id + meta
+
+
+def _derive_slot_kek(
+    slot_type: int,
+    secret: str,
+    salt: bytes,
+    kdf_id: int,
+    kdf_params: dict[str, int],
+) -> bytes:
+    """Turunkan Key Encryption Key untuk satu slot dari credential-nya."""
+    if slot_type == SLOT_TYPE_RECOVERY_CODE:
+        secret = normalize_recovery_code(secret)
+    return derive_key_for_kdf(secret, salt, kdf_id, kdf_params)
+
+
+def _build_keyslot(
+    master_key: bytes,
+    file_id: bytes,
+    slot_type: int,
+    secret: str,
+) -> bytes:
+    """Bangun satu keyslot lengkap (meta + wrapped MK) dari sebuah credential."""
+    salt = os.urandom(SALT_SIZE)
+    wrap_nonce = os.urandom(WRAP_NONCE_SIZE)
+    kdf_params_raw = _encode_argon2id_params()
+    kdf_params = _decode_argon2id_params(kdf_params_raw)
+    kek = _derive_slot_kek(slot_type, secret, salt, KDF_ID_ARGON2ID, kdf_params)
+    meta = _slot_meta(slot_type, KDF_ID_ARGON2ID, kdf_params_raw, salt, wrap_nonce)
+    wrapped = AESGCM(kek).encrypt(wrap_nonce, master_key, _slot_wrap_aad(file_id, meta))
+    return meta + wrapped
+
+
+def _slot_bytes(slot: dict) -> bytes:
+    """Serialisasi ulang slot hasil parse ke bytes on-disk."""
+    return slot["meta"] + slot["wrapped"]
+
+
+def _build_v3_header(
+    file_id: bytes,
+    chunk_size: int,
+    flags: int,
+    hint_bytes: bytes,
+    slots: list[bytes],
+) -> bytes:
+    """Rakit header v3 lengkap (core + hint opsional + daftar keyslot)."""
+    if not 1 <= len(slots) <= MAX_KEYSLOTS:
+        raise ValueError("keyslot count out of range")
+    parts = [
+        MAGIC_BYTES,
+        VERSION_V3,
+        file_id,
+        chunk_size.to_bytes(4, byteorder="big"),
+        flags.to_bytes(4, byteorder="big"),
+    ]
+    if flags & V3_FLAG_HINT:
+        parts.append(len(hint_bytes).to_bytes(2, byteorder="big") + hint_bytes)
+    parts.append(bytes([len(slots)]))
+    parts.extend(slots)
+    return b"".join(parts)
+
+
+def _parse_v3_header(fk) -> dict:
+    """Parse header v3 dari file yang sudah dibaca MAGIC+VERSION-nya.
+
+    Melempar ``InvalidTag`` bila file terpotong (ditangani sebagai wrong_password
+    oleh pemanggil) dan ``ValueError`` untuk header yang strukturnya tidak valid.
+    """
+    file_id = _v2_read_exact(fk, FILE_ID_SIZE)
+    chunk_size = int.from_bytes(_v2_read_exact(fk, 4), byteorder="big")
+    flags = int.from_bytes(_v2_read_exact(fk, 4), byteorder="big")
+
+    if flags & ~V3_SUPPORTED_FLAGS:
+        raise ValueError("This vault flag isn't supported by this app version.")
+
+    hint = None
+    if flags & V3_FLAG_HINT:
+        hint_len = int.from_bytes(_v2_read_exact(fk, 2), byteorder="big")
+        if hint_len > MAX_HINT_LENGTH:
+            raise ValueError("Invalid vault hint length; the file may be corrupted.")
+        hint = _v2_read_exact(fk, hint_len).decode("utf-8", "replace")
+
+    slot_count = _v2_read_exact(fk, 1)[0]
+    if not 1 <= slot_count <= MAX_KEYSLOTS:
+        raise ValueError("Invalid keyslot count; the file may be corrupted.")
+
+    slots: list[dict] = []
+    for _ in range(slot_count):
+        slot_type = _v2_read_exact(fk, 1)[0]
+        kdf_id = _v2_read_exact(fk, 1)[0]
+        params_len = int.from_bytes(_v2_read_exact(fk, 2), byteorder="big")
+        kdf_params_raw = _v2_read_exact(fk, params_len)
+        salt = _v2_read_exact(fk, SALT_SIZE)
+        wrap_nonce = _v2_read_exact(fk, WRAP_NONCE_SIZE)
+        wrapped = _v2_read_exact(fk, WRAPPED_KEY_SIZE)
+
+        if slot_type not in VALID_SLOT_TYPES or kdf_id != KDF_ID_ARGON2ID:
+            raise ValueError("This vault keyslot isn't supported by this app version.")
+
+        slots.append(
+            {
+                "slot_type": slot_type,
+                "kdf_id": kdf_id,
+                "kdf_params_raw": kdf_params_raw,
+                "kdf_params": _decode_argon2id_params(kdf_params_raw),
+                "salt": salt,
+                "wrap_nonce": wrap_nonce,
+                "wrapped": wrapped,
+                "meta": _slot_meta(slot_type, kdf_id, kdf_params_raw, salt, wrap_nonce),
+            }
+        )
+
+    return {
+        "file_id": file_id,
+        "chunk_size": chunk_size,
+        "flags": flags,
+        "hint": hint,
+        "slots": slots,
+        "header_end": fk.tell(),
+    }
+
+
+def _recover_master_key(secret: str, file_id: bytes, slots: list[dict]) -> bytes | None:
+    """Coba credential terhadap tiap slot; kembalikan MK pada slot pertama yang cocok.
+
+    Slot dicoba berurutan, jadi password benar di slot 0 hanya butuh satu derivasi
+    KDF. Hanya secret yang salah yang membayar derivasi semua slot.
+    """
+    for slot in slots:
+        try:
+            kek = _derive_slot_kek(
+                slot["slot_type"], secret, slot["salt"], slot["kdf_id"], slot["kdf_params"]
+            )
+            master_key = AESGCM(kek).decrypt(
+                slot["wrap_nonce"],
+                slot["wrapped"],
+                _slot_wrap_aad(file_id, slot["meta"]),
+            )
+        except (InvalidTag, ValueError):
+            continue
+        if len(master_key) == MASTER_KEY_SIZE:
+            return master_key
+    return None
+
+
+def _read_v3_header_from_path(path: Path) -> dict:
+    """Buka file dan parse header v3-nya (tanpa credential). Raise bila bukan v3."""
+    with path.open("rb") as fk:
+        if fk.read(4) != MAGIC_BYTES:
+            raise ValueError("This file isn't a valid Adyton Crypt vault.")
+        version = fk.read(1)
+        if version != VERSION_V3:
+            raise ValueError("not_v3")
+        return _parse_v3_header(fk)
+
+
 def _verify_gcm_before_plaintext_write(
     input_file,
     key: bytes,
@@ -850,6 +1068,10 @@ def _quick_verify_vault(path: Path) -> bool:
             # Header v2 legacy + minimal metadata record + final record.
             # Extended Argon2id header is larger, so this remains a safe lower bound.
             return size >= HEADER_SIZE_V2 + (2 * CHUNK_RECORD_OVERHEAD)
+        if version == VERSION_V3:
+            # Core header + slot_count(1) + minimal 1 slot + metadata & final record.
+            min_slot = 1 + 1 + 2 + ARGON2ID_PARAMS_SIZE + SALT_SIZE + WRAP_NONCE_SIZE + WRAPPED_KEY_SIZE
+            return size >= V3_CORE_HEADER_SIZE + 1 + min_slot + (2 * CHUNK_RECORD_OVERHEAD)
         return False
     except Exception as e:
         logger.error(f"Quick verify gagal: {e}")
@@ -932,6 +1154,169 @@ def _validate_virtual_folder_name(name: str) -> str:
         raise ValueError("invalid_virtual_name")
 
     return name
+
+
+def _buka_brankas_v3_from_open_file(
+    fk,
+    target_path: Path,
+    total_size: int,
+    password: str,
+    force: bool,
+    progress_cb,
+    is_cancelled: Callable[[], bool] | None,
+) -> tuple[VaultStatus, str | None]:
+    """Buka vault format v3 envelope.
+
+    Sama dengan jalur v2 chunked AEAD, kecuali: header memuat keyslot dan key
+    record adalah Master Key yang di-unwrap dari salah satu slot (password atau
+    recovery). Loop record sengaja diduplikasi dari v2 agar jalur v2 yang sudah
+    teruji tidak perlu disentuh.
+
+    Security invariant identik v2: plaintext record hanya ditulis setelah tag AEAD
+    record itu valid; prompt overwrite hanya setelah seluruh record (termasuk
+    FINAL) valid; data tujuan lama tidak disentuh sebelum tar terverifikasi penuh.
+    """
+    base_dir = target_path.parent
+    temp_ext_dir: Path | None = None
+
+    try:
+        try:
+            hdr = _parse_v3_header(fk)
+        except ValueError as exc:
+            return VaultStatus.ERROR, str(exc)
+
+        file_id = hdr["file_id"]
+        stored_chunk_size = hdr["chunk_size"]
+        flags = hdr["flags"]
+
+        if stored_chunk_size <= 0 or stored_chunk_size > CHUNK_SIZE:
+            return (
+                VaultStatus.ERROR,
+                "The vault's chunk parameters are invalid, or the file is corrupted.",
+            )
+
+        safe_cb(progress_cb, 0.02)
+        master_key = _recover_master_key(password, file_id, hdr["slots"])
+        if master_key is None:
+            return VaultStatus.WRONG_PASSWORD, None
+
+        aesgcm = AESGCM(master_key)
+        header_context = _v3_record_context(file_id, stored_chunk_size, flags)
+        safe_cb(progress_cb, 0.05)
+
+        # Record 0 wajib metadata terenkripsi: panjang nama + nama virtual.
+        record_type, record_index, plaintext_len, record_header = _v2_read_record_header(fk)
+        if (
+            record_type != RECORD_TYPE_METADATA
+            or record_index != 0
+            or plaintext_len < 2
+            or plaintext_len > 2 + MAX_VIRTUAL_NAME_LENGTH
+        ):
+            raise InvalidTag
+
+        metadata_ciphertext = _v2_read_exact(fk, plaintext_len + TAG_SIZE)
+        metadata_plaintext = aesgcm.decrypt(
+            _v2_nonce(record_index),
+            metadata_ciphertext,
+            _v2_aad(header_context, record_header),
+        )
+
+        try:
+            nama_folder, name_offset = _parse_virtual_folder_name(metadata_plaintext)
+            if name_offset != len(metadata_plaintext):
+                raise ValueError("invalid extra metadata")
+        except ValueError:
+            return VaultStatus.WRONG_PASSWORD, None
+
+        temp_ext_dir, temp_tar_path = _create_temp_decrypt_paths(base_dir)
+        expected_index = 1
+        last_pct = 0.0
+
+        with temp_tar_path.open("wb") as ftar:
+            while True:
+                if is_cancelled and is_cancelled():
+                    raise InterruptedError("Operation cancelled by the user.")
+
+                record_type, record_index, plaintext_len, record_header = _v2_read_record_header(fk)
+                if record_index != expected_index:
+                    raise InvalidTag
+
+                if record_type == RECORD_TYPE_DATA:
+                    if plaintext_len <= 0 or plaintext_len > stored_chunk_size:
+                        raise InvalidTag
+
+                    ciphertext = _v2_read_exact(fk, plaintext_len + TAG_SIZE)
+                    plaintext = aesgcm.decrypt(
+                        _v2_nonce(record_index),
+                        ciphertext,
+                        _v2_aad(header_context, record_header),
+                    )
+                    if len(plaintext) != plaintext_len:
+                        raise InvalidTag
+
+                    ftar.write(plaintext)
+                    expected_index += 1
+
+                    pct = min(0.85, 0.05 + 0.80 * (fk.tell() / max(total_size, 1)))
+                    if pct - last_pct >= 0.005:
+                        safe_cb(progress_cb, pct)
+                        last_pct = pct
+
+                elif record_type == RECORD_TYPE_FINAL:
+                    if plaintext_len != 0:
+                        raise InvalidTag
+                    ciphertext = _v2_read_exact(fk, TAG_SIZE)
+                    final_plaintext = aesgcm.decrypt(
+                        _v2_nonce(record_index),
+                        ciphertext,
+                        _v2_aad(header_context, record_header),
+                    )
+                    if final_plaintext != b"":
+                        raise InvalidTag
+                    expected_index += 1
+                    break
+                else:
+                    raise InvalidTag
+
+            ftar.flush()
+            os.fsync(ftar.fileno())
+
+        if fk.tell() != total_size:
+            raise InvalidTag
+
+        safe_cb(progress_cb, 0.85)
+
+        path_tujuan = base_dir / nama_folder
+        if path_tujuan.exists() and not force:
+            return VaultStatus.OVERWRITE_NEEDED, nama_folder
+
+        _extract_and_place_vault(
+            temp_tar_path,
+            temp_ext_dir,
+            nama_folder,
+            path_tujuan,
+            progress_cb,
+            is_cancelled,
+        )
+
+        safe_cb(progress_cb, 1.0)
+        return VaultStatus.SUCCESS, nama_folder
+
+    except InvalidTag:
+        return VaultStatus.WRONG_PASSWORD, None
+    except tarfile.ReadError:
+        return VaultStatus.WRONG_PASSWORD, None
+    except InterruptedError:
+        return (
+            VaultStatus.CANCELLED,
+            "Operation cancelled. No existing data was changed.",
+        )
+    except Exception as exc:
+        logger.exception("Gagal membuka brankas v3 envelope.")
+        return VaultStatus.ERROR, f"An internal error occurred: {str(exc)}"
+    finally:
+        if temp_ext_dir and temp_ext_dir.exists():
+            _cleanup_temp_decrypt_dir(temp_ext_dir)
 
 
 def _buka_brankas_v2_from_open_file(
@@ -1130,7 +1515,17 @@ def kunci_brankas(
     secure_wipe: bool = False,
     progress_cb=None,
     is_cancelled: Callable[[], bool] = None,
+    recovery_secret: str | None = None,
+    recovery_type: str = "code",
+    hint: str | None = None,
 ) -> tuple[VaultStatus, str]:
+    """Buat vault v3 envelope dari ``paths``.
+
+    ``recovery_secret`` opsional menambah keyslot kedua: ``recovery_type="code"``
+    untuk kode app-generated (di-normalisasi saat unlock) atau ``"passphrase"``
+    untuk frasa pilihan user. ``hint`` opsional disimpan TANPA enkripsi di header
+    (harus terbaca sebelum unlock) dan dibatasi ``MAX_HINT_LENGTH`` byte.
+    """
     valid_paths = [p for p in paths if Path(p).exists()]
     if not valid_paths:
         return VaultStatus.ERROR, "No valid file/folder to lock."
@@ -1178,25 +1573,34 @@ def kunci_brankas(
             target_path.replace(backup_path)
             backup_dibuat = True
 
-        salt = os.urandom(16)
-        file_id = os.urandom(16)
-        argon2_params_raw = _encode_argon2id_params()
-        kdf_section = _v2_kdf_section(KDF_ID_ARGON2ID, argon2_params_raw)
-        flags = V2_FLAG_KDF_PARAMS
-        header_context = _v2_header_context(
-            salt,
-            file_id,
-            CHUNK_SIZE,
-            flags,
-            kdf_section,
-        )
+        file_id = os.urandom(FILE_ID_SIZE)
+        master_key = os.urandom(MASTER_KEY_SIZE)
 
-        key = derive_key_argon2id(password, salt)
-        aesgcm = AESGCM(key)
-        safe_cb(progress_cb, 0.03)  # Key derivation done
+        flags = V3_FLAG_NONE
+        hint_bytes = b""
+        if hint:
+            # Potong ke batas byte lalu bersihkan char multibyte yang terpotong.
+            hint_bytes = hint.encode("utf-8")[:MAX_HINT_LENGTH]
+            hint_bytes = hint_bytes.decode("utf-8", "ignore").encode("utf-8")
+            if hint_bytes:
+                flags |= V3_FLAG_HINT
+
+        slots = [_build_keyslot(master_key, file_id, SLOT_TYPE_PASSWORD, password)]
+        if recovery_secret and recovery_secret.strip():
+            rtype = (
+                SLOT_TYPE_RECOVERY_CODE
+                if recovery_type == "code"
+                else SLOT_TYPE_RECOVERY_PASSPHRASE
+            )
+            slots.append(_build_keyslot(master_key, file_id, rtype, recovery_secret))
+
+        header = _build_v3_header(file_id, CHUNK_SIZE, flags, hint_bytes, slots)
+        header_context = _v3_record_context(file_id, CHUNK_SIZE, flags)
+        aesgcm = AESGCM(master_key)
+        safe_cb(progress_cb, 0.03)  # Key derivation + slot wrapping done
 
         with target_path.open("wb") as fk:
-            fk.write(header_context)
+            fk.write(header)
 
             nama_bytes = nama_virtual.encode("utf-8")
             metadata_plaintext = len(nama_bytes).to_bytes(2, byteorder="big") + nama_bytes
@@ -1360,6 +1764,16 @@ def buka_brankas(
 
             # 2. Validasi Versi
             version = fk.read(1)
+            if version == VERSION_V3:
+                return _buka_brankas_v3_from_open_file(
+                    fk,
+                    target_path,
+                    total_size,
+                    password,
+                    force,
+                    progress_cb,
+                    is_cancelled,
+                )
             if version == VERSION_V2:
                 return _buka_brankas_v2_from_open_file(
                     fk,
@@ -1527,3 +1941,248 @@ def _cleanup_temp_decrypt_dir(temp_dir: Path) -> None:
         hapus_permanen(temp_dir)
     except Exception:
         logger.debug("Gagal membersihkan temp decrypt directory (non-fatal)")
+
+
+# ── Manajemen credential vault v3 (ganti password / recovery / hint) ─────────────
+
+
+def _format_label(version: bytes | None) -> str:
+    return {VERSION_V1: "v1", VERSION_V2: "v2", VERSION_V3: "v3"}.get(version, "unknown")
+
+
+def read_vault_hint(vault_path: str) -> str | None:
+    """Baca password hint dari header v3 tanpa perlu password. None jika tidak ada."""
+    try:
+        return _read_v3_header_from_path(Path(vault_path)).get("hint")
+    except Exception:
+        return None
+
+
+def vault_info(vault_path: str) -> dict:
+    """Ringkas metadata vault untuk UI tanpa membutuhkan password.
+
+    Mengembalikan format, ada/tidaknya hint & recovery key, dan apakah vault
+    mendukung ganti password (hanya v3). Tidak pernah melempar exception.
+    """
+    info = {
+        "format": "unknown",
+        "supports_change_password": False,
+        "has_hint": False,
+        "hint": None,
+        "has_recovery": False,
+        "slot_count": 0,
+    }
+    path = Path(vault_path)
+    try:
+        with path.open("rb") as fk:
+            if fk.read(4) != MAGIC_BYTES:
+                return info
+            version = fk.read(1)
+        info["format"] = _format_label(version)
+        if version != VERSION_V3:
+            return info
+
+        hdr = _read_v3_header_from_path(path)
+        info.update(
+            {
+                "supports_change_password": True,
+                "has_hint": hdr["hint"] is not None,
+                "hint": hdr["hint"],
+                "has_recovery": any(
+                    s["slot_type"] in RECOVERY_SLOT_TYPES for s in hdr["slots"]
+                ),
+                "slot_count": len(hdr["slots"]),
+            }
+        )
+    except Exception:
+        logger.debug("vault_info gagal membaca header (non-fatal)", exc_info=True)
+    return info
+
+
+def _load_v3_for_management(
+    path: Path,
+    secret: str,
+) -> tuple[VaultStatus, str | None, dict | None, bytes | None]:
+    """Buka header v3 + recover Master Key untuk operasi manajemen credential.
+
+    Return ``(status, message_or_None, header_or_None, master_key_or_None)``.
+    Status SUCCESS berarti ``header`` dan ``master_key`` terisi.
+    """
+    try:
+        hdr = _read_v3_header_from_path(path)
+    except ValueError as exc:
+        if str(exc) == "not_v3":
+            return (
+                VaultStatus.ERROR,
+                "This vault uses an older format. Re-create it (lock again) to "
+                "enable password change and recovery keys.",
+                None,
+                None,
+            )
+        return VaultStatus.ERROR, str(exc), None, None
+    except FileNotFoundError:
+        return VaultStatus.ERROR, "The vault file could not be found.", None, None
+    except Exception as exc:
+        logger.exception("Gagal membaca header v3 untuk manajemen.")
+        return VaultStatus.ERROR, str(exc), None, None
+
+    master_key = _recover_master_key(secret, hdr["file_id"], hdr["slots"])
+    if master_key is None:
+        return VaultStatus.WRONG_PASSWORD, None, None, None
+
+    return VaultStatus.SUCCESS, None, hdr, master_key
+
+
+def _hint_bytes_from_header(hdr: dict) -> bytes:
+    if hdr["flags"] & V3_FLAG_HINT and hdr["hint"] is not None:
+        return hdr["hint"].encode("utf-8")
+    return b""
+
+
+def _rewrite_v3_header_full(path: Path, old_header_end: int, new_header: bytes) -> tuple[VaultStatus, str]:
+    """Tulis ulang header v3 yang panjangnya berubah, lewat temp file + atomic replace.
+
+    Dipakai saat menambah/menghapus keyslot (header bertambah/berkurang). Record
+    di belakang header disalin apa adanya — O(ukuran vault), tapi aman karena
+    file asli baru diganti setelah temp lengkap & ter-fsync.
+    """
+    tmp: Path | None = None
+    try:
+        free = shutil.disk_usage(path.parent).free
+        if free < path.stat().st_size + DISK_OVERHEAD_BYTES:
+            return VaultStatus.ERROR, "Not enough storage space to update the vault."
+
+        tmp = _make_unique_replace_backup_path(path)
+        with path.open("rb") as src, tmp.open("wb") as dst:
+            dst.write(new_header)
+            src.seek(old_header_end)
+            while True:
+                chunk = src.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                dst.write(chunk)
+            dst.flush()
+            os.fsync(dst.fileno())
+
+        os.replace(tmp, path)
+        tmp = None
+        return VaultStatus.SUCCESS, "Vault updated successfully."
+    except Exception as exc:
+        logger.exception("Gagal menulis ulang header v3 (full rewrite).")
+        if tmp is not None:
+            with contextlib.suppress(Exception):
+                tmp.unlink(missing_ok=True)
+        return VaultStatus.ERROR, str(exc)
+
+
+def change_password(
+    vault_path: str,
+    old_password: str,
+    new_password: str,
+) -> tuple[VaultStatus, str | None]:
+    """Ganti password vault v3 tanpa mengenkripsi ulang data.
+
+    Hanya keyslot password yang ditulis ulang (panjang identik), jadi operasi ini
+    O(ukuran header), bukan O(ukuran vault). ``old_password`` boleh berupa password
+    lama ATAU recovery key — apa pun yang berhasil membuka salah satu slot.
+    """
+    if not new_password or not new_password.strip():
+        return VaultStatus.ERROR, "New password cannot be empty."
+
+    path = Path(vault_path)
+    status, message, hdr, master_key = _load_v3_for_management(path, old_password)
+    if status != VaultStatus.SUCCESS:
+        return status, message
+
+    pw_index = next(
+        (i for i, s in enumerate(hdr["slots"]) if s["slot_type"] == SLOT_TYPE_PASSWORD),
+        None,
+    )
+    if pw_index is None:
+        return VaultStatus.ERROR, "This vault has no password slot to change."
+
+    slot_bytes = [_slot_bytes(s) for s in hdr["slots"]]
+    slot_bytes[pw_index] = _build_keyslot(
+        master_key, hdr["file_id"], SLOT_TYPE_PASSWORD, new_password
+    )
+    new_header = _build_v3_header(
+        hdr["file_id"], hdr["chunk_size"], hdr["flags"], _hint_bytes_from_header(hdr), slot_bytes
+    )
+
+    # Re-key tidak boleh mengubah panjang header (slot password fixed-size). Kalau
+    # berubah, batalkan tanpa menulis apa pun demi keamanan.
+    if len(new_header) != hdr["header_end"]:
+        return VaultStatus.ERROR, "Internal error: header length changed during re-key."
+
+    try:
+        with path.open("r+b") as fk:
+            fk.seek(0)
+            fk.write(new_header)
+            fk.flush()
+            os.fsync(fk.fileno())
+    except Exception as exc:
+        logger.exception("Gagal menulis header saat ganti password.")
+        return VaultStatus.ERROR, str(exc)
+
+    return VaultStatus.SUCCESS, "Password changed successfully."
+
+
+def add_recovery_key(
+    vault_path: str,
+    password: str,
+    recovery_secret: str,
+    recovery_type: str = "code",
+) -> tuple[VaultStatus, str | None]:
+    """Tambahkan keyslot recovery ke vault v3 yang sudah ada.
+
+    Header bertambah panjang, jadi vault ditulis ulang (temp + atomic replace).
+    Menolak bila sudah ada recovery key.
+    """
+    if not recovery_secret or not recovery_secret.strip():
+        return VaultStatus.ERROR, "Recovery secret cannot be empty."
+
+    path = Path(vault_path)
+    status, message, hdr, master_key = _load_v3_for_management(path, password)
+    if status != VaultStatus.SUCCESS:
+        return status, message
+
+    if any(s["slot_type"] in RECOVERY_SLOT_TYPES for s in hdr["slots"]):
+        return (
+            VaultStatus.ERROR,
+            "This vault already has a recovery key. Remove it first to set a new one.",
+        )
+    if len(hdr["slots"]) >= MAX_KEYSLOTS:
+        return VaultStatus.ERROR, "This vault already has the maximum number of keyslots."
+
+    rtype = (
+        SLOT_TYPE_RECOVERY_CODE if recovery_type == "code" else SLOT_TYPE_RECOVERY_PASSPHRASE
+    )
+    new_slot = _build_keyslot(master_key, hdr["file_id"], rtype, recovery_secret)
+    slot_bytes = [_slot_bytes(s) for s in hdr["slots"]] + [new_slot]
+    new_header = _build_v3_header(
+        hdr["file_id"], hdr["chunk_size"], hdr["flags"], _hint_bytes_from_header(hdr), slot_bytes
+    )
+    return _rewrite_v3_header_full(path, hdr["header_end"], new_header)
+
+
+def remove_recovery_key(
+    vault_path: str,
+    password: str,
+) -> tuple[VaultStatus, str | None]:
+    """Hapus keyslot recovery dari vault v3. ``password`` harus membuka slot mana pun."""
+    path = Path(vault_path)
+    status, message, hdr, master_key = _load_v3_for_management(path, password)
+    if status != VaultStatus.SUCCESS:
+        return status, message
+
+    kept = [s for s in hdr["slots"] if s["slot_type"] not in RECOVERY_SLOT_TYPES]
+    if len(kept) == len(hdr["slots"]):
+        return VaultStatus.ERROR, "This vault has no recovery key to remove."
+    if not kept:
+        return VaultStatus.ERROR, "Cannot remove the last keyslot from the vault."
+
+    slot_bytes = [_slot_bytes(s) for s in kept]
+    new_header = _build_v3_header(
+        hdr["file_id"], hdr["chunk_size"], hdr["flags"], _hint_bytes_from_header(hdr), slot_bytes
+    )
+    return _rewrite_v3_header_full(path, hdr["header_end"], new_header)

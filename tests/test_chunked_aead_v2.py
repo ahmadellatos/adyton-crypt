@@ -7,7 +7,7 @@ import os
 import shutil
 import tarfile
 
-from core.constants import MAGIC_BYTES, VERSION, VERSION_V1, VERSION_V2
+from core.constants import MAGIC_BYTES, VERSION, VERSION_V1, VERSION_V3
 from core.crypto import derive_key, make_encryptor
 from core.vault import VaultStatus, buka_brankas, kunci_brankas
 
@@ -29,7 +29,7 @@ def _corrupt_last_byte(path):
     path.write_bytes(data)
 
 
-def test_new_vaults_use_chunked_aead_v2_and_roundtrip(tmp_path):
+def test_new_vaults_use_envelope_v3_and_roundtrip(tmp_path):
     source = _make_source_folder(tmp_path)
     vault_path = tmp_path / "rahasia_v2.adtn"
 
@@ -38,8 +38,8 @@ def test_new_vaults_use_chunked_aead_v2_and_roundtrip(tmp_path):
 
     with vault_path.open("rb") as f:
         assert f.read(4) == MAGIC_BYTES
-        assert f.read(1) == VERSION_V2
-        assert VERSION == VERSION_V2
+        assert f.read(1) == VERSION_V3
+        assert VERSION == VERSION_V3
 
     shutil.rmtree(source)
     status, restored_name = buka_brankas(str(vault_path), PASSWORD)

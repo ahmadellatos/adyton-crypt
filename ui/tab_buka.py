@@ -10,7 +10,7 @@ from loguru import logger
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QVBoxLayout, QWidget
 
-from core.vault import VaultStatus, buka_brankas
+from core.vault import VaultStatus, buka_brankas, vault_info
 from core.worker import CryptoWorker
 
 from .buttons import BigActionBtn
@@ -98,14 +98,20 @@ class TabBuka(QWidget):
         self.password_panel.set_idle_state()
         if path:
             if self._has_file:
+                info = vault_info(path)
+                self.password_panel.show_vault_meta(
+                    info.get("hint"), info.get("has_recovery", False)
+                )
                 self.status_changed.emit(
                     "Vault ready to open", "Valid format • Not yet verified", "ready"
                 )
             else:
+                self.password_panel.clear_vault_meta()
                 self.status_changed.emit(
                     "Invalid file", self.drop_zone.get_format_status(), "error"
                 )
         else:
+            self.password_panel.clear_vault_meta()
             self.status_changed.emit("AES-256 • GCM", "Local encryption active", "idle")
         self._validate_state()
 

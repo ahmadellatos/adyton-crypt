@@ -44,6 +44,7 @@ from .menus import AccessibleCenteredMenu, CenteredMenuAction
 from .onboarding import OnboardingView
 from .tab_buka import TabBuka
 from .tab_kunci import TabKunci
+from .tab_manage import TabManage
 from .tab_teks import TabTeks  # <-- [TAMBAHAN] Import Tab Teks
 from .widgets import CustomTitleBar
 
@@ -117,10 +118,12 @@ class AppBrankas(FramelessMainWindow):
         self.tab_kunci = TabKunci()
         self.tab_buka = TabBuka()
         self.tab_teks = TabTeks()  # <-- [TAMBAHAN] Inisialisasi Tab Teks
+        self.tab_manage = TabManage()
 
         self.stacked_tabs.addWidget(self.tab_kunci)
         self.stacked_tabs.addWidget(self.tab_buka)
         self.stacked_tabs.addWidget(self.tab_teks)  # <-- [TAMBAHAN] Masukkan ke StackedWidget
+        self.stacked_tabs.addWidget(self.tab_manage)
 
         self.tab_kunci.worker_started.connect(
             lambda worker: self._bind_worker_to_tray(worker, "kunci")
@@ -133,6 +136,7 @@ class AppBrankas(FramelessMainWindow):
         self.tab_teks.system_notification.connect(
             self._show_system_notif
         )  # <-- [TAMBAHAN] Bind Notifikasi Teks
+        self.tab_manage.system_notification.connect(self._show_system_notif)
 
         # Status pill keamanan: tiap tab punya status sendiri; pill menampilkan
         # status tab yang sedang aktif (di-refresh saat ganti tab).
@@ -141,6 +145,7 @@ class AppBrankas(FramelessMainWindow):
             0: self._default_status,
             1: self._default_status,
             2: self._default_status,
+            3: self._default_status,
         }
 
         # Status pill kembali ke idle setelah 5 detik tanpa interaksi (kecuali
@@ -153,6 +158,7 @@ class AppBrankas(FramelessMainWindow):
         self.tab_kunci.status_changed.connect(lambda t, s, st: self._on_tab_status(0, t, s, st))
         self.tab_buka.status_changed.connect(lambda t, s, st: self._on_tab_status(1, t, s, st))
         self.tab_teks.status_changed.connect(lambda t, s, st: self._on_tab_status(2, t, s, st))
+        self.tab_manage.status_changed.connect(lambda t, s, st: self._on_tab_status(3, t, s, st))
 
         content_lay.addWidget(self.stacked_tabs, 1)
         self._build_footer(content_lay)
@@ -170,6 +176,7 @@ class AppBrankas(FramelessMainWindow):
         # Tab order navigation
         self.setTabOrder(self.btn_nav_kunci, self.btn_nav_buka)
         self.setTabOrder(self.btn_nav_buka, self.btn_nav_teks)
+        self.setTabOrder(self.btn_nav_teks, self.btn_nav_manage)
         self.tab_group.buttonClicked.connect(self._update_action_button_tab_order)
 
         self._update_action_button_tab_order()
@@ -430,15 +437,21 @@ class AppBrankas(FramelessMainWindow):
             "Text", "mdi6.text-box-outline", "Encrypt Text tab"
         )
 
+        self.btn_nav_manage = self._make_tab_button(
+            "Manage", "mdi6.cog-outline", "Manage Vault tab"
+        )
+
         self.tab_group = QButtonGroup(self)
         self.tab_group.addButton(self.btn_nav_kunci, 0)
         self.tab_group.addButton(self.btn_nav_buka, 1)
         self.tab_group.addButton(self.btn_nav_teks, 2)
+        self.tab_group.addButton(self.btn_nav_manage, 3)
         self.tab_group.buttonClicked.connect(self._on_tab_changed)
 
         lay.addWidget(self.btn_nav_kunci, alignment=Qt.AlignmentFlag.AlignHCenter)
         lay.addWidget(self.btn_nav_buka, alignment=Qt.AlignmentFlag.AlignHCenter)
         lay.addWidget(self.btn_nav_teks, alignment=Qt.AlignmentFlag.AlignHCenter)
+        lay.addWidget(self.btn_nav_manage, alignment=Qt.AlignmentFlag.AlignHCenter)
         lay.addStretch()
 
         parent_layout.addWidget(sidebar)
@@ -549,6 +562,7 @@ class AppBrankas(FramelessMainWindow):
         0: ("Lock Folder", "Choose a file or folder, set a password, and lock it."),
         1: ("Open Vault", "Select an encrypted vault file and enter your password to open it."),
         2: ("Text", "Encrypt or decrypt text with a password."),
+        3: ("Manage Vault", "Change the password or recovery key of an existing vault."),
     }
 
     def _update_page_header(self, index: int) -> None:

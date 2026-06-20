@@ -27,6 +27,8 @@ from core.constants import (
     KDF_ID_ARGON2ID,
     KDF_ID_PBKDF2_SHA256,
     MAGIC_BYTES,
+    MAX_HINT_LENGTH,
+    MAX_KEYSLOTS,
     MAX_VIRTUAL_NAME_LENGTH,
     OVERHEAD_V1,
     RECORD_TYPE_METADATA,
@@ -34,8 +36,14 @@ from core.constants import (
     TAG_SIZE,
     V2_FLAG_KDF_PARAMS,
     V2_SUPPORTED_FLAGS,
+    V3_CORE_HEADER_SIZE,
+    V3_FLAG_HINT,
+    V3_SUPPORTED_FLAGS,
     VERSION_V1,
     VERSION_V2,
+    VERSION_V3,
+    WRAP_NONCE_SIZE,
+    WRAPPED_KEY_SIZE,
 )
 
 from ..buttons import ClearButton
@@ -209,7 +217,10 @@ class DropZoneOpen(QWidget):
         self.valid_badge = QLabel("FORMAT  ✓")
         self.valid_badge.setObjectName("ValidBadge")
         self.valid_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.valid_badge.setFixedSize(88, 23)
+        # Tinggi tetap; lebar mengikuti teks (+padding QSS) agar teks panjang
+        # seperti "UNSUPPORTED" tidak terpotong. Tanpa minimum eksplisit, layout
+        # tak bisa menyusutkannya di bawah lebar teksnya.
+        self.valid_badge.setFixedHeight(23)
         top_row.addWidget(self.valid_badge, 0, Qt.AlignmentFlag.AlignTop)
 
         self.btn_clear = ClearButton()
@@ -287,6 +298,9 @@ class DropZoneOpen(QWidget):
         enc_lay.addLayout(enc_grid)
 
         lay.addWidget(enc_section)
+        # Serap sisa ruang vertikal di bawah agar header & section tidak melar
+        # (tanpa ini, label judul/subjudul ikut memuai mengisi kolom yang tinggi).
+        lay.addStretch(1)
 
         return page
 
@@ -495,6 +509,9 @@ class DropZoneOpen(QWidget):
                     )
                     return info
 
+                if version == VERSION_V3:
+                    return self._inspect_v3_header(f, file_size, info, mark_problem)
+
                 if version != VERSION_V2:
                     return mark_problem(
                         "UNSUPPORTED",
@@ -634,6 +651,59 @@ class DropZoneOpen(QWidget):
         except Exception:
             return mark_problem("ERROR", "Unreadable", "Unreadable")
 
+    def _inspect_v3_header(self, f, file_size, info, mark_problem):
+        """Validasi struktur header v3 (envelope) untuk display — bukan verifikasi
+        kriptografis. Integritas baru dipastikan saat dekripsi dengan key benar."""
+        min_slot = (
+            1 + 1 + 2 + ARGON2ID_PARAMS_SIZE + SALT_SIZE + WRAP_NONCE_SIZE + WRAPPED_KEY_SIZE
+        )
+        min_v3 = V3_CORE_HEADER_SIZE + 1 + min_slot + (2 * CHUNK_RECORD_OVERHEAD)
+        if file_size < min_v3:
+            return mark_problem("ERROR", "Incomplete file", "Vault v3", kdf="Argon2id")
+
+        f.read(FILE_ID_SIZE)
+        chunk_size_raw = f.read(4)
+        if len(chunk_size_raw) != 4:
+            return mark_problem("ERROR", "Incomplete header", "Vault v3")
+        chunk_size = int.from_bytes(chunk_size_raw, byteorder="big")
+        if chunk_size <= 0 or chunk_size > CHUNK_SIZE:
+            return mark_problem("ERROR", "Invalid chunk parameter", "Vault v3")
+
+        flags_raw = f.read(4)
+        if len(flags_raw) != 4:
+            return mark_problem("ERROR", "Incomplete header", "Vault v3")
+        flags = int.from_bytes(flags_raw, byteorder="big")
+        if flags & ~V3_SUPPORTED_FLAGS:
+            return mark_problem(
+                "UNSUPPORTED",
+                "Unsupported flag",
+                "Vault v3",
+                state="warn",
+                subtitle="Needs a newer app version",
+            )
+
+        if flags & V3_FLAG_HINT:
+            hint_len_raw = f.read(2)
+            if len(hint_len_raw) != 2:
+                return mark_problem("ERROR", "Incomplete header", "Vault v3")
+            hint_len = int.from_bytes(hint_len_raw, byteorder="big")
+            if hint_len > MAX_HINT_LENGTH or len(f.read(hint_len)) != hint_len:
+                return mark_problem("ERROR", "Invalid header", "Vault v3")
+
+        slot_count_raw = f.read(1)
+        if len(slot_count_raw) != 1 or not 1 <= slot_count_raw[0] <= MAX_KEYSLOTS:
+            return mark_problem("ERROR", "Invalid keyslot count", "Vault v3")
+
+        info.update(
+            {
+                "kdf": "Argon2id",
+                "format": "Vault v3",
+                "status": "Valid format",
+                "subtitle": "Ready to open",
+            }
+        )
+        return info
+
     def _set_badge(self, text: str, state: str):
         """Update badge kanan atas dan paksa QSS membaca ulang property state."""
         self.valid_badge.setText(text)
@@ -689,6 +759,15 @@ class DropZoneOpen(QWidget):
             self._set_badge("FAILED", "error")
             self._set_meta_status("Verification failed")
             self._set_integrity_status("Verification failed")
+            return
+
+        if state == "unsupported":
+            # Format valid sebagai vault, tapi tidak didukung untuk konteks ini
+            # (mis. vault lama yang tak bisa dikelola di tab Manage).
+            self.lbl_ready.setText(message or "Unsupported format")
+            self._set_badge("UNSUPPORTED", "warn")
+            self._set_meta_status("Unsupported here")
+            self._set_integrity_status("—")
             return
 
         # pending / cancelled / retry: kembali ke status hasil validasi format ringan.

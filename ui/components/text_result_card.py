@@ -6,7 +6,6 @@ Deskripsi: Card hasil enkripsi/dekripsi Tab Teks — muncul dengan animasi slide
 
 import qtawesome as qta
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
-from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -25,6 +24,7 @@ from ..styles import (
     CLR_TEXT_MUTED,
     FONT_MONO,
 )
+from ..utils import CLIPBOARD_AUTO_CLEAR_MS, copy_to_clipboard_auto_clear
 from ..widgets import apply_shadow
 
 
@@ -138,9 +138,10 @@ class TextResultCard(QFrame):
     def _copy_to_clipboard(self):
         text = self.text_output.toPlainText()
         if text:
-            QGuiApplication.clipboard().setText(text)
-            self.lbl_copy_confirm.setText("✓ Copied!")
-            QTimer.singleShot(2500, lambda: self.lbl_copy_confirm.setText(""))
+            copy_to_clipboard_auto_clear(text)
+            secs = CLIPBOARD_AUTO_CLEAR_MS // 1000
+            self.lbl_copy_confirm.setText(f"✓ Copied — auto-clears in {secs}s")
+            QTimer.singleShot(3000, lambda: self.lbl_copy_confirm.setText(""))
 
     def _show_qr(self):
         text = self.text_output.toPlainText()

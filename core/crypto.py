@@ -5,6 +5,9 @@ Primitif kriptografi: key derivation dan helper enkripsi/dekripsi AES-256-GCM.
 
 from __future__ import annotations
 
+import base64
+import secrets
+
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -27,6 +30,37 @@ from .constants import (
 
 def _password_bytes(password: str) -> bytes:
     return password.encode("utf-8")
+
+
+# ── Recovery code ───────────────────────────────────────────────────────────────
+
+# Alfabet base32 RFC 4648 (huruf besar + 2-7). Dipakai untuk normalisasi kode
+# recovery agar input user yang berbeda kapitalisasi/separator tetap cocok.
+_B32_ALPHABET = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
+RECOVERY_CODE_BYTES = 20  # 160-bit entropi — sangat jauh dari bisa ditebak
+_RECOVERY_GROUP = 4
+
+
+def generate_recovery_code() -> str:
+    """Buat recovery code acak entropi tinggi, dikelompokkan agar mudah dibaca.
+
+    Bentuk tampilan: ``ABCD-EFGH-IJKL-...`` (base32, 8 grup × 4 karakter).
+    Normalisasi sebelum dipakai sebagai credential dilakukan di
+    :func:`normalize_recovery_code`.
+    """
+    raw = secrets.token_bytes(RECOVERY_CODE_BYTES)
+    b32 = base64.b32encode(raw).decode("ascii").rstrip("=")
+    groups = [b32[i : i + _RECOVERY_GROUP] for i in range(0, len(b32), _RECOVERY_GROUP)]
+    return "-".join(groups)
+
+
+def normalize_recovery_code(code: str) -> str:
+    """Normalisasi recovery code: huruf besar, buang karakter non-base32.
+
+    Membuat input toleran terhadap spasi, tanda hubung, dan kapitalisasi yang
+    berbeda dari saat ditampilkan, tanpa mengubah entropi efektif.
+    """
+    return "".join(ch for ch in code.upper() if ch in _B32_ALPHABET)
 
 
 def derive_key_pbkdf2(

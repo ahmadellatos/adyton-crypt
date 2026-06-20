@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from ..styles import CLR_WARN
 from ..widgets import apply_shadow, build_card_header, make_generator_button
 from .create_password_form import CreatePasswordForm
+from .recovery_hint_panel import RecoveryHintPanel
 
 
 class PasswordPanelLock(QFrame):
@@ -47,6 +48,11 @@ class PasswordPanelLock(QFrame):
         self.form.valid_state_changed.connect(self.valid_state_changed)
         self.btn_gen.clicked.connect(self.form.generate)
         lay.addWidget(self.form)
+
+        lay.addSpacing(8)
+        self.recovery_hint = RecoveryHintPanel()
+        lay.addWidget(self.recovery_hint)
+
         lay.addStretch()
 
     def _setup_accessibility(self):
@@ -69,6 +75,23 @@ class PasswordPanelLock(QFrame):
 
     def reset_fields(self):
         self.form.reset()
+        self.recovery_hint.reset()
 
     def attach_return_event(self, slot_func):
         self.form.attach_return_event(slot_func)
+
+    # --- Recovery key + hint passthrough ---
+    def recovery_enabled(self) -> bool:
+        return self.recovery_hint.recovery_enabled()
+
+    def recovery_mode(self) -> str:
+        return self.recovery_hint.recovery_mode()
+
+    def recovery_passphrase(self) -> str:
+        return self.recovery_hint.recovery_passphrase()
+
+    def has_pending_passphrase_error(self) -> bool:
+        return self.recovery_hint.has_pending_passphrase_error()
+
+    def get_hint(self) -> str:
+        return self.recovery_hint.get_hint()

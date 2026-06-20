@@ -12,12 +12,16 @@ from __future__ import annotations
 
 MAGIC_BYTES = b"ADTN"
 
-# v1 = AES-GCM monolitik lama. v2 = chunked AEAD streaming.
-# KDF tidak lagi diikat ke nomor versi format; v2 memakai field kdf_id
-# opsional agar PBKDF2 legacy dan Argon2id bisa dibedakan secara eksplisit.
+# v1 = AES-GCM monolitik lama. v2 = chunked AEAD streaming (key langsung dari
+# password). v3 = envelope: Master Key acak mengenkripsi record, lalu dibungkus
+# (wrapped) per-credential di keyslot. v3 memungkinkan ganti password dan
+# recovery key tanpa enkripsi ulang seluruh data.
+# KDF tidak diikat ke nomor versi format; v2/v3 memakai field kdf_id eksplisit
+# agar PBKDF2 legacy dan Argon2id bisa dibedakan.
 VERSION_V1 = b"\x01"
 VERSION_V2 = b"\x02"
-VERSION = VERSION_V2
+VERSION_V3 = b"\x03"
+VERSION = VERSION_V3
 
 SALT_SIZE = 16
 NONCE_SIZE_V1 = 12
@@ -49,10 +53,57 @@ V2_SUPPORTED_FLAGS = V2_FLAG_KDF_PARAMS
 HEADER_SIZE = HEADER_SIZE_V1
 OVERHEAD = OVERHEAD_V1
 
-# Chunk record types for v2.
+# Chunk record types for v2/v3 (record layout sama persis; hanya sumber key beda).
 RECORD_TYPE_METADATA = 0
 RECORD_TYPE_DATA = 1
 RECORD_TYPE_FINAL = 2
+
+# ============================================================================
+# PROTOKOL v3 — ENVELOPE / KEYSLOT
+# ============================================================================
+#
+# Header v3:
+#   MAGIC(4) + VERSION(1=0x03) + FILE_ID(16) + CHUNK_SIZE(4) + FLAGS(4)
+#   [jika FLAGS & V3_FLAG_HINT]  HINT_LEN(2) + HINT(HINT_LEN)
+#   SLOT_COUNT(1)
+#   SLOT_COUNT × keyslot:
+#       SLOT_TYPE(1) + KDF_ID(1) + KDF_PARAMS_LEN(2) + KDF_PARAMS(N)
+#       + SALT(16) + WRAP_NONCE(12) + WRAPPED_MASTER_KEY(48)
+#
+# AAD record  = MAGIC+VERSION_V3+FILE_ID+CHUNK_SIZE+FLAGS  (TANPA keyslot, agar
+#               ganti password cukup menulis ulang region keyslot — record tetap
+#               valid karena key record = Master Key acak yang tidak berubah).
+# AAD wrap    = MAGIC+VERSION_V3+FILE_ID+slot_meta  (mengikat wrapped MK ke
+#               identitas vault + parameter slot; cegah slot-swap & tamper).
+
+MASTER_KEY_SIZE = 32
+WRAP_NONCE_SIZE = 12
+WRAPPED_KEY_SIZE = MASTER_KEY_SIZE + TAG_SIZE  # 48
+MAX_KEYSLOTS = 8
+
+# Tipe keyslot (menentukan normalisasi credential saat derive KEK).
+SLOT_TYPE_PASSWORD = 0
+SLOT_TYPE_RECOVERY_CODE = 1  # kode acak app-generated; di-normalisasi sebelum KDF
+SLOT_TYPE_RECOVERY_PASSPHRASE = 2  # frasa pilihan user; dipakai apa adanya
+VALID_SLOT_TYPES = (
+    SLOT_TYPE_PASSWORD,
+    SLOT_TYPE_RECOVERY_CODE,
+    SLOT_TYPE_RECOVERY_PASSPHRASE,
+)
+RECOVERY_SLOT_TYPES = (SLOT_TYPE_RECOVERY_CODE, SLOT_TYPE_RECOVERY_PASSPHRASE)
+
+# Flags v3.
+V3_FLAG_NONE = 0
+V3_FLAG_HINT = 1 << 0
+V3_SUPPORTED_FLAGS = V3_FLAG_HINT
+
+# Hint password disimpan TANPA enkripsi (harus terbaca sebelum unlock).
+MAX_HINT_LENGTH = 256  # byte UTF-8
+
+# MAGIC(4)+VERSION(1)+FILE_ID(16)+CHUNK_SIZE(4)+FLAGS(4)
+V3_CORE_HEADER_SIZE = 4 + 1 + FILE_ID_SIZE + 4 + 4
+# V3_MAX_HEADER_SIZE didefinisikan di bawah, setelah ARGON2ID_PARAMS_SIZE
+# tersedia (dipakai untuk estimasi kebutuhan disk saat membuat vault).
 
 # ============================================================================
 # KRIPTO & PERFORMA
@@ -73,6 +124,11 @@ ARGON2ID_ITERATIONS = 3
 ARGON2ID_LANES = 4
 ARGON2ID_MEMORY_COST_KIB = 64 * 1024
 ARGON2ID_PARAMS_SIZE = 12  # iterations(4) + lanes(4) + memory_cost_kib(4)
+
+# Bound atas ukuran header v3 untuk estimasi kebutuhan disk (hint maksimal + slot
+# penuh). Jauh lebih kecil dari DISK_OVERHEAD_BYTES, jadi sengaja konservatif.
+_V3_SLOT_FIXED_SIZE = 1 + 1 + 2 + ARGON2ID_PARAMS_SIZE + SALT_SIZE + WRAP_NONCE_SIZE + WRAPPED_KEY_SIZE
+V3_MAX_HEADER_SIZE = V3_CORE_HEADER_SIZE + (2 + MAX_HINT_LENGTH) + 1 + MAX_KEYSLOTS * _V3_SLOT_FIXED_SIZE
 
 # Upper bounds for Argon2id parameters read from a vault header. A malicious or
 # corrupted .adtn could otherwise request gigabytes/terabytes of memory and OOM

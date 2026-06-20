@@ -10,7 +10,6 @@ import qtawesome as qta
 from cryptography.exceptions import InvalidTag
 from loguru import logger
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -36,6 +35,7 @@ from .components.text_result_card import TextResultCard
 from .styles import (
     CLR_ON_ACCENT,
 )
+from .utils import CLIPBOARD_AUTO_CLEAR_MS, copy_to_clipboard_auto_clear
 from .widgets import (
     AnimatedNotifBar,
     apply_shadow,
@@ -278,16 +278,18 @@ class TabTeks(QWidget):
             logger.warning(f"TabTeks error ({mode}): {error}")
         else:
             self.result_card.show_result(result, mode)
-            # Auto-copy ke clipboard
-            QGuiApplication.clipboard().setText(result)
+            # Auto-copy ke clipboard dengan auto-clear (penting untuk plaintext
+            # hasil dekripsi yang sensitif — tidak tertinggal di clipboard).
+            copy_to_clipboard_auto_clear(result)
+            secs = CLIPBOARD_AUTO_CLEAR_MS // 1000
             verb = "encrypted" if mode == "enkripsi" else "decrypted"
             self.system_notification.emit(
                 f"Text {verb} successfully",
-                "The result was automatically copied to the clipboard.",
+                f"Copied to the clipboard — auto-clears in {secs}s.",
             )
             self.notif.show_msg(
                 "ok",
-                f"✓ Text {verb} successfully — copied to clipboard.",
+                f"✓ Text {verb} successfully — copied (auto-clears in {secs}s).",
                 4000,
             )
             logger.info(f"TabTeks: {mode} berhasil — {len(result)} karakter")

@@ -5,8 +5,9 @@ Dipisah dari ui/widgets.py karena ini business logic, bukan UI component.
 """
 
 import inspect
-from PySide6.QtCore import QThread, Signal
+
 from loguru import logger
+from PySide6.QtCore import QThread, Signal
 
 from core.vault import VaultStatus
 
@@ -34,7 +35,10 @@ class CryptoWorker(QThread):
             if "is_cancelled" in sig.parameters:
                 self.kwargs["is_cancelled"] = lambda: self._is_cancelled
 
-            self.kwargs["progress_cb"] = lambda val: self.progress.emit(val)
+            # Hanya inject progress_cb bila fungsi target menerimanya. Operasi cepat
+            # (mis. ganti password) tidak punya parameter ini.
+            if "progress_cb" in sig.parameters:
+                self.kwargs["progress_cb"] = lambda val: self.progress.emit(val)
 
             result = self.func(*self.args, **self.kwargs)
             self.finished.emit(result if isinstance(result, tuple) else (result,))

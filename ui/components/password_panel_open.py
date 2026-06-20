@@ -1,3 +1,4 @@
+import qtawesome as qta
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
@@ -9,10 +10,15 @@ from PySide6.QtWidgets import (
 
 from ..styles import (
     CLR_ACCENT,
+    CLR_BORDER,
+    CLR_INSET,
     CLR_TEXT_MUTED,
     CLR_WARN,
 )
 from ..widgets import PasswordLineEdit, apply_shadow, build_tips_box
+
+_PLACEHOLDER_PW = "Type your password here…"
+_PLACEHOLDER_PW_RECOVERY = "Password or recovery key…"
 
 
 class PasswordPanelOpen(QFrame):
@@ -43,7 +49,13 @@ class PasswordPanelOpen(QFrame):
         self.v_pw.addWidget(self.sub_pw)
         self.v_pw.addSpacing(4)
 
-        self.entry_pw = PasswordLineEdit("Type your password here…")
+        self._vault_hint: str | None = None
+        self._vault_has_recovery = False
+        self.hint_box = self._build_hint_box()
+        self.hint_box.hide()
+        self.v_pw.addWidget(self.hint_box)
+
+        self.entry_pw = PasswordLineEdit(_PLACEHOLDER_PW)
         self.entry_pw.setAccessibleName("Password to open the vault")
         self.entry_pw.textChanged.connect(self._on_pw_change)
         self.v_pw.addWidget(self.entry_pw)
@@ -79,6 +91,27 @@ class PasswordPanelOpen(QFrame):
             ),
         ]
         return build_tips_box(tips, content_margins=(14, 12, 14, 12), spacing=10, icon_px=15)
+
+    def _build_hint_box(self) -> QFrame:
+        box = QFrame()
+        box.setObjectName("HintBox")
+        box.setStyleSheet(
+            f"QFrame#HintBox {{ background-color: {CLR_INSET};"
+            f" border: 1px solid {CLR_BORDER}; border-radius: 10px; }}"
+        )
+        lay = QHBoxLayout(box)
+        lay.setContentsMargins(14, 10, 14, 10)
+        lay.setSpacing(10)
+        self._hint_icon = QLabel()
+        self._hint_icon.setPixmap(
+            qta.icon("mdi6.lightbulb-on-outline", color=CLR_WARN).pixmap(16, 16)
+        )
+        lay.addWidget(self._hint_icon, alignment=Qt.AlignmentFlag.AlignTop)
+        self.lbl_hint = QLabel("")
+        self.lbl_hint.setObjectName("MutedText")
+        self.lbl_hint.setWordWrap(True)
+        lay.addWidget(self.lbl_hint, 1)
+        return box
 
     def _build_status_box(self) -> QFrame:
         box = QFrame()
@@ -167,6 +200,28 @@ class PasswordPanelOpen(QFrame):
         self.valid_state_changed.emit(bool(pw))
 
     # --- PUBLIC API ---
+    def show_vault_meta(self, hint: str | None, has_recovery: bool) -> None:
+        """Tampilkan hint (jika ada) & sesuaikan affordance untuk recovery key."""
+        self._vault_hint = (hint or "").strip() or None
+        self._vault_has_recovery = bool(has_recovery)
+        self._apply_meta()
+
+    def clear_vault_meta(self) -> None:
+        self._vault_hint = None
+        self._vault_has_recovery = False
+        self.hint_box.hide()
+        self.entry_pw.setPlaceholderText(_PLACEHOLDER_PW)
+
+    def _apply_meta(self) -> None:
+        if self._vault_hint:
+            self.lbl_hint.setText(f"Hint: {self._vault_hint}")
+            self.hint_box.show()
+        else:
+            self.hint_box.hide()
+        self.entry_pw.setPlaceholderText(
+            _PLACEHOLDER_PW_RECOVERY if self._vault_has_recovery else _PLACEHOLDER_PW
+        )
+
     def get_password(self) -> str:
         return self.entry_pw.text()
 
@@ -187,6 +242,7 @@ class PasswordPanelOpen(QFrame):
         self.status_box.hide()
         self.error_box.hide()
         self.info_box.show()
+        self._apply_meta()
 
     def set_processing_state(self, file_name: str, size_text: str, stage: str) -> None:
         self.lbl_title_pw.setText("Opening Vault")
@@ -195,6 +251,7 @@ class PasswordPanelOpen(QFrame):
         self.entry_pw.setEnabled(False)
         self.info_box.hide()
         self.error_box.hide()
+        self.hint_box.hide()
         self.status_box.show()
         self.lbl_status_file.setText(file_name or "—")
         self.lbl_status_size.setText(size_text or "—")
@@ -212,4 +269,5 @@ class PasswordPanelOpen(QFrame):
         self.info_box.hide()
         self.error_box.show()
         self.lbl_error_msg.setText(message)
+        self._apply_meta()  # hint tetap terlihat setelah password salah
         self.entry_pw.setFocus(Qt.FocusReason.OtherFocusReason)

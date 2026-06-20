@@ -229,3 +229,69 @@ def start_crypto_worker(worker, progress_callback, finished_callback) -> None:
     worker.finished.connect(finished_callback)
     worker.finished.connect(worker.deleteLater)
     worker.start()
+
+
+# ── Clipboard auto-clear ────────────────────────────────────────────────────────
+
+# Jendela waktu default sebelum clipboard dibersihkan otomatis. Cukup lama untuk
+# pindah aplikasi lalu paste, cukup pendek untuk membatasi paparan teks sensitif
+# (mis. plaintext hasil dekripsi Tab Teks) di clipboard sistem yang dibaca app lain.
+CLIPBOARD_AUTO_CLEAR_MS = 30_000
+
+
+class _ClipboardAutoClear:
+    """Salin teks ke clipboard, lalu hapus otomatis setelah timeout.
+
+    Hanya menghapus bila isi clipboard MASIH persis sama dengan yang kita taruh,
+    supaya tidak menimpa sesuatu yang user salin setelahnya. Memakai satu QTimer
+    singleton: tiap salin baru me-reset jadwal clear yang sebelumnya.
+    """
+
+    def __init__(self):
+        self._timer = None
+        self._pending: str | None = None
+
+    @staticmethod
+    def _clipboard():
+        # Import lazy mengikuti pola apply_shadow di modul ini — agar ui.utils
+        # tidak hard-depend ke PySide6 hanya untuk diimpor.
+        from PySide6.QtGui import QGuiApplication
+
+        app = QGuiApplication.instance()
+        return app.clipboard() if app is not None else None
+
+    def copy(self, text: str, timeout_ms: int = CLIPBOARD_AUTO_CLEAR_MS) -> None:
+        clipboard = self._clipboard()
+        if clipboard is None:
+            return
+        clipboard.setText(text)
+        self._pending = text
+
+        if self._timer is None:
+            from PySide6.QtCore import QTimer
+
+            self._timer = QTimer()
+            self._timer.setSingleShot(True)
+            self._timer.timeout.connect(self._clear_if_unchanged)
+
+        self._timer.stop()
+        self._timer.start(max(0, int(timeout_ms)))
+
+    def _clear_if_unchanged(self) -> None:
+        clipboard = self._clipboard()
+        if clipboard is not None and self._pending is not None:
+            if clipboard.text() == self._pending:
+                clipboard.clear()
+        self._pending = None
+
+
+_clipboard_auto_clear = _ClipboardAutoClear()
+
+
+def copy_to_clipboard_auto_clear(text: str, timeout_ms: int = CLIPBOARD_AUTO_CLEAR_MS) -> None:
+    """Salin ``text`` ke clipboard sistem lalu jadwalkan auto-clear.
+
+    Lihat ``_ClipboardAutoClear``. Panggil dari thread UI utama; tiap panggilan
+    me-reset timer clear sebelumnya, jadi hanya salinan terakhir yang dijadwalkan.
+    """
+    _clipboard_auto_clear.copy(text, timeout_ms)
