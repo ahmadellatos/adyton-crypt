@@ -1,40 +1,26 @@
-"""Qt-level tests untuk Tab Manage + pengenalan format v3 di drop zone.
+"""Qt-level tests untuk Tab Manage + pengenalan format vault di drop zone.
 
-Termasuk regresi penting: drop zone HARUS mengenali vault v3 sebagai openable,
+Termasuk regresi penting: drop zone HARUS mengenali vault Adyton sebagai openable,
 kalau tidak tab Buka maupun Manage tak bisa memuat vault default.
 """
 
-import io
-import tarfile
+from pathlib import Path
 
 import pytest
 
 pytest.importorskip("PySide6")
 
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-from core.constants import (
-    RECORD_TYPE_DATA,
-    RECORD_TYPE_FINAL,
-    RECORD_TYPE_METADATA,
-    V2_FLAG_NONE,
-)
-from core.crypto import derive_key, generate_recovery_code
-from core.vault import (
-    VaultStatus,
-    _v2_header_context,
-    _v2_write_record,
-    kunci_brankas,
-)
+from core.crypto import generate_recovery_code
+from core.vault import VaultStatus, kunci_brankas
 from ui.components.drop_zone_open import DropZoneOpen
 from ui.tab_manage import TabManage
 
 PASSWORD = "P@ssw0rd!Kuat123"
 
 
-def _make_v3_vault(tmp_path, **kwargs) -> str:
+def _make_vault(tmp_path, **kwargs) -> str:
     src = tmp_path / "secret"
-    src.mkdir()
+    src.mkdir(exist_ok=True)
     (src / "a.txt").write_text("hello", encoding="utf-8")
     vault = tmp_path / "v.adtn"
     status, message = kunci_brankas([str(src)], str(vault), PASSWORD, **kwargs)
@@ -42,35 +28,19 @@ def _make_v3_vault(tmp_path, **kwargs) -> str:
     return str(vault)
 
 
-def _make_v2_vault(tmp_path) -> str:
-    """Bangun vault v2 chunked-AEAD minimal (format lama, tak bisa dikelola)."""
-    import os
-
-    folder = "data"
-    salt, file_id = os.urandom(16), os.urandom(16)
-    aesgcm = AESGCM(derive_key(PASSWORD, salt))
-    hc = _v2_header_context(salt, file_id, 1024 * 1024, V2_FLAG_NONE)
-
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w") as tar:
-        data = b"hi"
-        info = tarfile.TarInfo(name=f"{folder}/a.txt")
-        info.size = len(data)
-        tar.addfile(info, io.BytesIO(data))
-
-    vault = tmp_path / "old_v2.adtn"
-    with vault.open("wb") as f:
-        f.write(hc)
-        nb = folder.encode("utf-8")
-        _v2_write_record(f, aesgcm, hc, RECORD_TYPE_METADATA, 0, len(nb).to_bytes(2, "big") + nb)
-        _v2_write_record(f, aesgcm, hc, RECORD_TYPE_DATA, 1, buf.getvalue())
-        _v2_write_record(f, aesgcm, hc, RECORD_TYPE_FINAL, 2, b"")
-    return str(vault)
+def _make_unsupported_vault(tmp_path) -> str:
+    """Vault Adyton dengan byte versi asing → tak bisa dikelola di Manage."""
+    base = _make_vault(tmp_path)
+    data = bytearray(Path(base).read_bytes())
+    data[4] = 0x02  # byte versi yang tidak dikenali
+    out = tmp_path / "unsupported.adtn"
+    out.write_bytes(bytes(data))
+    return str(out)
 
 
 @pytest.mark.qt
-def test_dropzone_recognizes_v3_vault(qtbot, tmp_path):
-    vault = _make_v3_vault(tmp_path)
+def test_dropzone_recognizes_vault(qtbot, tmp_path):
+    vault = _make_vault(tmp_path)
     dz = DropZoneOpen()
     qtbot.addWidget(dz)
 
@@ -91,20 +61,20 @@ def test_dropzone_rejects_garbage_adtn(qtbot, tmp_path):
 
 
 @pytest.mark.qt
-def test_manage_loads_v3_and_enables_actions(qtbot, tmp_path):
-    vault = _make_v3_vault(tmp_path, hint="my hint")
+def test_manage_loads_vault_and_enables_actions(qtbot, tmp_path):
+    vault = _make_vault(tmp_path, hint="my hint")
     tab = TabManage()
     qtbot.addWidget(tab)
 
     tab.drop_zone.load_file(vault)
     assert tab.btn_change.isEnabled() is True
-    assert "v3" in tab.lbl_info.text()
+    assert "Adyton Vault" in tab.lbl_info.text()
     assert "Hint: yes" in tab.lbl_info.text()
 
 
 @pytest.mark.qt
 def test_manage_recovery_section_without_recovery(qtbot, tmp_path):
-    vault = _make_v3_vault(tmp_path)
+    vault = _make_vault(tmp_path)
     tab = TabManage()
     qtbot.addWidget(tab)
     tab.show()
@@ -117,9 +87,7 @@ def test_manage_recovery_section_without_recovery(qtbot, tmp_path):
 
 @pytest.mark.qt
 def test_manage_recovery_section_with_recovery(qtbot, tmp_path):
-    vault = _make_v3_vault(
-        tmp_path, recovery_secret=generate_recovery_code(), recovery_type="code"
-    )
+    vault = _make_vault(tmp_path, recovery_secret=generate_recovery_code(), recovery_type="code")
     tab = TabManage()
     qtbot.addWidget(tab)
     tab.show()
@@ -135,9 +103,7 @@ def test_manage_recovery_section_with_recovery(qtbot, tmp_path):
 def test_manage_card_height_follows_active_page(qtbot, tmp_path):
     """Card harus menyusut mengikuti konten: halaman 'Recovery key' jauh lebih
     pendek dari halaman 'Change password' (form panjang)."""
-    vault = _make_v3_vault(
-        tmp_path, recovery_secret=generate_recovery_code(), recovery_type="code"
-    )
+    vault = _make_vault(tmp_path, recovery_secret=generate_recovery_code(), recovery_type="code")
     tab = TabManage()
     qtbot.addWidget(tab)
     tab.drop_zone.load_file(vault)
@@ -154,7 +120,7 @@ def test_manage_card_height_follows_active_page(qtbot, tmp_path):
 def test_manage_recovery_method_toggle_no_inflation(qtbot, tmp_path):
     """Regresi: passphrase → kembali ke 'generate code' tidak boleh membuat stack
     (dan kartu metode) memuai — tinggi harus kembali persis seperti semula."""
-    vault = _make_v3_vault(tmp_path)  # tanpa recovery → alur tambah
+    vault = _make_vault(tmp_path)  # tanpa recovery → alur tambah
     tab = TabManage()
     qtbot.addWidget(tab)
     tab.drop_zone.load_file(vault)
@@ -171,20 +137,22 @@ def test_manage_recovery_method_toggle_no_inflation(qtbot, tmp_path):
 
 
 @pytest.mark.qt
-def test_manage_unsupported_v2_badge_matches_status(qtbot, tmp_path):
-    """Vault v2 tak bisa dikelola → badge kartu harus 'UNSUPPORTED' (bukan tetap
-    'FORMAT ✓'), konsisten dengan status header. Memuat v3 mengembalikannya."""
-    v2 = _make_v2_vault(tmp_path)
-    v3 = _make_v3_vault(tmp_path)
+def test_manage_unsupported_vault_badge_matches_status(qtbot, tmp_path):
+    """Vault dengan versi asing → badge kartu harus 'UNSUPPORTED' (bukan tetap
+    'FORMAT ✓'), dan _guard() menolak aksi. Memuat vault valid mengembalikan badge
+    'ok' + aksi aktif."""
+    unsupported = _make_unsupported_vault(tmp_path)
+    valid = _make_vault(tmp_path)
     tab = TabManage()
     qtbot.addWidget(tab)
 
-    tab.drop_zone.load_file(v2)
+    tab.drop_zone.load_file(unsupported)
     assert tab.drop_zone.valid_badge.text() == "UNSUPPORTED"
     assert tab.drop_zone.valid_badge.property("state") == "warn"
-    assert tab.btn_change.isEnabled() is False
+    # Vault tak dikenali tidak boleh bisa dikelola walau kontrol tetap interaktif.
+    assert tab._guard() is False
 
-    tab.drop_zone.load_file(v3)
+    tab.drop_zone.load_file(valid)
     assert tab.drop_zone.valid_badge.property("state") == "ok"
     assert tab.btn_change.isEnabled() is True
 
@@ -193,7 +161,7 @@ def test_manage_unsupported_v2_badge_matches_status(qtbot, tmp_path):
 def test_manage_input_clickable_after_clear(qtbot, tmp_path):
     """Regresi: muat vault lalu clear → input password harus tetap enabled
     (bisa diklik), bukan ter-disable."""
-    vault = _make_v3_vault(tmp_path)
+    vault = _make_vault(tmp_path)
     tab = TabManage()
     qtbot.addWidget(tab)
 
@@ -207,7 +175,7 @@ def test_manage_input_clickable_after_clear(qtbot, tmp_path):
 def test_manage_input_stays_clickable_after_clear(qtbot, tmp_path):
     """Regresi: setelah vault di-clear dari drop zone, input password tetap bisa
     diklik (tidak ter-disable seperti bug sebelumnya)."""
-    vault = _make_v3_vault(tmp_path)
+    vault = _make_vault(tmp_path)
     tab = TabManage()
     qtbot.addWidget(tab)
 
@@ -220,7 +188,7 @@ def test_manage_input_stays_clickable_after_clear(qtbot, tmp_path):
 
 @pytest.mark.qt
 def test_manage_guard_requires_credential(qtbot, tmp_path):
-    vault = _make_v3_vault(tmp_path)
+    vault = _make_vault(tmp_path)
     tab = TabManage()
     qtbot.addWidget(tab)
 

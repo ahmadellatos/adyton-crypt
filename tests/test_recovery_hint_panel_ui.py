@@ -42,7 +42,7 @@ def test_passphrase_mode_requires_passphrase(qtbot):
     panel.show()
 
     panel.switch_recovery.setChecked(True)
-    panel.btn_pass.setChecked(True)  # exclusive group → switches to passphrase mode
+    panel.card_pass.clicked.emit()  # memilih kartu passphrase
 
     assert panel.recovery_mode() == RecoveryHintPanel.MODE_PASSPHRASE
     assert panel.entry_pass.isVisible() is True
@@ -75,7 +75,7 @@ def test_reset_clears_everything(qtbot):
     panel = RecoveryHintPanel()
     qtbot.addWidget(panel)
     panel.switch_recovery.setChecked(True)
-    panel.btn_pass.setChecked(True)
+    panel.card_pass.clicked.emit()
     panel.entry_pass.setText("x")
     panel.entry_hint.setText("y")
 

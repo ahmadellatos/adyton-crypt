@@ -1,14 +1,10 @@
 """
-Regression tests for the v2 chunked AEAD vault format.
+Regression tests for the chunked AEAD vault format (envelope).
 """
 
-import io
-import os
 import shutil
-import tarfile
 
-from core.constants import MAGIC_BYTES, VERSION, VERSION_V1, VERSION_V3
-from core.crypto import derive_key, make_encryptor
+from core.constants import MAGIC_BYTES, VERSION
 from core.vault import VaultStatus, buka_brankas, kunci_brankas
 
 PASSWORD = "P@ssw0rd!Kuat123"
@@ -29,7 +25,7 @@ def _corrupt_last_byte(path):
     path.write_bytes(data)
 
 
-def test_new_vaults_use_envelope_v3_and_roundtrip(tmp_path):
+def test_new_vaults_use_envelope_and_roundtrip(tmp_path):
     source = _make_source_folder(tmp_path)
     vault_path = tmp_path / "rahasia_v2.adtn"
 
@@ -38,8 +34,7 @@ def test_new_vaults_use_envelope_v3_and_roundtrip(tmp_path):
 
     with vault_path.open("rb") as f:
         assert f.read(4) == MAGIC_BYTES
-        assert f.read(1) == VERSION_V3
-        assert VERSION == VERSION_V3
+        assert f.read(1) == VERSION
 
     shutil.rmtree(source)
     status, restored_name = buka_brankas(str(vault_path), PASSWORD)
@@ -70,7 +65,7 @@ def test_corrupted_final_record_does_not_prompt_overwrite_or_leave_temp(tmp_path
     assert (source / "a.txt").read_text(encoding="utf-8") == "alpha"
 
 
-def test_truncated_v2_vault_is_rejected_without_temp_leak(tmp_path):
+def test_truncated_vault_is_rejected_without_temp_leak(tmp_path):
     source = _make_source_folder(tmp_path)
     vault_path = tmp_path / "rahasia_v2.adtn"
 
@@ -90,42 +85,17 @@ def test_truncated_v2_vault_is_rejected_without_temp_leak(tmp_path):
     assert not source.exists()
 
 
-def _create_legacy_v1_vault(tmp_path):
-    folder_name = "legacy_v1"
-    salt = os.urandom(16)
-    nonce = os.urandom(12)
-    key = derive_key(PASSWORD, salt)
+def test_foreign_version_byte_is_rejected(tmp_path):
+    """File dengan byte versi asing harus ditolak, bukan dianggap salah password."""
+    source = _make_source_folder(tmp_path)
+    vault_path = tmp_path / "foreign.adtn"
 
-    tar_buffer = io.BytesIO()
-    with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
-        data = b"legacy content"
-        info = tarfile.TarInfo(name=f"{folder_name}/legacy.txt")
-        info.size = len(data)
-        tar.addfile(info, io.BytesIO(data))
+    status, message = kunci_brankas([str(source)], str(vault_path), PASSWORD)
+    assert status == VaultStatus.SUCCESS, message
 
-    name_bytes = folder_name.encode("utf-8")
-    plaintext = len(name_bytes).to_bytes(2, "big") + name_bytes + tar_buffer.getvalue()
+    data = bytearray(vault_path.read_bytes())
+    data[4] = 0x02  # ubah byte versi ke nilai yang tidak dikenali
+    vault_path.write_bytes(data)
 
-    encryptor = make_encryptor(key, nonce)
-    ciphertext = encryptor.update(plaintext) + encryptor.finalize()
-
-    vault_path = tmp_path / "legacy_v1.adtn"
-    with vault_path.open("wb") as f:
-        f.write(MAGIC_BYTES)
-        f.write(VERSION_V1)
-        f.write(salt)
-        f.write(nonce)
-        f.write(ciphertext)
-        f.write(encryptor.tag)
-
-    return vault_path
-
-
-def test_legacy_v1_vaults_remain_readable(tmp_path):
-    vault_path = _create_legacy_v1_vault(tmp_path)
-
-    status, restored_name = buka_brankas(str(vault_path), PASSWORD)
-
-    assert status == VaultStatus.SUCCESS
-    assert restored_name == "legacy_v1"
-    assert (tmp_path / restored_name / "legacy.txt").read_text(encoding="utf-8") == "legacy content"
+    status, _ = buka_brankas(str(vault_path), PASSWORD)
+    assert status == VaultStatus.ERROR

@@ -1,10 +1,9 @@
 """
 Modul: tab_manage.py
 Deskripsi: Tab "Manage Vault" — ganti password dan kelola recovery key untuk
-           vault v3 yang sudah ada, tanpa mengenkripsi ulang data.
+           vault yang sudah ada, tanpa mengenkripsi ulang data.
 """
 
-import qtawesome as qta
 from loguru import logger
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -33,78 +32,18 @@ from core.worker import CryptoWorker
 from .components.create_password_form import CreatePasswordForm
 from .components.drop_zone_open import DropZoneOpen
 from .dialogs import ModernMessageBox, RecoveryCodeDialog
-from .styles import CLR_ACCENT, CLR_BORDER, CLR_TEXT_MUTED, CLR_WARN
-from .widgets import AnimatedNotifBar, PasswordLineEdit, apply_shadow, build_card_header
+from .styles import CLR_ACCENT, CLR_WARN
+from .widgets import (
+    AnimatedNotifBar,
+    MethodCard,
+    PasswordLineEdit,
+    apply_shadow,
+    build_card_header,
+    make_recovery_info_box,
+)
 
 _MODE_CODE = "code"
 _MODE_PASSPHRASE = "passphrase"
-
-
-class _MethodCard(QFrame):
-    """Kartu pilihan metode recovery (selectable, gaya radio-card)."""
-
-    clicked = Signal()
-
-    def __init__(self, icon_name: str, title: str, desc: str, parent=None):
-        super().__init__(parent)
-        self.setObjectName("MethodCard")
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._icon_name = icon_name
-        self._selected = False
-
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(14, 12, 14, 12)
-        lay.setSpacing(6)
-
-        top = QHBoxLayout()
-        top.setContentsMargins(0, 0, 0, 0)
-        self._icon = QLabel()
-        top.addWidget(self._icon, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        top.addStretch()
-        self._indicator = QLabel()
-        top.addWidget(self._indicator, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
-        lay.addLayout(top)
-
-        self._title = QLabel(title)
-        self._title.setObjectName("SectionLabel")
-        lay.addWidget(self._title)
-
-        self._desc = QLabel(desc)
-        self._desc.setObjectName("OptionDesc")
-        self._desc.setWordWrap(True)
-        lay.addWidget(self._desc)
-        lay.addStretch(1)
-
-        self.set_selected(False)
-
-    def set_selected(self, selected: bool):
-        self._selected = selected
-        border = CLR_ACCENT if selected else CLR_BORDER
-        bg = "rgba(79, 191, 201, 0.10)" if selected else "rgba(255, 255, 255, 0.02)"
-        self.setStyleSheet(
-            f"QFrame#MethodCard {{ border: 1.5px solid {border}; border-radius: 12px;"
-            f" background: {bg}; }}"
-        )
-        self._icon.setPixmap(
-            qta.icon(
-                self._icon_name, color=CLR_ACCENT if selected else CLR_TEXT_MUTED
-            ).pixmap(20, 20)
-        )
-        self._indicator.setPixmap(
-            qta.icon(
-                "mdi6.check-circle" if selected else "mdi6.circle-outline",
-                color=CLR_ACCENT if selected else CLR_TEXT_MUTED,
-            ).pixmap(18, 18)
-        )
-
-    def is_selected(self) -> bool:
-        return self._selected
-
-    def mousePressEvent(self, event):
-        if self.isEnabled():
-            self.clicked.emit()
-        super().mousePressEvent(event)
 
 
 class TabManage(QWidget):
@@ -243,7 +182,7 @@ class TabManage(QWidget):
         add_lay.setContentsMargins(0, 0, 0, 0)
         add_lay.setSpacing(12)
 
-        add_lay.addWidget(self._build_recovery_info_box())
+        add_lay.addWidget(make_recovery_info_box())
 
         method_lbl = QLabel("Recovery method")
         method_lbl.setObjectName("SectionLabel")
@@ -251,12 +190,12 @@ class TabManage(QWidget):
 
         cards = QHBoxLayout()
         cards.setSpacing(10)
-        self.card_gen = _MethodCard(
+        self.card_gen = MethodCard(
             "mdi6.dice-5-outline",
             "Generate code",
             "Create a one-time recovery code, shown once.",
         )
-        self.card_pass = _MethodCard(
+        self.card_pass = MethodCard(
             "mdi6.form-textbox-password",
             "Use passphrase",
             "Set a recovery phrase you choose yourself.",
@@ -298,29 +237,6 @@ class TabManage(QWidget):
         self.card_gen.clicked.connect(lambda: self._select_method(_MODE_CODE))
         self.card_pass.clicked.connect(lambda: self._select_method(_MODE_PASSPHRASE))
         return page
-
-    def _build_recovery_info_box(self) -> QFrame:
-        box = QFrame()
-        box.setObjectName("RecoveryInfoBox")
-        box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        box.setStyleSheet(
-            "QFrame#RecoveryInfoBox { background: rgba(255, 255, 255, 0.03);"
-            f" border: 1px solid {CLR_BORDER}; border-radius: 10px; }}"
-        )
-        lay = QHBoxLayout(box)
-        lay.setContentsMargins(14, 12, 14, 12)
-        lay.setSpacing(10)
-        icon = QLabel()
-        icon.setPixmap(qta.icon("mdi6.information-outline", color=CLR_ACCENT).pixmap(16, 16))
-        lay.addWidget(icon, 0, Qt.AlignmentFlag.AlignTop)
-        txt = QLabel(
-            "A recovery key opens this vault if you forget the password. "
-            "Store it somewhere safe — it's shown only once."
-        )
-        txt.setObjectName("OptionDesc")
-        txt.setWordWrap(True)
-        lay.addWidget(txt, 1)
-        return box
 
     def _select_method(self, method: str):
         self._rec_method = method
@@ -378,16 +294,16 @@ class TabManage(QWidget):
 
         if not self._info.get("supports_change_password"):
             self.lbl_info.setText(
-                f"This vault uses an older format ({fmt}) and can't be managed here. "
-                "Re-create it (lock again) to enable password change and recovery keys."
+                f"This vault was made by a different version of Adyton Crypt ({fmt}) "
+                "and can't be managed here. Please update the app."
             )
             self._set_actions_enabled(False)
             # Badge di kartu vault ikut menandai "unsupported" agar konsisten dengan
             # status di header (bukan tetap "FORMAT ✓").
             self.drop_zone.set_verification_state(
-                "unsupported", f"Older format ({fmt}) — can't be managed here"
+                "unsupported", f"Different version ({fmt}) — can't be managed here"
             )
-            self.status_changed.emit("Unsupported format", "Re-create to manage", "warn")
+            self.status_changed.emit("Unsupported format", "Update the app to manage", "warn")
             return
 
         has_recovery = self._info.get("has_recovery", False)
@@ -429,7 +345,7 @@ class TabManage(QWidget):
         if self.worker is not None:
             return False
         if not self._vault_path or not self._info.get("supports_change_password"):
-            self.notif.show_msg("warn", "Select a v3 vault to manage first.", 4000)
+            self.notif.show_msg("warn", "Select a vault to manage first.", 4000)
             return False
         if not self.entry_current.text():
             self.notif.show_msg("warn", "Enter the current password or recovery key.", 4000)
@@ -519,9 +435,7 @@ class TabManage(QWidget):
             logger.info(f"Manage vault sukses: {message}")
         elif status == VaultStatus.WRONG_PASSWORD:
             self._set_actions_enabled(True)
-            self.notif.show_msg(
-                "err", "The current password or recovery key is incorrect.", 7000
-            )
+            self.notif.show_msg("err", "The current password or recovery key is incorrect.", 7000)
             self.status_changed.emit("Incorrect credential", "Try again", "error")
         else:
             self._set_actions_enabled(True)

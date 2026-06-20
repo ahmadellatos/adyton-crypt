@@ -9,13 +9,30 @@ import shutil
 import tarfile
 from pathlib import Path
 
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
 from core.constants import (
+    CHUNK_SIZE,
+    FILE_ID_SIZE,
+    FLAG_NONE,
     MAGIC_BYTES,
+    MASTER_KEY_SIZE,
+    RECORD_TYPE_DATA,
+    RECORD_TYPE_FINAL,
+    RECORD_TYPE_METADATA,
+    SLOT_TYPE_PASSWORD,
     VERSION,
-    VERSION_V1,
 )
-from core.crypto import derive_key, make_encryptor
-from core.vault import VaultStatus, _is_safe_tar_member, buka_brankas, kunci_brankas
+from core.vault import (
+    VaultStatus,
+    _build_header,
+    _build_keyslot,
+    _is_safe_tar_member,
+    _record_context,
+    _write_record,
+    buka_brankas,
+    kunci_brankas,
+)
 from tests.conftest import folder_checksum
 
 PASSWORD_BENAR = "P@ssw0rd!Kuat123"
@@ -181,7 +198,7 @@ class TestHeaderFormat:
 
         status, msg = buka_brankas(path, PASSWORD_BENAR)
         assert status == VaultStatus.ERROR
-        assert "newer version" in (msg or "").lower()
+        assert "update" in (msg or "").lower()
 
     def test_garbage_name_length_on_wrong_password_returns_wrong_password_not_error(
         self, sample_folder, tmp_dir
@@ -234,10 +251,15 @@ def _create_malicious_vault_with_pathslip(tmp_dir: str, evil_path: str) -> str:
     to escape (TarSlip). This directly exercises the security check added
     in the recent hardening.
     """
-    password = PASSWORD_BENAR
-    salt = os.urandom(16)
-    nonce = os.urandom(12)
-    key = derive_key(password, salt)
+    # Build a real envelope vault (correct password) whose inner tar contains a
+    # member that tries to escape. Decryption succeeds; the TarSlip guard must
+    # then refuse the malicious member during extraction.
+    file_id = os.urandom(FILE_ID_SIZE)
+    master_key = os.urandom(MASTER_KEY_SIZE)
+    slots = [_build_keyslot(master_key, file_id, SLOT_TYPE_PASSWORD, PASSWORD_BENAR)]
+    header = _build_header(file_id, CHUNK_SIZE, FLAG_NONE, b"", slots)
+    header_context = _record_context(file_id, CHUNK_SIZE, FLAG_NONE)
+    aesgcm = AESGCM(master_key)
 
     # Build malicious tar in memory with a bad member path
     tar_buffer = io.BytesIO()
@@ -246,29 +268,18 @@ def _create_malicious_vault_with_pathslip(tmp_dir: str, evil_path: str) -> str:
         data = b"malicious content written via path traversal attack"
         info.size = len(data)
         tar.addfile(info, io.BytesIO(data))
-
     tar_data = tar_buffer.getvalue()
 
-    # Encrypt exactly like production code: first the virtual folder name (valid), then the tar payload
     folder_name = "SlippedBrankas"
     name_bytes = folder_name.encode("utf-8")
-    name_len = len(name_bytes).to_bytes(2, "big")
+    metadata = len(name_bytes).to_bytes(2, "big") + name_bytes
 
-    encryptor = make_encryptor(key, nonce)
-    encrypted_name = encryptor.update(name_len + name_bytes)
-    encrypted_tar = encryptor.update(tar_data) + encryptor.finalize()
-    tag = encryptor.tag
-
-    # Assemble full vault file
     vault_path = os.path.join(tmp_dir, "tar_slip_test.adtn")
     with open(vault_path, "wb") as f:
-        f.write(MAGIC_BYTES)
-        f.write(VERSION_V1)
-        f.write(salt)
-        f.write(nonce)
-        f.write(encrypted_name)
-        f.write(encrypted_tar)
-        f.write(tag)
+        f.write(header)
+        _write_record(f, aesgcm, header_context, RECORD_TYPE_METADATA, 0, metadata)
+        _write_record(f, aesgcm, header_context, RECORD_TYPE_DATA, 1, tar_data)
+        _write_record(f, aesgcm, header_context, RECORD_TYPE_FINAL, 2, b"")
 
     return vault_path
 

@@ -3,23 +3,23 @@ Modul: recovery_hint_panel.py
 Deskripsi: Opsi opsional saat MEMBUAT vault (Tab Kunci): recovery key + password
            hint. Recovery bisa berupa kode app-generated (ditampilkan setelah
            kunci) atau passphrase pilihan user. Hint disimpan TANPA enkripsi.
+
+           Pemilih metode memakai MethodCard bersama agar tampil konsisten dengan
+           Tab Manage.
 """
 
-import qtawesome as qta
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
 from ..styles import CLR_WARN
-from ..widgets import PasswordLineEdit, ToggleSwitch
+from ..widgets import MethodCard, PasswordLineEdit, ToggleSwitch, make_recovery_info_box
 
 
 def _make_text_input(placeholder: str) -> tuple[QFrame, QLineEdit]:
@@ -47,6 +47,7 @@ class RecoveryHintPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._mode = self.MODE_CODE
         self._build_ui()
 
     def _build_ui(self):
@@ -91,36 +92,32 @@ class RecoveryHintPanel(QWidget):
         body.setContentsMargins(0, 8, 0, 0)
         body.setSpacing(8)
 
-        seg = QHBoxLayout()
-        seg.setSpacing(8)
-        self.btn_code = QPushButton(" Generate code")
-        self.btn_code.setIcon(qta.icon("mdi6.dice-5-outline", color="white"))
-        self.btn_pass = QPushButton(" Use passphrase")
-        self.btn_pass.setIcon(qta.icon("mdi6.form-textbox-password", color="white"))
-        for b in (self.btn_code, self.btn_pass):
-            b.setCheckable(True)
-            b.setObjectName("BtnGen")
-            b.setFixedHeight(34)
-            b.setCursor(Qt.CursorShape.PointingHandCursor)
-            seg.addWidget(b, 1)
-        self._group = QButtonGroup(self)
-        self._group.setExclusive(True)
-        self._group.addButton(self.btn_code)
-        self._group.addButton(self.btn_pass)
-        self.btn_code.setChecked(True)
-        body.addLayout(seg)
+        body.addWidget(make_recovery_info_box())
+
+        method_lbl = QLabel("Recovery method")
+        method_lbl.setObjectName("SectionLabel")
+        body.addWidget(method_lbl)
+
+        cards = QHBoxLayout()
+        cards.setSpacing(10)
+        self.card_code = MethodCard(
+            "mdi6.dice-5-outline",
+            "Generate code",
+            "Create a one-time recovery code, shown once.",
+        )
+        self.card_pass = MethodCard(
+            "mdi6.form-textbox-password",
+            "Use passphrase",
+            "Set a recovery phrase you choose yourself.",
+        )
+        cards.addWidget(self.card_code, 1)
+        cards.addWidget(self.card_pass, 1)
+        body.addLayout(cards)
 
         self.entry_pass = PasswordLineEdit("Recovery passphrase…")
         self.entry_pass.setAccessibleName("Recovery passphrase")
         self.entry_pass.hide()
         body.addWidget(self.entry_pass)
-
-        self.lbl_code_note = QLabel(
-            "A one-time recovery code will be shown after locking — save it somewhere safe."
-        )
-        self.lbl_code_note.setObjectName("OptionDesc")
-        self.lbl_code_note.setWordWrap(True)
-        body.addWidget(self.lbl_code_note)
 
         self.recovery_body.setVisible(False)
         lay.addWidget(self.recovery_body)
@@ -136,17 +133,20 @@ class RecoveryHintPanel(QWidget):
         self.entry_hint.setMaxLength(160)
         lay.addWidget(hint_frame)
 
-        hint_warn = QLabel(
-            "Stored unencrypted in the vault — never put your actual password here."
-        )
+        hint_warn = QLabel("Stored unencrypted in the vault — never put your actual password here.")
         hint_warn.setObjectName("OptionDesc")
         hint_warn.setWordWrap(True)
         hint_warn.setStyleSheet(f"color: {CLR_WARN};")
         lay.addWidget(hint_warn)
 
+        # Default metode: generate code.
+        self.card_code.set_selected(True)
+        self.card_pass.set_selected(False)
+
         # Sinyal
         self.switch_recovery.toggled.connect(self._on_recovery_toggled)
-        self.btn_pass.toggled.connect(self._on_mode_changed)
+        self.card_code.clicked.connect(lambda: self._select_method(self.MODE_CODE))
+        self.card_pass.clicked.connect(lambda: self._select_method(self.MODE_PASSPHRASE))
         self.entry_pass.textChanged.connect(lambda *_: self.changed.emit())
         self.entry_hint.textChanged.connect(lambda *_: self.changed.emit())
 
@@ -155,9 +155,11 @@ class RecoveryHintPanel(QWidget):
         self.recovery_body.setVisible(on)
         self.changed.emit()
 
-    def _on_mode_changed(self, passphrase_mode: bool):
-        self.entry_pass.setVisible(passphrase_mode)
-        self.lbl_code_note.setVisible(not passphrase_mode)
+    def _select_method(self, method: str):
+        self._mode = method
+        self.card_code.set_selected(method == self.MODE_CODE)
+        self.card_pass.set_selected(method == self.MODE_PASSPHRASE)
+        self.entry_pass.setVisible(method == self.MODE_PASSPHRASE)
         self.changed.emit()
 
     # ── Public API (dipanggil TabKunci) ─────────────────────────────────────
@@ -165,7 +167,7 @@ class RecoveryHintPanel(QWidget):
         return self.switch_recovery.isChecked()
 
     def recovery_mode(self) -> str:
-        return self.MODE_PASSPHRASE if self.btn_pass.isChecked() else self.MODE_CODE
+        return self._mode
 
     def recovery_passphrase(self) -> str:
         return self.entry_pass.text()
@@ -183,16 +185,17 @@ class RecoveryHintPanel(QWidget):
 
     def set_busy(self, busy: bool):
         self.switch_recovery.setEnabled(not busy)
-        self.btn_code.setEnabled(not busy)
-        self.btn_pass.setEnabled(not busy)
+        self.card_code.setEnabled(not busy)
+        self.card_pass.setEnabled(not busy)
         self.entry_pass.setEnabled(not busy)
         self.entry_hint.setEnabled(not busy)
 
     def reset(self):
         self.switch_recovery.setChecked(False)
-        self.btn_code.setChecked(True)
+        self._mode = self.MODE_CODE
+        self.card_code.set_selected(True)
+        self.card_pass.set_selected(False)
         self.entry_pass.clear()
+        self.entry_pass.hide()
         self.entry_hint.clear()
         self.recovery_body.setVisible(False)
-        self.entry_pass.hide()
-        self.lbl_code_note.setVisible(True)

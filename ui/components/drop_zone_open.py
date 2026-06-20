@@ -15,33 +15,18 @@ from PySide6.QtWidgets import (
 )
 
 from core.constants import (
-    ARGON2ID_MAX_ITERATIONS,
-    ARGON2ID_MAX_LANES,
-    ARGON2ID_MAX_MEMORY_COST_KIB,
     ARGON2ID_PARAMS_SIZE,
-    CHUNK_RECORD_HEADER_SIZE,
     CHUNK_RECORD_OVERHEAD,
     CHUNK_SIZE,
+    CORE_HEADER_SIZE,
     FILE_ID_SIZE,
-    HEADER_SIZE_V2,
-    KDF_ID_ARGON2ID,
-    KDF_ID_PBKDF2_SHA256,
+    FLAG_HINT,
     MAGIC_BYTES,
     MAX_HINT_LENGTH,
     MAX_KEYSLOTS,
-    MAX_VIRTUAL_NAME_LENGTH,
-    OVERHEAD_V1,
-    RECORD_TYPE_METADATA,
     SALT_SIZE,
-    TAG_SIZE,
-    V2_FLAG_KDF_PARAMS,
-    V2_SUPPORTED_FLAGS,
-    V3_CORE_HEADER_SIZE,
-    V3_FLAG_HINT,
-    V3_SUPPORTED_FLAGS,
-    VERSION_V1,
-    VERSION_V2,
-    VERSION_V3,
+    SUPPORTED_FLAGS,
+    VERSION,
     WRAP_NONCE_SIZE,
     WRAPPED_KEY_SIZE,
 )
@@ -491,28 +476,7 @@ class DropZoneOpen(QWidget):
                     )
 
                 version = f.read(1)
-                if version == VERSION_V1:
-                    if file_size < OVERHEAD_V1:
-                        return mark_problem(
-                            "ERROR",
-                            "Incomplete file",
-                            "Vault v1 / Legacy",
-                            kdf="PBKDF2",
-                        )
-                    info.update(
-                        {
-                            "kdf": "PBKDF2",
-                            "format": "Vault v1 / Legacy",
-                            "status": "Valid format",
-                            "subtitle": "Ready to open",
-                        }
-                    )
-                    return info
-
-                if version == VERSION_V3:
-                    return self._inspect_v3_header(f, file_size, info, mark_problem)
-
-                if version != VERSION_V2:
+                if version != VERSION:
                     return mark_problem(
                         "UNSUPPORTED",
                         "Unsupported version",
@@ -521,183 +485,55 @@ class DropZoneOpen(QWidget):
                         subtitle="Needs a newer app version",
                     )
 
-                if file_size < HEADER_SIZE_V2 + (2 * CHUNK_RECORD_OVERHEAD):
-                    return mark_problem(
-                        "ERROR",
-                        "Incomplete file",
-                        "Vault v2",
-                    )
-
-                # v2: salt + file_id + chunk_size + flags
-                f.read(SALT_SIZE + FILE_ID_SIZE)
-                chunk_size_raw = f.read(4)
-                if len(chunk_size_raw) != 4:
-                    return mark_problem("ERROR", "Incomplete header", "Vault v2")
-                chunk_size = int.from_bytes(chunk_size_raw, byteorder="big")
-                if chunk_size <= 0 or chunk_size > CHUNK_SIZE:
-                    return mark_problem(
-                        "ERROR",
-                        "Invalid chunk parameter",
-                        "Vault v2",
-                    )
-
-                flags_raw = f.read(4)
-                if len(flags_raw) != 4:
-                    return mark_problem("ERROR", "Incomplete header", "Vault v2")
-
-                flags = int.from_bytes(flags_raw, byteorder="big")
-                if flags & ~V2_SUPPORTED_FLAGS:
-                    return mark_problem(
-                        "UNSUPPORTED",
-                        "Unsupported flag",
-                        "Vault v2",
-                        state="warn",
-                        subtitle="Needs a newer app version",
-                    )
-
-                kdf = "PBKDF2 Legacy"
-                if flags & V2_FLAG_KDF_PARAMS:
-                    section = f.read(3)
-                    if len(section) != 3:
-                        return mark_problem("ERROR", "Incomplete header", "Vault v2")
-                    kdf_id = section[0]
-                    params_len = int.from_bytes(section[1:3], byteorder="big")
-                    params_raw = f.read(params_len)
-                    if len(params_raw) != params_len:
-                        return mark_problem("ERROR", "Incomplete header", "Vault v2")
-
-                    if kdf_id == KDF_ID_ARGON2ID:
-                        if params_len != ARGON2ID_PARAMS_SIZE:
-                            return mark_problem(
-                                "ERROR",
-                                "Invalid KDF parameter",
-                                "Vault v2",
-                                kdf="Argon2id",
-                            )
-                        iterations = int.from_bytes(params_raw[0:4], byteorder="big")
-                        lanes = int.from_bytes(params_raw[4:8], byteorder="big")
-                        memory_cost = int.from_bytes(params_raw[8:12], byteorder="big")
-                        if (
-                            iterations <= 0
-                            or lanes <= 0
-                            or memory_cost <= 0
-                            or iterations > ARGON2ID_MAX_ITERATIONS
-                            or lanes > ARGON2ID_MAX_LANES
-                            or memory_cost > ARGON2ID_MAX_MEMORY_COST_KIB
-                        ):
-                            return mark_problem(
-                                "ERROR",
-                                "Invalid KDF parameter",
-                                "Vault v2",
-                                kdf="Argon2id",
-                            )
-                        kdf = "Argon2id"
-                    elif kdf_id == KDF_ID_PBKDF2_SHA256:
-                        if params_len != 4:
-                            return mark_problem(
-                                "ERROR",
-                                "Invalid KDF parameter",
-                                "Vault v2",
-                                kdf="PBKDF2",
-                            )
-                        iterations = int.from_bytes(params_raw, byteorder="big")
-                        if iterations <= 0:
-                            return mark_problem(
-                                "ERROR",
-                                "Invalid KDF parameter",
-                                "Vault v2",
-                                kdf="PBKDF2",
-                            )
-                        kdf = "PBKDF2"
-                    else:
-                        return mark_problem(
-                            "UNSUPPORTED",
-                            "Unsupported KDF",
-                            "Vault v2",
-                            state="warn",
-                            subtitle="Needs a newer app version",
-                            kdf="Unsupported",
-                        )
-
-                # Minimal sanity check record pertama. Header record tidak
-                # didekripsi di sini, tapi tipe/index/panjang bisa dicek tanpa password.
-                record_header = f.read(CHUNK_RECORD_HEADER_SIZE)
-                if len(record_header) != CHUNK_RECORD_HEADER_SIZE:
-                    return mark_problem("ERROR", "Incomplete record", "Vault v2")
-
-                record_type = record_header[0]
-                record_index = int.from_bytes(record_header[1:9], byteorder="big")
-                plaintext_len = int.from_bytes(record_header[9:13], byteorder="big")
-                if (
-                    record_type != RECORD_TYPE_METADATA
-                    or record_index != 0
-                    or plaintext_len < 2
-                    or plaintext_len > 2 + MAX_VIRTUAL_NAME_LENGTH
-                ):
-                    return mark_problem("ERROR", "Invalid record structure", "Vault v2")
-
-                if file_size - f.tell() < plaintext_len + TAG_SIZE:
-                    return mark_problem("ERROR", "Incomplete record", "Vault v2")
-
-                info.update(
-                    {
-                        "kdf": kdf,
-                        "format": "Vault v2",
-                        "status": "Valid format",
-                        "subtitle": "Ready to open",
-                    }
-                )
-                return info
+                return self._inspect_header(f, file_size, info, mark_problem)
         except Exception:
             return mark_problem("ERROR", "Unreadable", "Unreadable")
 
-    def _inspect_v3_header(self, f, file_size, info, mark_problem):
-        """Validasi struktur header v3 (envelope) untuk display — bukan verifikasi
+    def _inspect_header(self, f, file_size, info, mark_problem):
+        """Validasi struktur header (envelope) untuk display — bukan verifikasi
         kriptografis. Integritas baru dipastikan saat dekripsi dengan key benar."""
-        min_slot = (
-            1 + 1 + 2 + ARGON2ID_PARAMS_SIZE + SALT_SIZE + WRAP_NONCE_SIZE + WRAPPED_KEY_SIZE
-        )
-        min_v3 = V3_CORE_HEADER_SIZE + 1 + min_slot + (2 * CHUNK_RECORD_OVERHEAD)
-        if file_size < min_v3:
-            return mark_problem("ERROR", "Incomplete file", "Vault v3", kdf="Argon2id")
+        min_slot = 1 + 1 + 2 + ARGON2ID_PARAMS_SIZE + SALT_SIZE + WRAP_NONCE_SIZE + WRAPPED_KEY_SIZE
+        min_size = CORE_HEADER_SIZE + 1 + min_slot + (2 * CHUNK_RECORD_OVERHEAD)
+        if file_size < min_size:
+            return mark_problem("ERROR", "Incomplete file", "Adyton Vault", kdf="Argon2id")
 
         f.read(FILE_ID_SIZE)
         chunk_size_raw = f.read(4)
         if len(chunk_size_raw) != 4:
-            return mark_problem("ERROR", "Incomplete header", "Vault v3")
+            return mark_problem("ERROR", "Incomplete header", "Adyton Vault")
         chunk_size = int.from_bytes(chunk_size_raw, byteorder="big")
         if chunk_size <= 0 or chunk_size > CHUNK_SIZE:
-            return mark_problem("ERROR", "Invalid chunk parameter", "Vault v3")
+            return mark_problem("ERROR", "Invalid chunk parameter", "Adyton Vault")
 
         flags_raw = f.read(4)
         if len(flags_raw) != 4:
-            return mark_problem("ERROR", "Incomplete header", "Vault v3")
+            return mark_problem("ERROR", "Incomplete header", "Adyton Vault")
         flags = int.from_bytes(flags_raw, byteorder="big")
-        if flags & ~V3_SUPPORTED_FLAGS:
+        if flags & ~SUPPORTED_FLAGS:
             return mark_problem(
                 "UNSUPPORTED",
                 "Unsupported flag",
-                "Vault v3",
+                "Adyton Vault",
                 state="warn",
                 subtitle="Needs a newer app version",
             )
 
-        if flags & V3_FLAG_HINT:
+        if flags & FLAG_HINT:
             hint_len_raw = f.read(2)
             if len(hint_len_raw) != 2:
-                return mark_problem("ERROR", "Incomplete header", "Vault v3")
+                return mark_problem("ERROR", "Incomplete header", "Adyton Vault")
             hint_len = int.from_bytes(hint_len_raw, byteorder="big")
             if hint_len > MAX_HINT_LENGTH or len(f.read(hint_len)) != hint_len:
-                return mark_problem("ERROR", "Invalid header", "Vault v3")
+                return mark_problem("ERROR", "Invalid header", "Adyton Vault")
 
         slot_count_raw = f.read(1)
         if len(slot_count_raw) != 1 or not 1 <= slot_count_raw[0] <= MAX_KEYSLOTS:
-            return mark_problem("ERROR", "Invalid keyslot count", "Vault v3")
+            return mark_problem("ERROR", "Invalid keyslot count", "Adyton Vault")
 
         info.update(
             {
                 "kdf": "Argon2id",
-                "format": "Vault v3",
+                "format": "Adyton Vault",
                 "status": "Valid format",
                 "subtitle": "Ready to open",
             }

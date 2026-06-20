@@ -11,56 +11,56 @@ import os
 import pytest
 
 from core.constants import CHUNK_SIZE
-from core.crypto import derive_key, make_decryptor, make_encryptor, safe_cb
+from core.crypto import derive_key_argon2id, make_decryptor, make_encryptor, safe_cb
 
-# ── derive_key ────────────────────────────────────────────────────────────────
+# ── derive_key_argon2id ───────────────────────────────────────────────────────
 
 
 class TestDeriveKey:
     def test_output_length(self):
         """Kunci yang dihasilkan harus tepat 32 bytes (256-bit)."""
-        key = derive_key("password123", os.urandom(16))
+        key = derive_key_argon2id("password123", os.urandom(16))
         assert len(key) == 32
 
     def test_deterministic(self):
         """Password + salt yang sama harus selalu hasilkan kunci yang sama."""
         salt = os.urandom(16)
-        key1 = derive_key("sama", salt)
-        key2 = derive_key("sama", salt)
+        key1 = derive_key_argon2id("sama", salt)
+        key2 = derive_key_argon2id("sama", salt)
         assert key1 == key2
 
     def test_different_salt_different_key(self):
         """Salt berbeda harus hasilkan kunci berbeda meskipun password sama."""
         pw = "password"
-        key1 = derive_key(pw, os.urandom(16))
-        key2 = derive_key(pw, os.urandom(16))
+        key1 = derive_key_argon2id(pw, os.urandom(16))
+        key2 = derive_key_argon2id(pw, os.urandom(16))
         assert key1 != key2
 
     def test_different_password_different_key(self):
         """Password berbeda harus hasilkan kunci berbeda meskipun salt sama."""
         salt = os.urandom(16)
-        key1 = derive_key("password_a", salt)
-        key2 = derive_key("password_b", salt)
+        key1 = derive_key_argon2id("password_a", salt)
+        key2 = derive_key_argon2id("password_b", salt)
         assert key1 != key2
 
     def test_returns_bytes(self):
         """Output harus berupa bytes, bukan string atau tipe lain."""
-        key = derive_key("test", os.urandom(16))
+        key = derive_key_argon2id("test", os.urandom(16))
         assert isinstance(key, bytes)
 
     def test_empty_password(self):
         """Password kosong tetap harus menghasilkan kunci (bukan crash)."""
-        key = derive_key("", os.urandom(16))
+        key = derive_key_argon2id("", os.urandom(16))
         assert len(key) == 32
 
     def test_unicode_password(self):
         """Password unicode (emoji, kanji, dll) harus ditangani tanpa error."""
-        key = derive_key("p@$$w0rd🔐日本語", os.urandom(16))
+        key = derive_key_argon2id("p@$$w0rd🔐日本語", os.urandom(16))
         assert len(key) == 32
 
     def test_long_password(self):
         """Password sangat panjang tidak boleh crash."""
-        key = derive_key("a" * 1000, os.urandom(16))
+        key = derive_key_argon2id("a" * 1000, os.urandom(16))
         assert len(key) == 32
 
 

@@ -1,16 +1,16 @@
-"""Tests untuk format v3 envelope: recovery key, password hint, dan ganti
-password tanpa enkripsi ulang data.
+"""Tests untuk format envelope: recovery key, password hint, dan ganti password
+tanpa enkripsi ulang data.
 
 Mencakup fitur kritis #1 (recovery + hint) dan #2 (change password / re-key).
 """
 
 import shutil
 
-from core.constants import MAGIC_BYTES, VERSION_V2
+from core.constants import MAGIC_BYTES
 from core.crypto import generate_recovery_code, normalize_recovery_code
 from core.vault import (
     VaultStatus,
-    _read_v3_header_from_path,
+    _read_header_from_path,
     add_recovery_key,
     buka_brankas,
     change_password,
@@ -86,9 +86,7 @@ def test_vault_with_recovery_code_opens_with_password_or_code(tmp_path):
 
 def test_vault_with_recovery_passphrase(tmp_path):
     passphrase = "correct horse battery staple recovery"
-    source, vault_path = _lock(
-        tmp_path, recovery_secret=passphrase, recovery_type="passphrase"
-    )
+    source, vault_path = _lock(tmp_path, recovery_secret=passphrase, recovery_type="passphrase")
     shutil.rmtree(source)
 
     _assert_restores(vault_path, tmp_path, PASSWORD)
@@ -106,7 +104,7 @@ def test_hint_is_readable_without_password(tmp_path):
     assert read_vault_hint(str(vault_path)) == "kota kelahiran ibu"
 
     info = vault_info(str(vault_path))
-    assert info["format"] == "v3"
+    assert info["format"] == "Adyton Vault"
     assert info["has_hint"] is True
     assert info["hint"] == "kota kelahiran ibu"
     assert info["supports_change_password"] is True
@@ -154,13 +152,13 @@ def test_change_password_does_not_reencrypt_data(tmp_path):
     record (data terenkripsi) harus byte-identik."""
     _, vault_path = _lock(tmp_path)
 
-    header_end = _read_v3_header_from_path(vault_path)["header_end"]
+    header_end = _read_header_from_path(vault_path)["header_end"]
     records_before = vault_path.read_bytes()[header_end:]
 
     status, message = change_password(str(vault_path), PASSWORD, NEW_PASSWORD)
     assert status == VaultStatus.SUCCESS, message
 
-    after = _read_v3_header_from_path(vault_path)
+    after = _read_header_from_path(vault_path)
     records_after = vault_path.read_bytes()[after["header_end"] :]
 
     assert after["header_end"] == header_end  # panjang header tidak berubah
@@ -206,12 +204,12 @@ def test_reset_password_using_recovery_code(tmp_path):
     _assert_restores(vault_path, tmp_path, NEW_PASSWORD)
 
 
-def test_change_password_on_non_v3_vault_is_rejected(tmp_path):
+def test_change_password_on_foreign_format_is_rejected(tmp_path):
     fake = tmp_path / "old.adtn"
-    fake.write_bytes(MAGIC_BYTES + VERSION_V2 + b"\x00" * 64)
+    fake.write_bytes(MAGIC_BYTES + b"\x02" + b"\x00" * 64)
     status, message = change_password(str(fake), PASSWORD, NEW_PASSWORD)
     assert status == VaultStatus.ERROR
-    assert "older format" in (message or "").lower()
+    assert "different version" in (message or "").lower()
 
 
 # ── Add / remove recovery key on existing vault ──────────────────────────────────
@@ -273,7 +271,7 @@ def test_tampered_wrapped_master_key_fails_closed(tmp_path):
     shutil.rmtree(source)
 
     # Flip byte terakhir dari keyslot pertama (di dalam wrapped master key).
-    hdr = _read_v3_header_from_path(vault_path)
+    hdr = _read_header_from_path(vault_path)
     # Wrapped MK adalah 48 byte terakhir dari slot pertama; slot pertama berakhir
     # tepat sebelum slot berikutnya / akhir region keyslot. Untuk vault 1-slot,
     # itu berakhir di header_end. Flip byte sebelum header_end.

@@ -62,6 +62,105 @@ def make_generator_button() -> QPushButton:
     return btn
 
 
+class MethodCard(QFrame):
+    """Kartu pilihan metode (selectable, gaya radio-card).
+
+    Dipakai bersama di Tab Manage dan panel recovery Tab Lock agar pemilih metode
+    recovery (Generate code / Use passphrase) tampil konsisten.
+    """
+
+    clicked = Signal()
+
+    def __init__(self, icon_name: str, title: str, desc: str, parent=None):
+        super().__init__(parent)
+        self.setObjectName("MethodCard")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._icon_name = icon_name
+        self._selected = False
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(6)
+
+        top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
+        self._icon = QLabel()
+        top.addWidget(self._icon, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        top.addStretch()
+        self._indicator = QLabel()
+        top.addWidget(self._indicator, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
+        lay.addLayout(top)
+
+        self._title = QLabel(title)
+        self._title.setObjectName("SectionLabel")
+        lay.addWidget(self._title)
+
+        self._desc = QLabel(desc)
+        self._desc.setObjectName("OptionDesc")
+        self._desc.setWordWrap(True)
+        lay.addWidget(self._desc)
+        lay.addStretch(1)
+
+        self.set_selected(False)
+
+    def set_selected(self, selected: bool):
+        self._selected = selected
+        border = CLR_ACCENT if selected else CLR_BORDER
+        bg = "rgba(79, 191, 201, 0.10)" if selected else "rgba(255, 255, 255, 0.02)"
+        self.setStyleSheet(
+            f"QFrame#MethodCard {{ border: 1.5px solid {border}; border-radius: 12px;"
+            f" background: {bg}; }}"
+        )
+        self._icon.setPixmap(
+            qta.icon(self._icon_name, color=CLR_ACCENT if selected else CLR_TEXT_MUTED).pixmap(
+                20, 20
+            )
+        )
+        self._indicator.setPixmap(
+            qta.icon(
+                "mdi6.check-circle" if selected else "mdi6.circle-outline",
+                color=CLR_ACCENT if selected else CLR_TEXT_MUTED,
+            ).pixmap(18, 18)
+        )
+
+    def is_selected(self) -> bool:
+        return self._selected
+
+    def mousePressEvent(self, event):
+        if self.isEnabled():
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+
+def make_recovery_info_box(
+    text: str = "Keep your recovery key somewhere safe — you'll need it to get back in.",
+) -> QFrame:
+    """Kotak info recovery (ikon + teks, nada netral).
+
+    Satu baris yang berlaku untuk kedua metode (kode & passphrase); penjelasan
+    "apa itu recovery" sudah ada di subtitle toggle + deskripsi tiap kartu.
+    """
+    box = QFrame()
+    box.setObjectName("RecoveryInfoBox")
+    box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+    box.setStyleSheet(
+        "QFrame#RecoveryInfoBox { background: rgba(255, 255, 255, 0.03);"
+        f" border: 1px solid {CLR_BORDER}; border-radius: 10px; }}"
+    )
+    lay = QHBoxLayout(box)
+    lay.setContentsMargins(14, 12, 14, 12)
+    lay.setSpacing(10)
+    icon = QLabel()
+    icon.setPixmap(qta.icon("mdi6.information-outline", color=CLR_ACCENT).pixmap(16, 16))
+    lay.addWidget(icon, 0, Qt.AlignmentFlag.AlignTop)
+    txt = QLabel(text)
+    txt.setObjectName("OptionDesc")
+    txt.setWordWrap(True)
+    lay.addWidget(txt, 1)
+    return box
+
+
 def build_card_header(
     icon_name: str,
     icon_color: str,

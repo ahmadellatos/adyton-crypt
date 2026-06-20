@@ -18,7 +18,7 @@ from cryptography.exceptions import InvalidTag
 from loguru import logger
 
 from .constants import (
-    NONCE_SIZE_V1,
+    NONCE_SIZE,
     SALT_SIZE,
     TAG_SIZE,
 )
@@ -27,13 +27,13 @@ from .crypto import derive_key_argon2id, make_decryptor, make_encryptor
 # ─── Konstanta format ────────────────────────────────────────────────────────
 
 TEXT_VAULT_PREFIX = "ADTN_TEXT:1:"
-_MIN_PAYLOAD_LEN = SALT_SIZE + NONCE_SIZE_V1 + TAG_SIZE  # tanpa ciphertext = teks kosong
+_MIN_PAYLOAD_LEN = SALT_SIZE + NONCE_SIZE + TAG_SIZE  # tanpa ciphertext = teks kosong
 
 # Parameter KDF DIBEKUKAN untuk format versi 1.
 # JANGAN ganti nilai ini — format "ADTN_TEXT:1:" tidak menyimpan parameter KDF
 # di payload, sehingga dekripsi bergantung pada nilai yang persis sama dengan
 # saat enkripsi. Jika parameter perlu dinaikkan, buat versi format baru
-# (ADTN_TEXT:2:) yang menyertakan parameter di payload, seperti vault v2.
+# (ADTN_TEXT:2:) yang menyertakan parameter KDF di dalam payload.
 # Saat ini disengaja sama dengan default constants.py, tapi sengaja tidak
 # di-import langsung agar perubahan default tidak diam-diam merusak teks lama.
 TEXT_V1_ARGON2ID_ITERATIONS = 3
@@ -67,7 +67,7 @@ def encrypt_text(plaintext: str, password: str) -> str:
 
     data = plaintext.encode("utf-8")
     salt = os.urandom(SALT_SIZE)
-    nonce = os.urandom(NONCE_SIZE_V1)
+    nonce = os.urandom(NONCE_SIZE)
 
     key = derive_key_argon2id(
         password,
@@ -124,9 +124,9 @@ def decrypt_text(encrypted: str, password: str) -> str:
         raise ValueError("Data too short — possibly corrupted or truncated.")
 
     salt = payload[:SALT_SIZE]
-    nonce = payload[SALT_SIZE : SALT_SIZE + NONCE_SIZE_V1]
+    nonce = payload[SALT_SIZE : SALT_SIZE + NONCE_SIZE]
     tag = payload[-TAG_SIZE:]
-    ciphertext = payload[SALT_SIZE + NONCE_SIZE_V1 : -TAG_SIZE]
+    ciphertext = payload[SALT_SIZE + NONCE_SIZE : -TAG_SIZE]
 
     key = derive_key_argon2id(
         password,
