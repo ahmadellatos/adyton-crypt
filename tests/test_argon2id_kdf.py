@@ -12,9 +12,12 @@ from core.constants import (
     CORE_HEADER_SIZE,
     FLAG_NONE,
     KDF_ID_ARGON2ID,
+    KDF_LEVEL_INTERACTIVE,
+    KDF_LEVEL_PARANOID,
     MAGIC_BYTES,
     SLOT_TYPE_PASSWORD,
     VERSION,
+    kdf_params_for_level,
 )
 
 # Offset awal Argon2id params di slot 0 untuk vault default (tanpa hint, satu slot
@@ -26,6 +29,7 @@ from core.vault import (
     VaultStatus,
     _encode_argon2id_params,
     buka_brankas,
+    change_password,
     kunci_brankas,
 )
 
@@ -148,3 +152,56 @@ def test_explicit_argon2id_key_derivation_dispatch_is_deterministic():
     # An unknown KDF id must be rejected, never silently misinterpreted.
     with pytest.raises(ValueError):
         derive_key_for_kdf(PASSWORD, salt, 99, {})
+
+
+# ── KDF level selection (Settings) ──────────────────────────────────────────────
+
+
+def _read_slot0_params(vault_path) -> dict[str, int]:
+    data = vault_path.read_bytes()
+    s = _SLOT0_PARAMS_START
+    return {
+        "iterations": int.from_bytes(data[s : s + 4], "big"),
+        "lanes": int.from_bytes(data[s + 4 : s + 8], "big"),
+        "memory_cost": int.from_bytes(data[s + 8 : s + 12], "big"),
+    }
+
+
+def test_kdf_level_paranoid_is_stored_and_opens(tmp_path):
+    source = _make_source_folder(tmp_path)
+    vault_path = tmp_path / "paranoid.adtn"
+    params = kdf_params_for_level(KDF_LEVEL_PARANOID)
+
+    status, message = kunci_brankas([str(source)], str(vault_path), PASSWORD, kdf_params=params)
+    assert status == VaultStatus.SUCCESS, message
+    assert _read_slot0_params(vault_path) == params
+
+    shutil.rmtree(source)
+    status, _ = buka_brankas(str(vault_path), PASSWORD)
+    assert status == VaultStatus.SUCCESS
+
+
+def test_kdf_level_interactive_uses_lighter_params(tmp_path):
+    source = _make_source_folder(tmp_path)
+    vault_path = tmp_path / "interactive.adtn"
+    params = kdf_params_for_level(KDF_LEVEL_INTERACTIVE)
+
+    status, _ = kunci_brankas([str(source)], str(vault_path), PASSWORD, kdf_params=params)
+    assert status == VaultStatus.SUCCESS
+    stored = _read_slot0_params(vault_path)
+    assert stored["iterations"] == 2
+    assert stored["memory_cost"] == 32 * 1024
+
+
+def test_change_password_preserves_kdf_level(tmp_path):
+    source = _make_source_folder(tmp_path)
+    vault_path = tmp_path / "lvl.adtn"
+    params = kdf_params_for_level(KDF_LEVEL_PARANOID)
+    kunci_brankas([str(source)], str(vault_path), PASSWORD, kdf_params=params)
+    shutil.rmtree(source)
+
+    before = _read_slot0_params(vault_path)
+    status, _ = change_password(str(vault_path), PASSWORD, "An0therStr0ng!Pass")
+    assert status == VaultStatus.SUCCESS
+    after = _read_slot0_params(vault_path)
+    assert after == before == params

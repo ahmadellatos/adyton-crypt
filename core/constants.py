@@ -108,6 +108,29 @@ ARGON2ID_MAX_ITERATIONS = 64
 ARGON2ID_MAX_LANES = 64
 ARGON2ID_MAX_MEMORY_COST_KIB = 2 * 1024 * 1024  # 2 GiB
 
+# Preset level KDF yang bisa dipilih user di Settings. "moderate" = default vault
+# (identik dengan ARGON2ID_* di atas). Semua nilai di bawah ceiling ARGON2ID_MAX_*.
+KDF_LEVEL_INTERACTIVE = "interactive"
+KDF_LEVEL_MODERATE = "moderate"
+KDF_LEVEL_PARANOID = "paranoid"
+DEFAULT_KDF_LEVEL = KDF_LEVEL_MODERATE
+
+KDF_LEVELS = {
+    KDF_LEVEL_INTERACTIVE: {"iterations": 2, "lanes": ARGON2ID_LANES, "memory_cost": 32 * 1024},
+    KDF_LEVEL_MODERATE: {
+        "iterations": ARGON2ID_ITERATIONS,
+        "lanes": ARGON2ID_LANES,
+        "memory_cost": ARGON2ID_MEMORY_COST_KIB,
+    },
+    KDF_LEVEL_PARANOID: {"iterations": 4, "lanes": ARGON2ID_LANES, "memory_cost": 256 * 1024},
+}
+
+
+def kdf_params_for_level(level: str) -> dict[str, int]:
+    """Parameter Argon2id untuk sebuah level KDF (fallback ke default bila asing)."""
+    return dict(KDF_LEVELS.get(level, KDF_LEVELS[DEFAULT_KDF_LEVEL]))
+
+
 # ============================================================================
 # PARAMETER APLIKASI (disesuaikan dari magic numbers sebelumnya)
 # ============================================================================

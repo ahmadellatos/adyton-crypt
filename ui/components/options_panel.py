@@ -186,6 +186,14 @@ class OptionsPanel(QWidget):
     def is_secure_wipe(self) -> bool:
         return self.chk_secure._checked
 
+    def apply_defaults(self, delete_original: bool, secure_wipe: bool) -> None:
+        """Set opsi awal dari Settings. Secure wipe diset langsung tanpa dialog
+        konfirmasi karena user sudah memilihnya secara sadar di Settings."""
+        if delete_original and not self.switch_hapus.isChecked():
+            self.switch_hapus.setChecked(True)  # membuka sub-opsi Secure Wipe + emit
+        if delete_original and secure_wipe and not self.chk_secure._checked:
+            self.chk_secure.set_checked(True)
+
     def reset_options(self):
         if self.switch_hapus.isChecked():
             self.switch_hapus.setChecked(False)  # memicu _on_hapus_toggled (collapse + emit)

@@ -127,6 +127,11 @@ class MethodCard(QFrame):
     def is_selected(self) -> bool:
         return self._selected
 
+    def set_texts(self, title: str, desc: str) -> None:
+        """Perbarui judul + deskripsi (dipakai saat ganti bahasa)."""
+        self._title.setText(title)
+        self._desc.setText(desc)
+
     def mousePressEvent(self, event):
         if self.isEnabled():
             self.clicked.emit()

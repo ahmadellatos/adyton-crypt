@@ -612,11 +612,22 @@ def _build_keyslot(
     file_id: bytes,
     slot_type: int,
     secret: str,
+    kdf_params: dict[str, int] | None = None,
 ) -> bytes:
-    """Bangun satu keyslot lengkap (meta + wrapped MK) dari sebuah credential."""
+    """Bangun satu keyslot lengkap (meta + wrapped MK) dari sebuah credential.
+
+    ``kdf_params`` opsional memilih kekuatan Argon2id (level KDF); bila None dipakai
+    default vault. Parameter di-encode lalu di-decode lagi agar nilainya tervalidasi
+    & dibatasi ceiling sebelum dipakai.
+    """
     salt = os.urandom(SALT_SIZE)
     wrap_nonce = os.urandom(WRAP_NONCE_SIZE)
-    kdf_params_raw = _encode_argon2id_params()
+    if kdf_params:
+        kdf_params_raw = _encode_argon2id_params(
+            kdf_params["iterations"], kdf_params["lanes"], kdf_params["memory_cost"]
+        )
+    else:
+        kdf_params_raw = _encode_argon2id_params()
     kdf_params = _decode_argon2id_params(kdf_params_raw)
     kek = _derive_slot_kek(slot_type, secret, salt, KDF_ID_ARGON2ID, kdf_params)
     meta = _slot_meta(slot_type, KDF_ID_ARGON2ID, kdf_params_raw, salt, wrap_nonce)
@@ -1133,6 +1144,7 @@ def kunci_brankas(
     recovery_secret: str | None = None,
     recovery_type: str = "code",
     hint: str | None = None,
+    kdf_params: dict[str, int] | None = None,
 ) -> tuple[VaultStatus, str]:
     """Buat vault envelope dari ``paths``.
 
@@ -1200,14 +1212,18 @@ def kunci_brankas(
             if hint_bytes:
                 flags |= FLAG_HINT
 
-        slots = [_build_keyslot(master_key, file_id, SLOT_TYPE_PASSWORD, password)]
+        slots = [
+            _build_keyslot(master_key, file_id, SLOT_TYPE_PASSWORD, password, kdf_params=kdf_params)
+        ]
         if recovery_secret and recovery_secret.strip():
             rtype = (
                 SLOT_TYPE_RECOVERY_CODE
                 if recovery_type == "code"
                 else SLOT_TYPE_RECOVERY_PASSPHRASE
             )
-            slots.append(_build_keyslot(master_key, file_id, rtype, recovery_secret))
+            slots.append(
+                _build_keyslot(master_key, file_id, rtype, recovery_secret, kdf_params=kdf_params)
+            )
 
         header = _build_header(file_id, CHUNK_SIZE, flags, hint_bytes, slots)
         header_context = _record_context(file_id, CHUNK_SIZE, flags)
@@ -1608,9 +1624,15 @@ def change_password(
     if pw_index is None:
         return VaultStatus.ERROR, "This vault has no password slot to change."
 
+    # Pertahankan level KDF slot lama agar header tetap sepanjang semula (invariant
+    # re-key in-place) dan kekuatan yang dipilih user tidak diam-diam diturunkan.
     slot_bytes = [_slot_bytes(s) for s in hdr["slots"]]
     slot_bytes[pw_index] = _build_keyslot(
-        master_key, hdr["file_id"], SLOT_TYPE_PASSWORD, new_password
+        master_key,
+        hdr["file_id"],
+        SLOT_TYPE_PASSWORD,
+        new_password,
+        kdf_params=hdr["slots"][pw_index]["kdf_params"],
     )
     new_header = _build_header(
         hdr["file_id"], hdr["chunk_size"], hdr["flags"], _hint_bytes_from_header(hdr), slot_bytes
@@ -1661,8 +1683,13 @@ def add_recovery_key(
     if len(hdr["slots"]) >= MAX_KEYSLOTS:
         return VaultStatus.ERROR, "This vault already has the maximum number of keyslots."
 
+    # Samakan level KDF recovery dengan slot password vault agar konsisten.
+    pw_slot = next((s for s in hdr["slots"] if s["slot_type"] == SLOT_TYPE_PASSWORD), None)
+    level_params = pw_slot["kdf_params"] if pw_slot else None
     rtype = SLOT_TYPE_RECOVERY_CODE if recovery_type == "code" else SLOT_TYPE_RECOVERY_PASSPHRASE
-    new_slot = _build_keyslot(master_key, hdr["file_id"], rtype, recovery_secret)
+    new_slot = _build_keyslot(
+        master_key, hdr["file_id"], rtype, recovery_secret, kdf_params=level_params
+    )
     slot_bytes = [_slot_bytes(s) for s in hdr["slots"]] + [new_slot]
     new_header = _build_header(
         hdr["file_id"], hdr["chunk_size"], hdr["flags"], _hint_bytes_from_header(hdr), slot_bytes

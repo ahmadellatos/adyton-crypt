@@ -5,11 +5,12 @@ Deskripsi: Antarmuka jendela utama (Main Window) dari aplikasi Adyton Crypt.
            Dilengkapi Modern UWP Toast Notification menggunakan Winotify.
 """
 
+import contextlib
 import os
 
 import qtawesome as qta
 from loguru import logger
-from PySide6.QtCore import QPropertyAnimation, QSettings, QSize, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, QPropertyAnimation, QSettings, QSize, Qt, QTimer
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -42,6 +43,7 @@ from .constants import APP_AUMID, APP_NAME, APP_VERSION
 from .dialogs import ModernMessageBox
 from .menus import AccessibleCenteredMenu, CenteredMenuAction
 from .onboarding import OnboardingView
+from .settings_store import get_settings
 from .tab_buka import TabBuka
 from .tab_kunci import TabKunci
 from .tab_manage import TabManage
@@ -51,6 +53,27 @@ from .widgets import CustomTitleBar
 # =========================================================================
 # MAIN WINDOW
 # =========================================================================
+
+
+class _ActivityFilter(QObject):
+    """Event filter app-wide untuk mendeteksi aktivitas user (reset auto-lock).
+
+    Dipasang sebagai objek terpisah agar tidak menimpa eventFilter milik
+    FramelessMainWindow.
+    """
+
+    def __init__(self, on_activity):
+        super().__init__()
+        self._on_activity = on_activity
+
+    def eventFilter(self, obj, event):
+        if event.type() in (
+            QEvent.Type.KeyPress,
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.Wheel,
+        ):
+            self._on_activity()
+        return False
 
 
 class AppBrankas(FramelessMainWindow):
@@ -182,7 +205,66 @@ class AppBrankas(FramelessMainWindow):
         self._update_action_button_tab_order()
         self._update_page_header(0)  # judul awal: Kunci Folder
 
+        # Auto-lock idle: bersihkan kolom sensitif + clipboard setelah idle.
+        self._autolock_timer = QTimer(self)
+        self._autolock_timer.setSingleShot(True)
+        self._autolock_timer.timeout.connect(self._auto_lock_clear)
+        self._activity_filter = _ActivityFilter(self._on_user_activity)
+        _app = QApplication.instance()
+        if _app is not None:
+            _app.installEventFilter(self._activity_filter)
+        get_settings().changed.connect(self._on_settings_changed)
+        self._refresh_autolock_from_settings()
+
         self._maybe_start_onboarding()  # tampilkan wizard first-run bila perlu
+
+    # ── Settings & auto-lock ──────────────────────────────────────────────────
+    def _open_settings(self) -> None:
+        from .settings_window import SettingsWindow
+
+        SettingsWindow(self).exec()
+        self._refresh_autolock_from_settings()
+
+    def _on_settings_changed(self, key: str) -> None:
+        if key == "*" or key.startswith("privacy/auto_lock"):
+            self._refresh_autolock_from_settings()
+
+    def _refresh_autolock_from_settings(self) -> None:
+        s = get_settings()
+        if s.auto_lock_enabled():
+            self._autolock_timer.start(max(1, s.auto_lock_minutes()) * 60_000)
+        else:
+            self._autolock_timer.stop()
+
+    def _on_user_activity(self) -> None:
+        # Reset hitung mundur tiap ada aktivitas, hanya bila auto-lock aktif.
+        if self._autolock_timer.isActive():
+            self._autolock_timer.start(self._autolock_timer.interval())
+
+    def _auto_lock_clear(self) -> None:
+        """Bersihkan state sensitif saat idle: field password, hasil Tab Teks,
+        dan clipboard. App ini tidak menyimpan sesi vault terbuka, jadi 'auto-lock'
+        = panic-clear yang aman & tidak mengganggu data di disk."""
+        from PySide6.QtGui import QGuiApplication
+
+        from .widgets import PasswordLineEdit
+
+        for le in self.findChildren(PasswordLineEdit):
+            with contextlib.suppress(Exception):
+                le.clear()
+        # Tab Teks: kosongkan input + hasil dekripsi yang masih tampil.
+        for attr in ("input_card", "result_card", "password_panel"):
+            w = getattr(self.tab_teks, attr, None)
+            for m in ("clear_text", "hide_result", "reset", "reset_fields"):
+                fn = getattr(w, m, None) if w is not None else None
+                if callable(fn):
+                    with contextlib.suppress(Exception):
+                        fn()
+        cb = QGuiApplication.clipboard()
+        if cb is not None:
+            with contextlib.suppress(Exception):
+                cb.clear()
+        self._refresh_autolock_from_settings()  # jadwalkan lagi untuk siklus berikutnya
 
     # =========================================================================
     # ONBOARDING (FIRST-RUN)
@@ -438,7 +520,7 @@ class AppBrankas(FramelessMainWindow):
         )
 
         self.btn_nav_manage = self._make_tab_button(
-            "Manage", "mdi6.cog-outline", "Manage Vault tab"
+            "Manage", "mdi6.key-outline", "Manage Vault tab"
         )
 
         self.tab_group = QButtonGroup(self)
@@ -453,6 +535,12 @@ class AppBrankas(FramelessMainWindow):
         lay.addWidget(self.btn_nav_teks, alignment=Qt.AlignmentFlag.AlignHCenter)
         lay.addWidget(self.btn_nav_manage, alignment=Qt.AlignmentFlag.AlignHCenter)
         lay.addStretch()
+
+        # Settings di dasar rail — bukan tab (tidak checkable), membuka dialog.
+        self.btn_nav_settings = self._make_tab_button("Settings", "mdi6.cog-outline", "Settings")
+        self.btn_nav_settings.setCheckable(False)
+        self.btn_nav_settings.clicked.connect(self._open_settings)
+        lay.addWidget(self.btn_nav_settings, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         parent_layout.addWidget(sidebar)
 

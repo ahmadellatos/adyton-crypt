@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.constants import kdf_params_for_level
 from core.crypto import generate_recovery_code
 from core.vault import VaultStatus, kunci_brankas
 from core.worker import CryptoWorker
@@ -30,6 +31,7 @@ from .components.options_panel import OptionsPanel
 from .components.password_panel_lock import PasswordPanelLock
 from .constants import APP_NAME
 from .dialogs import ModernMessageBox, RecoveryCodeDialog
+from .settings_store import get_settings
 from .utils import (
     ProgressETA,
     apply_cancelling_state,
@@ -71,6 +73,10 @@ class TabKunci(QWidget):
 
         # Opsi "Delete original" kini berada di dalam card target (dasar daftar).
         self.drop_zone.embed_options(self.options_panel)
+
+        # Terapkan default opsi dari Settings (Hapus Asli / Secure Wipe).
+        _s = get_settings()
+        self.options_panel.apply_defaults(_s.delete_original(), _s.secure_wipe())
 
         # Panel password bisa lebih tinggi dari kolom (form + recovery + hint),
         # jadi dibungkus scroll area sendiri agar isinya tidak terpotong dan hanya
@@ -275,6 +281,7 @@ class TabKunci(QWidget):
             recovery_secret=recovery_secret,
             recovery_type=recovery_type,
             hint=hint,
+            kdf_params=kdf_params_for_level(get_settings().kdf_level()),
             parent=self,
         )
 

@@ -267,6 +267,13 @@ class _ClipboardAutoClear:
         clipboard.setText(text)
         self._pending = text
 
+        if timeout_ms <= 0:
+            # Auto-clear dimatikan (setting "Off") — salin saja tanpa menjadwalkan clear.
+            if self._timer is not None:
+                self._timer.stop()
+            self._pending = None
+            return
+
         if self._timer is None:
             from PySide6.QtCore import QTimer
 
@@ -287,11 +294,22 @@ class _ClipboardAutoClear:
 
 _clipboard_auto_clear = _ClipboardAutoClear()
 
+# Sentinel: bila timeout tidak diberikan eksplisit, ambil dari Settings (detik).
+_USE_SETTING = -1
 
-def copy_to_clipboard_auto_clear(text: str, timeout_ms: int = CLIPBOARD_AUTO_CLEAR_MS) -> None:
+
+def copy_to_clipboard_auto_clear(text: str, timeout_ms: int = _USE_SETTING) -> None:
     """Salin ``text`` ke clipboard sistem lalu jadwalkan auto-clear.
 
-    Lihat ``_ClipboardAutoClear``. Panggil dari thread UI utama; tiap panggilan
-    me-reset timer clear sebelumnya, jadi hanya salinan terakhir yang dijadwalkan.
+    Tanpa ``timeout_ms`` eksplisit, durasinya diambil dari Settings (0 = matikan
+    auto-clear). Tiap panggilan me-reset timer clear sebelumnya, jadi hanya salinan
+    terakhir yang dijadwalkan.
     """
+    if timeout_ms == _USE_SETTING:
+        try:
+            from ui.settings_store import get_settings
+
+            timeout_ms = get_settings().clipboard_seconds() * 1000
+        except Exception:
+            timeout_ms = CLIPBOARD_AUTO_CLEAR_MS
     _clipboard_auto_clear.copy(text, timeout_ms)
