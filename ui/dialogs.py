@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .i18n import register, tr
 from .styles import (
     CLR_ACCENT,
     CLR_BORDER,
@@ -27,10 +28,10 @@ from .styles import (
     FONT_MONO,
 )
 from .utils import CLIPBOARD_AUTO_CLEAR_MS, copy_to_clipboard_auto_clear
-from .widgets import ToggleSwitch, apply_shadow
+from .widgets import ScrimDialogMixin, ToggleSwitch, apply_shadow
 
 
-class ModernMessageBox(QDialog):
+class ModernMessageBox(ScrimDialogMixin, QDialog):
     """Dialog konfirmasi modern dengan style dark dan centering yang reliable."""
 
     def __init__(
@@ -84,13 +85,15 @@ class ModernMessageBox(QDialog):
         btn_lay.setSpacing(10)  # Premium tight button spacing
         btn_lay.addStretch()
 
-        self.btn_cancel = QPushButton("Cancel")
+        self.btn_cancel = QPushButton()
+        register(self.btn_cancel, "common.cancel", "Cancel")
         self.btn_cancel.setObjectName("BtnDialogCancel")
         self.btn_cancel.setFixedHeight(42)
         self.btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_cancel.clicked.connect(self.reject)
 
-        self.btn_yes = QPushButton("Continue")
+        self.btn_yes = QPushButton()
+        register(self.btn_yes, "common.continue", "Continue")
         self.btn_yes.setFixedHeight(42)
         self.btn_yes.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_yes.setObjectName("BtnAlertConfirm")
@@ -106,7 +109,12 @@ class ModernMessageBox(QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
+        self._show_modal_scrim()
         QTimer.singleShot(0, self._center_dialog)
+
+    def hideEvent(self, event):
+        self._hide_modal_scrim()
+        super().hideEvent(event)
 
     def _center_dialog(self):
         """Pusatkan dialog ke tengah parent window secara reliable."""
@@ -130,7 +138,7 @@ class ModernMessageBox(QDialog):
             super().keyPressEvent(event)
 
 
-class RecoveryCodeDialog(QDialog):
+class RecoveryCodeDialog(ScrimDialogMixin, QDialog):
     """Tampilkan recovery code sekali — copy (auto-clear) + gate 'sudah disimpan'.
 
     Dialog ini SATU-SATUNYA tempat kode ditampilkan; tidak bisa dilihat lagi.
@@ -158,7 +166,8 @@ class RecoveryCodeDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(12)
 
-        title = QLabel("Save your recovery key")
+        title = QLabel()
+        register(title, "recovery.dialog.title", "Save your recovery key")
         title.setObjectName("CardTitle")
         layout.addWidget(title)
 
@@ -167,9 +176,12 @@ class RecoveryCodeDialog(QDialog):
         icon = QLabel()
         icon.setPixmap(qta.icon("mdi6.key-alert-outline", color=CLR_WARN).pixmap(32, 32))
         warn_row.addWidget(icon, alignment=Qt.AlignmentFlag.AlignTop)
-        msg = QLabel(
+        msg = QLabel()
+        register(
+            msg,
+            "recovery.dialog.msg",
             "This is the only way back into your vault if you forget the password. "
-            "It can't be shown again or recovered for you — store it somewhere safe."
+            "It can't be shown again or recovered for you — store it somewhere safe.",
         )
         msg.setWordWrap(True)
         msg.setObjectName("MutedText")
@@ -197,7 +209,8 @@ class RecoveryCodeDialog(QDialog):
         )
         layout.addWidget(self.code_box)
 
-        self.btn_copy = QPushButton(" Copy recovery key")
+        self.btn_copy = QPushButton()
+        register(self.btn_copy, "recovery.dialog.copy", " Copy recovery key")
         self.btn_copy.setIcon(qta.icon("mdi6.content-copy", color="white"))
         self.btn_copy.setObjectName("BtnGen")
         self.btn_copy.setFixedHeight(38)
@@ -216,7 +229,8 @@ class RecoveryCodeDialog(QDialog):
         gate_row.setSpacing(12)
         self.switch_saved = ToggleSwitch(checked=False)
         self.switch_saved.setAccessibleName("I have saved my recovery key")
-        gate_lbl = QLabel("I've saved my recovery key")
+        gate_lbl = QLabel()
+        register(gate_lbl, "recovery.dialog.gate", "I've saved my recovery key")
         gate_lbl.setObjectName("SectionLabel")
         gate_lbl.setWordWrap(True)
         gate_row.addWidget(self.switch_saved, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -227,12 +241,14 @@ class RecoveryCodeDialog(QDialog):
         btn_lay = QHBoxLayout()
         btn_lay.setSpacing(10)
         btn_lay.addStretch()
-        self.btn_cancel = QPushButton("Cancel")
+        self.btn_cancel = QPushButton()
+        register(self.btn_cancel, "common.cancel", "Cancel")
         self.btn_cancel.setObjectName("BtnDialogCancel")
         self.btn_cancel.setFixedHeight(42)
         self.btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_cancel.clicked.connect(self.reject)
-        self.btn_yes = QPushButton("Continue")
+        self.btn_yes = QPushButton()
+        register(self.btn_yes, "common.continue", "Continue")
         self.btn_yes.setObjectName("BtnAlertConfirm")
         self.btn_yes.setFixedHeight(42)
         self.btn_yes.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -247,12 +263,19 @@ class RecoveryCodeDialog(QDialog):
     def _copy(self):
         copy_to_clipboard_auto_clear(self._code)
         secs = CLIPBOARD_AUTO_CLEAR_MS // 1000
-        self.lbl_copy_confirm.setText(f"✓ Copied — clipboard auto-clears in {secs}s")
+        self.lbl_copy_confirm.setText(
+            tr("recovery.dialog.copied", "✓ Copied — clipboard auto-clears in {s}s").format(s=secs)
+        )
         QTimer.singleShot(3000, lambda: self.lbl_copy_confirm.setText(""))
 
     def showEvent(self, event):
         super().showEvent(event)
+        self._show_modal_scrim()
         QTimer.singleShot(0, self._center_dialog)
+
+    def hideEvent(self, event):
+        self._hide_modal_scrim()
+        super().hideEvent(event)
 
     def _center_dialog(self):
         self.adjustSize()

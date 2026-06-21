@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from ..buttons import ClearButton, TambahClearSplitButton
 from ..dialogs import ModernMessageBox
+from ..i18n import register, tr
 from ..menus import AccessibleCenteredMenu, CenteredMenuAction
 from ..styles import (
     CLR_ACCENT,
@@ -378,11 +379,15 @@ class DropZoneLock(QWidget):
 
         # Buat Menu Dropdown internal
         self.menu = AccessibleCenteredMenu(self)
-        action_file = CenteredMenuAction("File", "mdi6.file-document-outline", parent=self.menu)
+        action_file = CenteredMenuAction(
+            tr("dzl.menu.file", "File"), "mdi6.file-document-outline", parent=self.menu
+        )
         action_file.triggered.connect(self._pilih_file)
         self.menu.addAction(action_file)
 
-        action_folder = CenteredMenuAction("Folder", "mdi6.folder-outline", parent=self.menu)
+        action_folder = CenteredMenuAction(
+            tr("dzl.menu.folder", "Folder"), "mdi6.folder-outline", parent=self.menu
+        )
         action_folder.triggered.connect(self._pilih_folder)
         self.menu.addAction(action_folder)
 
@@ -415,22 +420,32 @@ class DropZoneLock(QWidget):
         if hasattr(self, "card_target"):
             self.card_target.drag_state_changed.connect(self.icon_empty.set_drag_active)
 
-        self.lbl_main_empty = QLabel("Drag & drop a file or folder here")
+        self.lbl_main_empty = QLabel()
+        register(self.lbl_main_empty, "dzl.empty.main", "Drag & drop a file or folder here")
         self.lbl_main_empty.setObjectName("DropZoneMainText")
         self.lbl_main_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.lbl_sub_empty = QLabel("or click the button below to choose manually")
+        self.lbl_sub_empty = QLabel()
+        register(
+            self.lbl_sub_empty, "dzl.empty.sub", "or click the button below to choose manually"
+        )
         self.lbl_sub_empty.setObjectName("DropZoneSubText")
         self.lbl_sub_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.btn_empty_browse = QPushButton(" Choose Target")
+        self.btn_empty_browse = QPushButton()
+        register(self.btn_empty_browse, "dzl.empty.browse", " Choose Target")
         self.btn_empty_browse.setIcon(qta.icon("mdi6.folder-plus-outline", color="white"))
         self.btn_empty_browse.setObjectName("BtnBrowseLg")
         self.btn_empty_browse.setFixedSize(220, 42)
         self.btn_empty_browse.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_empty_browse.setMenu(self.menu)
 
-        self.lbl_footer_empty = QLabel("Supports all file formats and unlimited folders")
+        self.lbl_footer_empty = QLabel()
+        register(
+            self.lbl_footer_empty,
+            "dzl.empty.footer",
+            "Supports all file formats and unlimited folders",
+        )
         self.lbl_footer_empty.setObjectName("DropZoneFooter")
         self.lbl_footer_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -460,9 +475,10 @@ class DropZoneLock(QWidget):
 
         v_hdr_text = QVBoxLayout()
         v_hdr_text.setSpacing(3)
-        lbl_target = QLabel("Target list")
+        lbl_target = QLabel()
+        register(lbl_target, "dzl.list.title", "Target list")
         lbl_target.setObjectName("TargetHeaderTitle")  # bigger specific title for daftar target
-        self.lbl_target_sub = QLabel("Choose the file or folder to lock")
+        self.lbl_target_sub = QLabel(tr("dzl.list.sub", "Choose the file or folder to lock"))
         self.lbl_target_sub.setObjectName("CardSubtitle")
         v_hdr_text.addWidget(lbl_target)
         v_hdr_text.addWidget(self.lbl_target_sub)
@@ -642,7 +658,7 @@ class DropZoneLock(QWidget):
         n = len(self._paths)
         if n == 0:
             self.lbl_target_sub.setStyleSheet("")
-            self.lbl_target_sub.setText("Choose the file or folder to lock")
+            self.lbl_target_sub.setText(tr("dzl.list.sub", "Choose the file or folder to lock"))
             return
         total = 0
         for p in self._paths:
@@ -651,18 +667,22 @@ class DropZoneLock(QWidget):
                     total += os.path.getsize(p)
             except OSError:
                 pass
-        noun = "file" if n == 1 else "files"
+        noun = tr("dzl.file", "file") if n == 1 else tr("dzl.files", "files")
         # Ringkasan diberi warna aksen (mengikuti desain target).
         self.lbl_target_sub.setStyleSheet(f"color: {CLR_ACCENT}; font-weight: 600;")
-        self.lbl_target_sub.setText(f"{n} {noun} · {format_file_size(total)} total")
+        self.lbl_target_sub.setText(
+            tr("dzl.summary", "{n} {noun} · {total} total").format(
+                n=n, noun=noun, total=format_file_size(total)
+            )
+        )
 
     def _pilih_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Choose Folder")
+        folder = QFileDialog.getExistingDirectory(self, tr("dzl.choose_folder", "Choose Folder"))
         if folder:
             self._add_paths([folder])
 
     def _pilih_file(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "Choose Files")
+        files, _ = QFileDialog.getOpenFileNames(self, tr("dzl.choose_files", "Choose Files"))
         if files:
             self._add_paths(files)
 
@@ -670,7 +690,11 @@ class DropZoneLock(QWidget):
         added = []
         for p in new_paths:
             if p.lower().endswith(".adtn"):
-                self.warning_emitted.emit(f"⚠ '{os.path.basename(p)}' is already a vault file!")
+                self.warning_emitted.emit(
+                    tr("dzl.already_vault", "⚠ '{name}' is already a vault file!").format(
+                        name=os.path.basename(p)
+                    )
+                )
                 continue
             if p not in self._paths:
                 self._paths.append(p)
@@ -699,13 +723,16 @@ class DropZoneLock(QWidget):
             return
         if len(self._paths) > 1:
             dialog = ModernMessageBox(
-                title="Clear Target List",
-                message=f"Are you sure you want to remove all {len(self._paths)} targets from the list?",
+                title=tr("dzl.clear.title", "Clear Target List"),
+                message=tr(
+                    "dzl.clear.msg",
+                    "Are you sure you want to remove all {n} targets from the list?",
+                ).format(n=len(self._paths)),
                 icon_name="mdi6.trash-can-outline",
                 icon_color=CLR_DANGER,
                 parent=self,
             )
-            dialog.btn_yes.setText("Clear")
+            dialog.btn_yes.setText(tr("dzl.clear.btn", "Clear"))
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return
         self._paths.clear()

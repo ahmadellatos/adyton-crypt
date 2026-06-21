@@ -32,6 +32,7 @@ from .components.text_input_card import (
     TextInputCard,
 )
 from .components.text_result_card import TextResultCard
+from .i18n import tr
 from .styles import (
     CLR_ON_ACCENT,
 )
@@ -132,8 +133,8 @@ class TabTeks(QWidget):
 
         # Tombol aksi utama
         self.btn_aksi = BigActionBtn(
-            "Encrypt Text",
-            "Enter text and create a password to begin",
+            tr("text.action.enc.title", "Encrypt Text"),
+            tr("text.action.enc.sub", "Enter text and create a password to begin"),
             icon_name="mdi6.lock-outline",
         )
         self.btn_aksi.setAccessibleName("Encrypt Text button")
@@ -167,7 +168,7 @@ class TabTeks(QWidget):
     def _on_limit_reached(self, limit: int):
         self.notif.show_msg(
             "error",
-            f"Text reached the maximum of {limit:,} characters.",
+            tr("text.limit", "Text reached the maximum of {n} characters.").format(n=f"{limit:,}"),
             3500,
         )
 
@@ -179,14 +180,18 @@ class TabTeks(QWidget):
     def _on_mode_changed(self, mode: str):
         is_enc = mode == "enkripsi"
         if is_enc:
-            self.btn_aksi.setTextLabels("Encrypt Text", "Enter text and create a password to begin")
+            self.btn_aksi.setTextLabels(
+                tr("text.action.enc.title", "Encrypt Text"),
+                tr("text.action.enc.sub", "Enter text and create a password to begin"),
+            )
             self.btn_aksi.icon_name = "mdi6.lock-outline"
             self.btn_aksi.lbl_icon.setPixmap(
                 qta.icon("mdi6.lock-outline", color=CLR_ON_ACCENT).pixmap(22, 22)
             )
         else:
             self.btn_aksi.setTextLabels(
-                "Decrypt Text", "Enter encrypted text and the password to open"
+                tr("text.action.dec.title", "Decrypt Text"),
+                tr("text.action.dec.sub", "Enter encrypted text and the password to open"),
             )
             self.btn_aksi.icon_name = "mdi6.lock-open-variant-outline"
             self.btn_aksi.lbl_icon.setPixmap(
@@ -211,12 +216,19 @@ class TabTeks(QWidget):
         if self.worker is not None:
             return
         if self._has_text and self._is_password_valid:
-            verb = "encrypt" if self.password_panel.get_mode() == "enkripsi" else "decrypt"
-            self.status_changed.emit(
-                "Ready to process", f"Text & password ready to {verb}", "ready"
+            is_enc = self.password_panel.get_mode() == "enkripsi"
+            sub = (
+                tr("text.status.ready.enc", "Text & password ready to encrypt")
+                if is_enc
+                else tr("text.status.ready.dec", "Text & password ready to decrypt")
             )
+            self.status_changed.emit(tr("text.status.ready", "Ready to process"), sub, "ready")
         else:
-            self.status_changed.emit("AES-256 • GCM", "Local encryption active", "idle")
+            self.status_changed.emit(
+                tr("status.aes", "AES-256 • GCM"),
+                tr("status.local", "Local encryption active"),
+                "idle",
+            )
 
     # ── Proses enkripsi / dekripsi ────────────────────────────────────────────
 
@@ -229,10 +241,10 @@ class TabTeks(QWidget):
         mode = self.password_panel.get_mode()
 
         if not text:
-            self.notif.show_msg("warn", "Text cannot be empty.", 3500)
+            self.notif.show_msg("warn", tr("text.empty", "Text cannot be empty."), 3500)
             return
         if not password:
-            self.notif.show_msg("warn", "Password cannot be empty.", 3500)
+            self.notif.show_msg("warn", tr("text.pw_empty", "Password cannot be empty."), 3500)
             return
 
         func = encrypt_text if mode == "enkripsi" else decrypt_text
@@ -252,9 +264,17 @@ class TabTeks(QWidget):
         self.btn_aksi.setEnabled(not busy)
 
         if busy:
-            label = "Encrypting text…" if mode == "enkripsi" else "Decrypting text…"
-            self.btn_aksi.setTextLabels("Processing…", label)
-            self.status_changed.emit("Processing text", "Almost there", "busy")
+            label = (
+                tr("text.processing.enc", "Encrypting text…")
+                if mode == "enkripsi"
+                else tr("text.processing.dec", "Decrypting text…")
+            )
+            self.btn_aksi.setTextLabels(tr("text.processing.title", "Processing…"), label)
+            self.status_changed.emit(
+                tr("text.status.processing", "Processing text"),
+                tr("text.status.processing.sub", "Almost there"),
+                "busy",
+            )
         else:
             # Restore label sesuai mode saat ini
             self._on_mode_changed(self.password_panel.get_mode())
@@ -282,24 +302,46 @@ class TabTeks(QWidget):
             # hasil dekripsi yang sensitif — tidak tertinggal di clipboard).
             copy_to_clipboard_auto_clear(result)
             secs = CLIPBOARD_AUTO_CLEAR_MS // 1000
-            verb = "encrypted" if mode == "enkripsi" else "decrypted"
+            is_enc = mode == "enkripsi"
+            notif_title = (
+                tr("text.notif.enc.title", "Text encrypted successfully")
+                if is_enc
+                else tr("text.notif.dec.title", "Text decrypted successfully")
+            )
+            ok_msg = (
+                tr(
+                    "text.notif.enc.ok",
+                    "✓ Text encrypted successfully — copied (auto-clears in {s}s).",
+                )
+                if is_enc
+                else tr(
+                    "text.notif.dec.ok",
+                    "✓ Text decrypted successfully — copied (auto-clears in {s}s).",
+                )
+            )
             self.system_notification.emit(
-                f"Text {verb} successfully",
-                f"Copied to the clipboard — auto-clears in {secs}s.",
+                notif_title,
+                tr("text.notif.body", "Copied to the clipboard — auto-clears in {s}s.").format(
+                    s=secs
+                ),
             )
-            self.notif.show_msg(
-                "ok",
-                f"✓ Text {verb} successfully — copied (auto-clears in {secs}s).",
-                4000,
-            )
+            self.notif.show_msg("ok", ok_msg.format(s=secs), 4000)
             logger.info(f"TabTeks: {mode} berhasil — {len(result)} karakter")
 
         self._validate_state()
         # Status pill: success/error setelah _validate_state agar tidak ditimpa.
         if error:
-            self.status_changed.emit("Failed", "Check your password or text format", "error")
+            self.status_changed.emit(
+                tr("text.status.failed", "Failed"),
+                tr("text.status.failed.sub", "Check your password or text format"),
+                "error",
+            )
         else:
-            self.status_changed.emit("Success", "Result copied to clipboard", "success")
+            self.status_changed.emit(
+                tr("text.status.success", "Success"),
+                tr("text.status.success.sub", "Result copied to clipboard"),
+                "success",
+            )
 
     # ── External busy (dari tab lain yang sedang memproses file) ──────────────
 
@@ -314,10 +356,17 @@ class TabTeks(QWidget):
 def _format_text_error(error: str, mode: str) -> str:
     err_lower = error.lower()
     if "wrong password" in err_lower or "invalidtag" in err_lower or "modified" in err_lower:
-        return "Incorrect password, or the encrypted text has been modified or corrupted."
+        return tr(
+            "text.err.wrong",
+            "Incorrect password, or the encrypted text has been modified or corrupted.",
+        )
     if "format" in err_lower or "valid" in err_lower or "adtn_text" in err_lower:
-        return "Invalid format. Make sure the encrypted text starts with 'ADTN_TEXT:1:'."
+        return tr(
+            "text.err.format",
+            "Invalid format. Make sure the encrypted text starts with 'ADTN_TEXT:1:'.",
+        )
     if "empty" in err_lower:
         return error
-    prefix = "Encryption failed" if mode == "enkripsi" else "Decryption failed"
-    return f"{prefix}. {error}"
+    if mode == "enkripsi":
+        return tr("text.err.enc", "Encryption failed. {detail}").format(detail=error)
+    return tr("text.err.dec", "Decryption failed. {detail}").format(detail=error)

@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ..i18n import register, tr
 from ..styles import CLR_ACCENT, CLR_ON_ACCENT, CLR_TEXT_DIM, CLR_WARN
 from ..widgets import (
     PasswordLineEdit,
@@ -68,7 +69,8 @@ class PasswordPanelTeks(QFrame):
         lay_toggle.setContentsMargins(3, 3, 3, 3)
         lay_toggle.setSpacing(3)
 
-        self.btn_mode_enkripsi = QPushButton(" Encrypt")
+        self.btn_mode_enkripsi = QPushButton()
+        register(self.btn_mode_enkripsi, "text.mode.enc", " Encrypt")
         self.btn_mode_enkripsi.setIcon(
             qta.icon("mdi6.lock-outline", color=CLR_TEXT_DIM, color_on=CLR_ON_ACCENT)
         )
@@ -80,7 +82,8 @@ class PasswordPanelTeks(QFrame):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
 
-        self.btn_mode_dekripsi = QPushButton(" Decrypt")
+        self.btn_mode_dekripsi = QPushButton()
+        register(self.btn_mode_dekripsi, "text.mode.dec", " Decrypt")
         self.btn_mode_dekripsi.setIcon(
             qta.icon("mdi6.lock-open-variant-outline", color=CLR_TEXT_DIM, color_on=CLR_ON_ACCENT)
         )
@@ -106,7 +109,13 @@ class PasswordPanelTeks(QFrame):
         lay.addWidget(self.form)
 
         # ── Mode dekripsi: cukup satu field password ───────────────────────────
-        self.entry_decrypt = PasswordLineEdit("Type your password here…")
+        self.entry_decrypt = PasswordLineEdit()
+        register(
+            self.entry_decrypt,
+            "text.decrypt_placeholder",
+            "Type your password here…",
+            "setPlaceholderText",
+        )
         self.entry_decrypt.setAccessibleName("Text decryption password")
         self.entry_decrypt.textChanged.connect(lambda _: self._check_valid())
         lay.addWidget(self.entry_decrypt)
@@ -132,16 +141,19 @@ class PasswordPanelTeks(QFrame):
             (
                 "mdi6.shield-check-outline",
                 CLR_ACCENT,
+                "text.tip.1",
                 "Your password can't be recovered. Keep it somewhere safe.",
             ),
             (
                 "mdi6.clipboard-text-outline",
                 CLR_ACCENT,
+                "text.tip.2",
                 "The encrypted result can be saved anywhere — email, notes, chat.",
             ),
             (
                 "mdi6.lock-outline",
                 CLR_ACCENT,
+                "text.tip.3",
                 "To decrypt, use the exact same password you set here.",
             ),
         ]
@@ -159,11 +171,15 @@ class PasswordPanelTeks(QFrame):
         self._mode = mode
         is_enc = mode == "enkripsi"
 
-        self.lbl_card_title.setText("Set a Password" if is_enc else "Enter Your Password")
-        self.lbl_card_sub.setText(
-            "A strong password keeps your text safe"
+        self.lbl_card_title.setText(
+            tr("card.setpw.title", "Set a Password")
             if is_enc
-            else "Enter the password you used during encryption"
+            else tr("card.enterpw.title", "Enter Your Password")
+        )
+        self.lbl_card_sub.setText(
+            tr("card.setpw.sub.text", "A strong password keeps your text safe")
+            if is_enc
+            else tr("card.enterpw.sub.text", "Enter the password you used during encryption")
         )
         self.btn_gen.setVisible(is_enc)
         self.form.setVisible(is_enc)

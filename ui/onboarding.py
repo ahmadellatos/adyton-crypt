@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
 
 from core.paths import get_asset_path
 
+from .i18n import tr
 from .styles import (
     ACCENT_RGB,
     CLR_ACCENT,
@@ -634,6 +635,15 @@ _STEP_COPY = {
     ),
 }
 
+# Kunci i18n untuk tiap step (eyebrow, title, body) — diterjemahkan saat build
+# (OnboardingView dibuat setelah app menetapkan bahasa, jadi tr() benar).
+_STEP_KEYS = {
+    1: ("onboard.step1.eyebrow", "onboard.step1.title", "onboard.step1.body"),
+    2: ("onboard.step2.eyebrow", "onboard.step2.title", "onboard.step2.body"),
+    3: ("onboard.step3.eyebrow", "onboard.step3.title", "onboard.step3.body"),
+    4: ("onboard.step4.eyebrow", "onboard.step4.title", "onboard.step4.body"),
+}
+
 
 def _list_card(rows: list[tuple[str, str, str]]) -> QFrame:
     """Kartu daftar (step 2 & 3): tiap baris = ubin ikon 42 + judul + sub."""
@@ -814,7 +824,11 @@ class OnboardingView(QWidget):
             self._dots.set_step(step)
             self._back_pill.setNavEnabled(step > 1)
             self._skip_pill.setVisible(step < 4)
-            self._next_pill.set_text("Get Started" if step == 4 else "Continue")
+            self._next_pill.set_text(
+                tr("onboard.getstarted", "Get Started")
+                if step == 4
+                else tr("onboard.continue", "Continue")
+            )
         if step in (self.SPLASH, self.DONE):
             self.setFocus(Qt.FocusReason.OtherFocusReason)
 
@@ -859,7 +873,7 @@ class OnboardingView(QWidget):
         brand.addWidget(wordmark, alignment=Qt.AlignmentFlag.AlignHCenter)
         brand.addWidget(
             _label(
-                "Local file encryption, done calmly",
+                tr("onboard.brand_sub", "Local file encryption, done calmly"),
                 13.5,
                 500,
                 CLR_TEXT_DIM,
@@ -875,7 +889,7 @@ class OnboardingView(QWidget):
         loading.addWidget(_LoadingBar(), alignment=Qt.AlignmentFlag.AlignHCenter)
         loading.addWidget(
             _label(
-                "Loading secure modules…",
+                tr("onboard.loading", "Loading secure modules…"),
                 11.5,
                 500,
                 CLR_TEXT_FAINT,
@@ -911,7 +925,9 @@ class OnboardingView(QWidget):
                     _RadialGlow(172, _qcolor(_ACCENT_QRGB, 0.22)),
                     _logo(124),
                 ),
-                _label("Local encryption, done calmly", 13, 600, CLR_TEXT_DIM),
+                _label(
+                    tr("onboard.s1.focal", "Local encryption, done calmly"), 13, 600, CLR_TEXT_DIM
+                ),
             )
         elif step == 2:
             tile = _icon_tile(152, "mdi6.shield-check-outline", 80, 36, border_a=0.26)
@@ -921,7 +937,7 @@ class OnboardingView(QWidget):
                     _PulsingRing(166, _qcolor(_ACCENT_QRGB, 0.22), 2800, 600),
                     tile,
                 ),
-                _pill("100% offline · no network", dot=True),
+                _pill(tr("onboard.s2.pill", "100% offline · no network"), dot=True),
             )
         elif step == 3:
             tiles = QWidget()
@@ -935,13 +951,15 @@ class OnboardingView(QWidget):
                 "mdi6.text-box-outline",
             ):
                 row.addWidget(_icon_tile(84, icon_name, 36, 22, border_a=0.24))
-            stage.add_focal(tiles, _pill("Three focused tools, one workflow"))
+            stage.add_focal(
+                tiles, _pill(tr("onboard.s3.pill", "Three focused tools, one workflow"))
+            )
         elif step == 4:
             tile = _icon_tile(152, "mdi6.key-outline", 78, 36, border_a=0.26)
             stage.add_focal(
                 _overlay(_PulsingRing(200, _qcolor(_ACCENT_QRGB, 0.28), 2800, 0), tile),
                 _pill(
-                    "Your key, your responsibility",
+                    tr("onboard.s4.pill", "Your key, your responsibility"),
                     rgb=WARN_RGB,
                     bg_a=0.12,
                     border_a=0.26,
@@ -950,7 +968,9 @@ class OnboardingView(QWidget):
             )
 
     def _build_content(self, step: int) -> QWidget:
-        eyebrow, title, body = _STEP_COPY[step]
+        eyebrow_d, title_d, body_d = _STEP_COPY[step]
+        ek, tk, bk = _STEP_KEYS[step]
+        eyebrow, title, body = tr(ek, eyebrow_d), tr(tk, title_d), tr(bk, body_d)
 
         pane = QWidget()
         pane.setStyleSheet("background:transparent;")
@@ -999,8 +1019,12 @@ class OnboardingView(QWidget):
             row = QHBoxLayout(holder)
             row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(10)
-            for text in ("No sign-up", "Works fully offline", "Open .adtn format"):
-                row.addWidget(_chip(text))
+            for key, default in (
+                ("onboard.s1.chip1", "No sign-up"),
+                ("onboard.s1.chip2", "Works fully offline"),
+                ("onboard.s1.chip3", "Open .adtn format"),
+            ):
+                row.addWidget(_chip(tr(key, default)))
             row.addStretch(1)
             return holder
         if step == 2:
@@ -1008,18 +1032,18 @@ class OnboardingView(QWidget):
                 [
                     (
                         "mdi6.shield-outline",
-                        "AES-256-GCM",
-                        "Authenticated encryption for every byte",
+                        tr("onboard.s2.row1.title", "AES-256-GCM"),
+                        tr("onboard.s2.row1.sub", "Authenticated encryption for every byte"),
                     ),
                     (
                         "mdi6.key-outline",
-                        "Argon2id key protection",
-                        "Slow, memory-hard defence against guessing",
+                        tr("onboard.s2.row2.title", "Argon2id key protection"),
+                        tr("onboard.s2.row2.sub", "Slow, memory-hard defence against guessing"),
                     ),
                     (
                         "mdi6.web-off",
-                        "No network access",
-                        "Adyton never opens a connection",
+                        tr("onboard.s2.row3.title", "No network access"),
+                        tr("onboard.s2.row3.sub", "Adyton never opens a connection"),
                     ),
                 ]
             )
@@ -1028,18 +1052,18 @@ class OnboardingView(QWidget):
                 [
                     (
                         "mdi6.lock-outline",
-                        "Lock Folder",
-                        "Pack a whole folder into one .adtn vault",
+                        tr("onboard.s3.row1.title", "Lock Folder"),
+                        tr("onboard.s3.row1.sub", "Pack a whole folder into one .adtn vault"),
                     ),
                     (
                         "mdi6.lock-open-variant-outline",
-                        "Open Vault",
-                        "Reopen and extract a vault you locked before",
+                        tr("onboard.s3.row2.title", "Open Vault"),
+                        tr("onboard.s3.row2.sub", "Reopen and extract a vault you locked before"),
                     ),
                     (
                         "mdi6.text-box-outline",
-                        "Encrypt Text",
-                        "Turn a private note into a shareable cipher",
+                        tr("onboard.s3.row3.title", "Encrypt Text"),
+                        tr("onboard.s3.row3.sub", "Turn a private note into a shareable cipher"),
                     ),
                 ]
             )
@@ -1054,8 +1078,8 @@ class OnboardingView(QWidget):
                 "mdi6.check-circle-outline",
                 CLR_SUCCESS,
                 SUCCESS_RGB,
-                "Strong encryption, ready to go",
-                "AES-256-GCM and Argon2id, fully on this device.",
+                tr("onboard.s4.notice1.title", "Strong encryption, ready to go"),
+                tr("onboard.s4.notice1.sub", "AES-256-GCM and Argon2id, fully on this device."),
             )
         )
         col.addWidget(
@@ -1063,8 +1087,11 @@ class OnboardingView(QWidget):
                 "mdi6.alert-outline",
                 CLR_WARN,
                 WARN_RGB,
-                "Your password can't be recovered",
-                "If you lose it, the data is gone for good — store it safely.",
+                tr("onboard.s4.notice2.title", "Your password can't be recovered"),
+                tr(
+                    "onboard.s4.notice2.sub",
+                    "If you lose it, the data is gone for good — store it safely.",
+                ),
             )
         )
         return holder
@@ -1084,7 +1111,7 @@ class OnboardingView(QWidget):
         grid.setColumnStretch(2, 1)
 
         self._back_pill = _HoverPill(
-            "Back",
+            tr("onboard.back", "Back"),
             height=46,
             pad_h=18,
             radius=23,
@@ -1113,7 +1140,7 @@ class OnboardingView(QWidget):
         rl.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         self._skip_pill = _HoverPill(
-            "Skip tour",
+            tr("onboard.skip", "Skip tour"),
             height=24,
             pad_h=0,
             radius=0,
@@ -1127,7 +1154,7 @@ class OnboardingView(QWidget):
         self._skip_pill.clicked.connect(self._skip)
         rl.addWidget(self._skip_pill)
 
-        self._next_pill = _PrimaryPill("Continue")
+        self._next_pill = _PrimaryPill(tr("onboard.continue", "Continue"))
         self._next_pill.clicked.connect(self._next)
         rl.addWidget(self._next_pill)
 
@@ -1175,13 +1202,21 @@ class OnboardingView(QWidget):
         )
 
         heading = _label(
-            "You're all set", 30, 800, CLR_TEXT_MAIN, ls=-0.5, align=Qt.AlignmentFlag.AlignCenter
+            tr("onboard.done.title", "You're all set"),
+            30,
+            800,
+            CLR_TEXT_MAIN,
+            ls=-0.5,
+            align=Qt.AlignmentFlag.AlignCenter,
         )
         col.addWidget(heading)
 
         body = _label(
-            "Adyton Crypt is ready. From here the app opens to your tools — "
-            "lock your first folder whenever you are.",
+            tr(
+                "onboard.done.body",
+                "Adyton Crypt is ready. From here the app opens to your tools — "
+                "lock your first folder whenever you are.",
+            ),
             15,
             500,
             CLR_TEXT_MUTED,
@@ -1196,7 +1231,7 @@ class OnboardingView(QWidget):
         buttons.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         replay = _HoverPill(
-            "Replay introduction",
+            tr("onboard.done.replay", "Replay introduction"),
             height=48,
             pad_h=22,
             radius=24,
@@ -1215,7 +1250,7 @@ class OnboardingView(QWidget):
         replay.clicked.connect(self._replay)
         buttons.addWidget(replay)
 
-        open_app = _PrimaryPill("Open Adyton Crypt", height=48)
+        open_app = _PrimaryPill(tr("onboard.done.open", "Open Adyton Crypt"), height=48)
         open_app.clicked.connect(self._finish)
         buttons.addWidget(open_app)
 

@@ -32,6 +32,7 @@ from core.constants import (
 )
 
 from ..buttons import ClearButton
+from ..i18n import register, tr
 from ..styles import (
     CLR_ACCENT,
     CLR_BORDER,
@@ -93,22 +94,28 @@ class DropZoneOpen(QWidget):
         self.icon_empty = HeroIconWidget(mode="buka")
         self.icon_empty.setMaximumHeight(85)
 
-        self.lbl_main_empty = QLabel("Drag & drop a .adtn file here")
+        self.lbl_main_empty = QLabel()
+        register(self.lbl_main_empty, "dz.empty.main", "Drag & drop a .adtn file here")
         self.lbl_main_empty.setObjectName("DropZoneMainText")
         self.lbl_main_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.lbl_sub_empty = QLabel("or click the button below to choose a file")
+        self.lbl_sub_empty = QLabel()
+        register(self.lbl_sub_empty, "dz.empty.sub", "or click the button below to choose a file")
         self.lbl_sub_empty.setObjectName("DropZoneSubText")
         self.lbl_sub_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.btn_browse_center = QPushButton(" Choose Vault File")
+        self.btn_browse_center = QPushButton()
+        register(self.btn_browse_center, "dz.empty.browse", " Choose Vault File")
         self.btn_browse_center.setIcon(qta.icon("mdi6.folder-open-outline", color="white"))
         self.btn_browse_center.setFixedSize(220, 42)
         self.btn_browse_center.setObjectName("BtnBrowseLg")
         self.btn_browse_center.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_browse_center.clicked.connect(self._pilih_file)
 
-        self.lbl_footer_empty = QLabel("Only .adtn vault files can be opened here")
+        self.lbl_footer_empty = QLabel()
+        register(
+            self.lbl_footer_empty, "dz.empty.footer", "Only .adtn vault files can be opened here"
+        )
         self.lbl_footer_empty.setObjectName("DropZoneFooter")
         self.lbl_footer_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -146,11 +153,13 @@ class DropZoneOpen(QWidget):
         header_lay.setContentsMargins(0, 0, 0, 0)
         header_lay.setSpacing(6)
 
-        header = QLabel("Vault File (.adtn)")
+        header = QLabel()
+        register(header, "dz.filled.title", "Vault File (.adtn)")
         header.setObjectName("CardTitle")
         header_lay.addWidget(header)
 
-        sub = QLabel("Select the vault file to open.")
+        sub = QLabel()
+        register(sub, "dz.filled.sub", "Select the vault file to open.")
         sub.setObjectName("CardSubtitle")
         header_lay.addWidget(sub)
 
@@ -189,7 +198,7 @@ class DropZoneOpen(QWidget):
         self.lbl_filename.setObjectName("SelectedFileName")
         name_col.addWidget(self.lbl_filename)
 
-        self.lbl_ready = QLabel("Ready to open")
+        self.lbl_ready = QLabel(tr("dz.ready", "Ready to open"))
         self.lbl_ready.setObjectName("FileReadySubtitle")
         name_col.addWidget(self.lbl_ready)
 
@@ -224,13 +233,14 @@ class DropZoneOpen(QWidget):
         meta_row.setSpacing(0)
         self.meta_items = []
         meta_defs = [
-            ("File Size", "—"),
-            ("Created", "—"),
-            ("Encryption", "AES-256-GCM"),
-            ("Status", "Waiting for password"),
+            ("dz.meta.size", "File Size", "—"),
+            ("dz.meta.created", "Created", "—"),
+            ("dz.meta.enc", "Encryption", "AES-256-GCM"),
+            ("dz.meta.status", "Status", tr("dz.meta.waiting", "Waiting for password")),
         ]
-        for idx, (label_text, initial_value) in enumerate(meta_defs):
-            item = self._create_meta_item(label_text, initial_value)
+        for idx, (label_key, label_default, initial_value) in enumerate(meta_defs):
+            item = self._create_meta_item(tr(label_key, label_default), initial_value)
+            register(item._meta_label, label_key, label_default)
             meta_row.addWidget(item, 1)
             if idx < len(meta_defs) - 1:
                 sep = QFrame()
@@ -244,7 +254,8 @@ class DropZoneOpen(QWidget):
         lay.addSpacing(16)
 
         # Ganti button
-        self.btn_ganti = QPushButton("  Change Vault File")
+        self.btn_ganti = QPushButton()
+        register(self.btn_ganti, "dz.change", "  Change Vault File")
         self.btn_ganti.setIcon(qta.icon("mdi6.file-find-outline", color=CLR_TEXT_DIM))
         self.btn_ganti.setFixedHeight(36)
         self.btn_ganti.setObjectName("BtnGantiFile")
@@ -262,7 +273,8 @@ class DropZoneOpen(QWidget):
         enc_lay.setContentsMargins(14, 12, 14, 12)
         enc_lay.setSpacing(8)
 
-        enc_title = QLabel("Security Details")
+        enc_title = QLabel()
+        register(enc_title, "dz.sec.title", "Security Details")
         enc_title.setObjectName("EncSectionTitle")
         enc_lay.addWidget(enc_title)
         enc_lay.addSpacing(4)
@@ -272,13 +284,21 @@ class DropZoneOpen(QWidget):
         enc_grid.setVerticalSpacing(10)
         self.enc_items = []
         enc_defs = [
-            ("mdi6.shield-outline", "Encryption", "AES-256-GCM"),
-            ("mdi6.key-outline", "KDF", "—"),
-            ("mdi6.package-variant-closed", "Format", "—"),
-            ("mdi6.fingerprint", "Integrity", "Not yet verified"),
+            ("mdi6.shield-outline", "dz.sec.enc", "Encryption", "AES-256-GCM"),
+            ("mdi6.key-outline", "dz.sec.kdf", "KDF", "—"),
+            ("mdi6.package-variant-closed", "dz.sec.format", "Format", "—"),
+            (
+                "mdi6.fingerprint",
+                "dz.sec.integrity",
+                "Integrity",
+                tr("dz.sec.notverified", "Not yet verified"),
+            ),
         ]
-        for idx, (icon_name, label_text, initial_value) in enumerate(enc_defs):
-            item = self._create_encryption_info_item(icon_name, label_text, initial_value)
+        for idx, (icon_name, label_key, label_default, initial_value) in enumerate(enc_defs):
+            item = self._create_encryption_info_item(
+                icon_name, tr(label_key, label_default), initial_value
+            )
+            register(item._enc_label, label_key, label_default)
             enc_grid.addWidget(item, idx // 2, idx % 2)
         enc_lay.addLayout(enc_grid)
 
@@ -346,7 +366,8 @@ class DropZoneOpen(QWidget):
 
         h.addLayout(v, 1)
 
-        # Store for dynamic update
+        # Store for dynamic update + i18n retranslate
+        container._enc_label = lbl
         container._enc_val = val
         self.enc_items.append(container)
         return container
@@ -411,7 +432,7 @@ class DropZoneOpen(QWidget):
             self.enc_items[0]._enc_val.setText(vault_info["encryption"])
             self.enc_items[1]._enc_val.setText(vault_info["kdf"])
             self.enc_items[2]._enc_val.setText(vault_info["format"])
-            self.enc_items[3]._enc_val.setText("Not yet verified")
+            self.enc_items[3]._enc_val.setText(tr("dz.sec.notverified", "Not yet verified"))
 
     def _read_vault_display_info(self, path: str) -> dict[str, object]:
         """Baca metadata header ringan untuk display UI.
@@ -426,8 +447,8 @@ class DropZoneOpen(QWidget):
             "encryption": "AES-256-GCM",
             "kdf": "—",
             "format": "—",
-            "status": "Valid format",
-            "subtitle": "Waiting for password",
+            "status": tr("dz.status.valid", "Valid format"),
+            "subtitle": tr("dz.meta.waiting", "Waiting for password"),
             "openable": True,
         }
 
@@ -534,8 +555,8 @@ class DropZoneOpen(QWidget):
             {
                 "kdf": "Argon2id",
                 "format": "Adyton Vault",
-                "status": "Valid format",
-                "subtitle": "Ready to open",
+                "status": tr("dz.status.valid", "Valid format"),
+                "subtitle": tr("dz.ready", "Ready to open"),
             }
         )
         return info
@@ -577,43 +598,47 @@ class DropZoneOpen(QWidget):
             return
 
         if state == "checking":
-            self.lbl_ready.setText(message or "Verifying password")
+            self.lbl_ready.setText(message or tr("dz.status.verifying_pw", "Verifying password"))
             self._set_badge("CHECK…", "busy")
-            self._set_meta_status("Verifying")
-            self._set_integrity_status("Verifying")
+            self._set_meta_status(tr("dz.status.verifying", "Verifying"))
+            self._set_integrity_status(tr("dz.status.verifying", "Verifying"))
             return
 
         if state == "verified":
-            self.lbl_ready.setText(message or "Integrity verified")
+            self.lbl_ready.setText(
+                message or tr("dz.status.integrity_verified", "Integrity verified")
+            )
             self._set_badge("VERIFIED  ✓", "verified")
-            self._set_meta_status("Verified")
-            self._set_integrity_status("Verified")
+            self._set_meta_status(tr("dz.status.verified", "Verified"))
+            self._set_integrity_status(tr("dz.status.verified", "Verified"))
             return
 
         if state == "failed":
-            self.lbl_ready.setText(message or "Wrong password or corrupted file")
+            self.lbl_ready.setText(
+                message or tr("dz.status.wrong", "Wrong password or corrupted file")
+            )
             self._set_badge("FAILED", "error")
-            self._set_meta_status("Verification failed")
-            self._set_integrity_status("Verification failed")
+            self._set_meta_status(tr("dz.status.verification_failed", "Verification failed"))
+            self._set_integrity_status(tr("dz.status.verification_failed", "Verification failed"))
             return
 
         if state == "unsupported":
             # Format valid sebagai vault, tapi tidak didukung untuk konteks ini
             # (mis. vault lama yang tak bisa dikelola di tab Manage).
-            self.lbl_ready.setText(message or "Unsupported format")
+            self.lbl_ready.setText(message or tr("dz.status.unsupported", "Unsupported format"))
             self._set_badge("UNSUPPORTED", "warn")
-            self._set_meta_status("Unsupported here")
+            self._set_meta_status(tr("dz.status.unsupported_here", "Unsupported here"))
             self._set_integrity_status("—")
             return
 
         # pending / cancelled / retry: kembali ke status hasil validasi format ringan.
-        self.lbl_ready.setText(message or "Waiting for password")
+        self.lbl_ready.setText(message or tr("dz.meta.waiting", "Waiting for password"))
         self._set_badge(
             "FORMAT  ✓" if self._file_format_openable else "ERROR",
             self._format_badge_state,
         )
         self._set_meta_status(self._format_status_text)
-        self._set_integrity_status("Not yet verified")
+        self._set_integrity_status(tr("dz.sec.notverified", "Not yet verified"))
 
     def _update_card_style(self, is_empty: bool):
         # Use property-based styling for empty state (same system as DropZoneLock)
@@ -691,7 +716,10 @@ class DropZoneOpen(QWidget):
 
     def _pilih_file(self):
         f, _ = QFileDialog.getOpenFileName(
-            self, "Choose Vault File", "", "Adyton Crypt Files (*.adtn)"
+            self,
+            tr("dz.choose_dialog", "Choose Vault File"),
+            "",
+            tr("dz.choose_filter", "Adyton Crypt Files (*.adtn)"),
         )
         if f:
             self._set_file(f)

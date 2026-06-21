@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ..i18n import register, tr
 from ..styles import (
     CLR_ACCENT,
     CLR_BORDER,
@@ -19,6 +20,14 @@ from ..widgets import PasswordLineEdit, apply_shadow, build_tips_box
 
 _PLACEHOLDER_PW = "Type your password here…"
 _PLACEHOLDER_PW_RECOVERY = "Password or recovery key…"
+
+
+def _placeholder_pw() -> str:
+    return tr("open.pw.placeholder", _PLACEHOLDER_PW)
+
+
+def _placeholder_pw_recovery() -> str:
+    return tr("open.pw.placeholder.recovery", _PLACEHOLDER_PW_RECOVERY)
 
 
 class PasswordPanelOpen(QFrame):
@@ -39,13 +48,15 @@ class PasswordPanelOpen(QFrame):
         self.v_pw.setContentsMargins(24, 18, 24, 18)
         self.v_pw.setSpacing(11)
 
-        self.lbl_title_pw = QLabel("Enter Your Password")
+        self.lbl_title_pw = QLabel()
         self.lbl_title_pw.setObjectName("CardTitle")
+        register(self.lbl_title_pw, "open.pw.title", "Enter Your Password")
         self.v_pw.addWidget(self.lbl_title_pw)
 
-        self.sub_pw = QLabel("Enter the password you used when locking this vault.")
+        self.sub_pw = QLabel()
         self.sub_pw.setObjectName("CardSubtitle")
         self.sub_pw.setWordWrap(True)
+        register(self.sub_pw, "open.pw.sub", "Enter the password you used when locking this vault.")
         self.v_pw.addWidget(self.sub_pw)
         self.v_pw.addSpacing(4)
 
@@ -55,7 +66,7 @@ class PasswordPanelOpen(QFrame):
         self.hint_box.hide()
         self.v_pw.addWidget(self.hint_box)
 
-        self.entry_pw = PasswordLineEdit(_PLACEHOLDER_PW)
+        self.entry_pw = PasswordLineEdit(_placeholder_pw())
         self.entry_pw.setAccessibleName("Password to open the vault")
         self.entry_pw.textChanged.connect(self._on_pw_change)
         self.v_pw.addWidget(self.entry_pw)
@@ -77,16 +88,19 @@ class PasswordPanelOpen(QFrame):
             (
                 "mdi6.shield-check-outline",
                 CLR_ACCENT,
+                "open.tip.1",
                 "Your password can't be recovered. Keep it somewhere safe.",
             ),
             (
                 "mdi6.lock-outline",
                 CLR_WARN,
+                "open.tip.2",
                 "Use the exact password you created when locking this vault.",
             ),
             (
                 "mdi6.file-document-outline",
                 CLR_TEXT_MUTED,
+                "open.tip.3",
                 "Only .adtn files created by Adyton Crypt can be opened.",
             ),
         ]
@@ -120,16 +134,21 @@ class PasswordPanelOpen(QFrame):
         lay.setContentsMargins(16, 14, 16, 14)
         lay.setSpacing(10)
 
-        intro = QLabel(
-            "Your vault is being verified and extracted. Keep the app open and the drive connected until it finishes."
+        intro = QLabel()
+        register(
+            intro,
+            "open.pw.status.intro",
+            "Your vault is being verified and extracted. Keep the app open and the drive connected until it finishes.",
         )
         intro.setObjectName("ProcessText")
         intro.setWordWrap(True)
         lay.addWidget(intro)
 
-        self.lbl_status_file = self._make_status_row(lay, "File", "—")
-        self.lbl_status_size = self._make_status_row(lay, "Size", "—")
-        self.lbl_status_stage = self._make_status_row(lay, "Stage", "Preparing vault")
+        self.lbl_status_file = self._make_status_row(lay, "open.pw.status.file", "File", "—")
+        self.lbl_status_size = self._make_status_row(lay, "open.pw.status.size", "Size", "—")
+        self.lbl_status_stage = self._make_status_row(
+            lay, "open.pw.status.stage", "Stage", tr("open.pw.status.preparing", "Preparing vault")
+        )
 
         return box
 
@@ -140,20 +159,23 @@ class PasswordPanelOpen(QFrame):
         lay.setContentsMargins(16, 14, 16, 14)
         lay.setSpacing(12)
 
-        self.lbl_error_msg = QLabel("Incorrect password or corrupted vault file.")
+        self.lbl_error_msg = QLabel()
+        register(self.lbl_error_msg, "open.pw.error", "Incorrect password or corrupted vault file.")
         self.lbl_error_msg.setObjectName("OpenErrorText")
         self.lbl_error_msg.setWordWrap(True)
         lay.addWidget(self.lbl_error_msg)
 
         row = QHBoxLayout()
         row.setSpacing(10)
-        self.btn_retry = QPushButton("Try Again")
+        self.btn_retry = QPushButton()
+        register(self.btn_retry, "open.pw.retry", "Try Again")
         self.btn_retry.setObjectName("BtnInlinePrimary")
         self.btn_retry.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_retry.clicked.connect(self.retry_requested.emit)
         row.addWidget(self.btn_retry)
 
-        self.btn_pick_file = QPushButton("Choose Another File")
+        self.btn_pick_file = QPushButton()
+        register(self.btn_pick_file, "open.pw.pickfile", "Choose Another File")
         self.btn_pick_file.setObjectName("BtnInlineSecondary")
         self.btn_pick_file.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_pick_file.clicked.connect(self.pick_file_requested.emit)
@@ -163,10 +185,13 @@ class PasswordPanelOpen(QFrame):
 
         return box
 
-    def _make_status_row(self, parent_layout: QVBoxLayout, label: str, value: str) -> QLabel:
+    def _make_status_row(
+        self, parent_layout: QVBoxLayout, label_key: str, label_default: str, value: str
+    ) -> QLabel:
         row = QHBoxLayout()
         row.setSpacing(12)
-        lbl = QLabel(label)
+        lbl = QLabel()
+        register(lbl, label_key, label_default)
         lbl.setObjectName("ProcessLabel")
         lbl.setFixedWidth(64)
         val = QLabel(value)
@@ -195,8 +220,10 @@ class PasswordPanelOpen(QFrame):
         if self.error_box.isVisible():
             self.error_box.hide()
             self.info_box.show()
-            self.lbl_title_pw.setText("Enter Your Password")
-            self.sub_pw.setText("Enter the password you used when locking this vault.")
+            self.lbl_title_pw.setText(tr("open.pw.title", "Enter Your Password"))
+            self.sub_pw.setText(
+                tr("open.pw.sub", "Enter the password you used when locking this vault.")
+            )
         self.valid_state_changed.emit(bool(pw))
 
     # --- PUBLIC API ---
@@ -210,16 +237,16 @@ class PasswordPanelOpen(QFrame):
         self._vault_hint = None
         self._vault_has_recovery = False
         self.hint_box.hide()
-        self.entry_pw.setPlaceholderText(_PLACEHOLDER_PW)
+        self.entry_pw.setPlaceholderText(_placeholder_pw())
 
     def _apply_meta(self) -> None:
         if self._vault_hint:
-            self.lbl_hint.setText(f"Hint: {self._vault_hint}")
+            self.lbl_hint.setText(tr("open.pw.hint", "Hint: {hint}").format(hint=self._vault_hint))
             self.hint_box.show()
         else:
             self.hint_box.hide()
         self.entry_pw.setPlaceholderText(
-            _PLACEHOLDER_PW_RECOVERY if self._vault_has_recovery else _PLACEHOLDER_PW
+            _placeholder_pw_recovery() if self._vault_has_recovery else _placeholder_pw()
         )
 
     def get_password(self) -> str:
@@ -235,8 +262,10 @@ class PasswordPanelOpen(QFrame):
         self.entry_pw.returnPressed.connect(slot_func)
 
     def set_idle_state(self) -> None:
-        self.lbl_title_pw.setText("Enter Your Password")
-        self.sub_pw.setText("Enter the password you used when locking this vault.")
+        self.lbl_title_pw.setText(tr("open.pw.title", "Enter Your Password"))
+        self.sub_pw.setText(
+            tr("open.pw.sub", "Enter the password you used when locking this vault.")
+        )
         self.entry_pw.show()
         self.entry_pw.setEnabled(True)
         self.status_box.hide()
@@ -245,8 +274,8 @@ class PasswordPanelOpen(QFrame):
         self._apply_meta()
 
     def set_processing_state(self, file_name: str, size_text: str, stage: str) -> None:
-        self.lbl_title_pw.setText("Opening Vault")
-        self.sub_pw.setText("The vault is being verified and extracted.")
+        self.lbl_title_pw.setText(tr("open.pw.opening.title", "Opening Vault"))
+        self.sub_pw.setText(tr("open.pw.opening.sub", "The vault is being verified and extracted."))
         self.entry_pw.hide()
         self.entry_pw.setEnabled(False)
         self.info_box.hide()
@@ -255,14 +284,16 @@ class PasswordPanelOpen(QFrame):
         self.status_box.show()
         self.lbl_status_file.setText(file_name or "—")
         self.lbl_status_size.setText(size_text or "—")
-        self.lbl_status_stage.setText(stage or "Preparing vault")
+        self.lbl_status_stage.setText(stage or tr("open.pw.status.preparing", "Preparing vault"))
 
     def update_processing_stage(self, stage: str) -> None:
-        self.lbl_status_stage.setText(stage or "Processing")
+        self.lbl_status_stage.setText(stage or tr("open.pw.status.processing", "Processing"))
 
     def set_error_state(self, message: str) -> None:
-        self.lbl_title_pw.setText("Failed to Open Vault")
-        self.sub_pw.setText("Wrong password, corrupted file, or unsupported format.")
+        self.lbl_title_pw.setText(tr("open.pw.failed.title", "Failed to Open Vault"))
+        self.sub_pw.setText(
+            tr("open.pw.failed.sub", "Wrong password, corrupted file, or unsupported format.")
+        )
         self.entry_pw.show()
         self.entry_pw.setEnabled(True)
         self.status_box.hide()

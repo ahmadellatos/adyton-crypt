@@ -28,8 +28,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .i18n import register, tr
 from .styles import CLR_ACCENT, CLR_TEXT_MUTED
-from .widgets import apply_shadow
+from .widgets import ScrimDialogMixin, apply_shadow
 
 # ─── Kapasitas ────────────────────────────────────────────────────────────────
 # QR byte-mode, versi 40, error correction M = 2.331 byte.
@@ -84,7 +85,7 @@ def make_qr_image(text: str, module_px: int = _QR_EXPORT_SCALE) -> QImage | None
     return image
 
 
-class QRShareDialog(QDialog):
+class QRShareDialog(ScrimDialogMixin, QDialog):
     """Dialog menampilkan QR dari teks terenkripsi, dengan opsi simpan PNG."""
 
     def __init__(self, encrypted_text: str, parent=None):
@@ -115,7 +116,8 @@ class QRShareDialog(QDialog):
         row_hdr.setSpacing(10)
         lbl_icon = QLabel()
         lbl_icon.setPixmap(qta.icon("mdi6.qrcode", color=CLR_ACCENT).pixmap(28, 28))
-        lbl_title = QLabel("Share via QR Code")
+        lbl_title = QLabel()
+        register(lbl_title, "qr.title", "Share via QR Code")
         lbl_title.setObjectName("CardTitle")
         row_hdr.addWidget(lbl_icon)
         row_hdr.addWidget(lbl_title, 1)
@@ -139,9 +141,12 @@ class QRShareDialog(QDialog):
         layout.addWidget(self.lbl_qr, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # ── Keterangan ────────────────────────────────────────────────────────
-        lbl_info = QLabel(
+        lbl_info = QLabel()
+        register(
+            lbl_info,
+            "qr.info",
             "Scan with a phone camera to transfer the encrypted text.\n"
-            "This QR is safe for anyone to see — its contents stay locked without the password."
+            "This QR is safe for anyone to see — its contents stay locked without the password.",
         )
         lbl_info.setWordWrap(True)
         lbl_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -155,14 +160,16 @@ class QRShareDialog(QDialog):
         btn_lay.setSpacing(10)
         btn_lay.addStretch()
 
-        self.btn_save = QPushButton(" Save PNG")
+        self.btn_save = QPushButton()
+        register(self.btn_save, "qr.save", " Save PNG")
         self.btn_save.setIcon(qta.icon("mdi6.download-outline", color="white"))
         self.btn_save.setObjectName("BtnDialogCancel")
         self.btn_save.setFixedHeight(42)
         self.btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_save.clicked.connect(self._save_png)
 
-        self.btn_close = QPushButton("Close")
+        self.btn_close = QPushButton()
+        register(self.btn_close, "common.close", "Close")
         self.btn_close.setObjectName("BtnAlertConfirm")
         self.btn_close.setFixedHeight(42)
         self.btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -181,16 +188,16 @@ class QRShareDialog(QDialog):
             return
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "Save QR Code",
+            tr("qr.save_dialog", "Save QR Code"),
             "adyton_qr.png",
-            "PNG Image (*.png)",
+            tr("qr.png_filter", "PNG Image (*.png)"),
         )
         if not path:
             return
         if self._qr_image.save(path, "PNG"):
             logger.info(f"QR disimpan ke: {path}")
-            self.btn_save.setText(" Saved ✓")
-            QTimer.singleShot(2200, lambda: self.btn_save.setText(" Save PNG"))
+            self.btn_save.setText(tr("qr.saved", " Saved ✓"))
+            QTimer.singleShot(2200, lambda: self.btn_save.setText(tr("qr.save", " Save PNG")))
         else:
             logger.error(f"Gagal menyimpan QR ke: {path}")
 
@@ -198,7 +205,12 @@ class QRShareDialog(QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
+        self._show_modal_scrim()
         QTimer.singleShot(0, self._center_dialog)
+
+    def hideEvent(self, event):
+        self._hide_modal_scrim()
+        super().hideEvent(event)
 
     def _center_dialog(self):
         self.adjustSize()

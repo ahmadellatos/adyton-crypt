@@ -125,6 +125,10 @@ class CenteredMenuAction(QWidgetAction):
         self.w = HoverMenuWidget(text, icon_name, icon_color, text_color, self, parent)
         self.setDefaultWidget(self.w)
 
+    def set_text(self, text: str) -> None:
+        """Perbarui label menu (dipakai saat ganti bahasa)."""
+        self.w.lbl_text.setText(text)
+
     def set_highlighted(self, highlighted: bool):
         self.w.set_highlighted(highlighted)
         if highlighted:

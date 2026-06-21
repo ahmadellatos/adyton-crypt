@@ -112,8 +112,13 @@ def test_shared_builders(qtbot):
     assert title.text() == "Title"
     assert sub.text() == "Subtitle"
 
-    box = build_tips_box([("mdi6.lock-outline", "#ffffff", "hello")])
+    # tips = (icon_name, color, i18n_key, default_text); label text comes from the default.
+    box = build_tips_box([("mdi6.lock-outline", "#ffffff", "tips.demo", "hello")])
     assert box.objectName() == "TipsBox"
+    from PySide6.QtWidgets import QLabel
+
+    tip_texts = [lbl.text() for lbl in box.findChildren(QLabel) if lbl.objectName() == "TipText"]
+    assert tip_texts == ["hello"]
 
 
 @pytest.mark.qt

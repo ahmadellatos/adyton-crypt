@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ..i18n import register, tr
 from ..qr_dialog import QR_MAX_CHARS, QRShareDialog
 from ..styles import (
     CLR_ACCENT,
@@ -61,14 +62,17 @@ class TextResultCard(QFrame):
 
         v_hdr = QVBoxLayout()
         v_hdr.setSpacing(2)
-        self.lbl_result_title = QLabel("Encryption Result")
+        self.lbl_result_title = QLabel(tr("text.result.enc.title", "Encryption Result"))
         self.lbl_result_title.setObjectName("CardTitle")
-        self.lbl_result_sub = QLabel("Copy and save the encrypted text below")
+        self.lbl_result_sub = QLabel(
+            tr("text.result.enc.sub", "Copy and save the encrypted text below")
+        )
         self.lbl_result_sub.setObjectName("CardSubtitle")
         v_hdr.addWidget(self.lbl_result_title)
         v_hdr.addWidget(self.lbl_result_sub)
 
-        self.btn_copy = QPushButton(" Copy to Clipboard")
+        self.btn_copy = QPushButton()
+        register(self.btn_copy, "text.result.copy", " Copy to Clipboard")
         self.btn_copy.setIcon(qta.icon("mdi6.content-copy", color="white"))
         self.btn_copy.setFixedHeight(36)
         self.btn_copy.setObjectName("BtnGen")
@@ -76,14 +80,18 @@ class TextResultCard(QFrame):
         self.btn_copy.setAccessibleName("Copy result to clipboard")
         self.btn_copy.clicked.connect(self._copy_to_clipboard)
 
-        self.btn_qr = QPushButton(" QR")
+        self.btn_qr = QPushButton()
+        register(self.btn_qr, "text.result.qr", " QR")
         self.btn_qr.setIcon(qta.icon("mdi6.qrcode", color="white"))
         self.btn_qr.setFixedHeight(36)
         self.btn_qr.setObjectName("BtnGen")
         self.btn_qr.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_qr.setAccessibleName("Show QR code of the encryption result")
         self.btn_qr.setToolTip(
-            "Show the encryption result as a QR code to scan with a phone camera"
+            tr(
+                "text.result.qr.tip",
+                "Show the encryption result as a QR code to scan with a phone camera",
+            )
         )
         self.btn_qr.clicked.connect(self._show_qr)
         self.btn_qr.hide()
@@ -121,7 +129,7 @@ class TextResultCard(QFrame):
 
         # ── Footer ────────────────────────────────────────────────────────────
         row_footer = QHBoxLayout()
-        self.lbl_out_count = QLabel("0 characters")
+        self.lbl_out_count = QLabel(tr("text.input.count", "{n} characters").format(n=0))
         self.lbl_out_count.setObjectName("MutedText")
         self.lbl_out_count.setStyleSheet(f"font-size: 8.5pt; color: {CLR_TEXT_MUTED};")
         self.lbl_copy_confirm = QLabel("")
@@ -140,7 +148,9 @@ class TextResultCard(QFrame):
         if text:
             copy_to_clipboard_auto_clear(text)
             secs = CLIPBOARD_AUTO_CLEAR_MS // 1000
-            self.lbl_copy_confirm.setText(f"✓ Copied — auto-clears in {secs}s")
+            self.lbl_copy_confirm.setText(
+                tr("text.result.copied", "✓ Copied — auto-clears in {s}s").format(s=secs)
+            )
             QTimer.singleShot(3000, lambda: self.lbl_copy_confirm.setText(""))
 
     def _show_qr(self):
@@ -158,21 +168,26 @@ class TextResultCard(QFrame):
 
         self.text_output.setPlainText(text)
         n = len(text)
-        self.lbl_out_count.setText(f"{n:,} characters")
+        self.lbl_out_count.setText(tr("text.input.count", "{n} characters").format(n=f"{n:,}"))
         self.lbl_copy_confirm.setText("")
 
         if mode == "enkripsi":
-            self.lbl_result_title.setText("Encryption Result")
+            self.lbl_result_title.setText(tr("text.result.enc.title", "Encryption Result"))
             self.lbl_result_sub.setText(
-                "Copy and save this encrypted text — it can only be decrypted with the same password"
+                tr(
+                    "text.result.enc.sub2",
+                    "Copy and save this encrypted text — it can only be decrypted with the same password",
+                )
             )
             self.icon_result.setPixmap(
                 qta.icon("mdi6.lock-outline", color=CLR_ACCENT).pixmap(28, 28)
             )
             self.btn_qr.setVisible(n <= QR_MAX_CHARS)
         else:
-            self.lbl_result_title.setText("Decryption Result")
-            self.lbl_result_sub.setText("Your original text has been restored")
+            self.lbl_result_title.setText(tr("text.result.dec.title", "Decryption Result"))
+            self.lbl_result_sub.setText(
+                tr("text.result.dec.sub", "Your original text has been restored")
+            )
             self.icon_result.setPixmap(
                 qta.icon("mdi6.check-circle-outline", color=CLR_SUCCESS).pixmap(28, 28)
             )

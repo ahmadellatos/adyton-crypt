@@ -32,6 +32,7 @@ from core.worker import CryptoWorker
 from .components.create_password_form import CreatePasswordForm
 from .components.drop_zone_open import DropZoneOpen
 from .dialogs import ModernMessageBox, RecoveryCodeDialog
+from .i18n import register, tr
 from .styles import CLR_ACCENT, CLR_WARN
 from .widgets import (
     AnimatedNotifBar,
@@ -95,6 +96,15 @@ class TabManage(QWidget):
         cols.addWidget(self.panel_scroll, 1)
         main_layout.addLayout(cols)
 
+        # Samakan tinggi drop zone dengan tab Open: di sana, di bawah kolom ada
+        # BigActionBtn (tinggi tetap 58px) + jarak layout (22px) yang memperpendek
+        # kolom sebesar 80px. Tab ini tak punya tombol aksi besar, jadi kita sisakan
+        # ruang setara di bawah kolom agar drop zone-nya sama tinggi persis.
+        bottom_spacer = QWidget()
+        bottom_spacer.setFixedHeight(58)  # = BigActionBtn.setFixedHeight(58) di buttons.py
+        bottom_spacer.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        main_layout.addWidget(bottom_spacer)
+
         self.notif = AnimatedNotifBar(self)
 
     def _build_panel(self) -> QFrame:
@@ -105,32 +115,46 @@ class TabManage(QWidget):
         lay.setContentsMargins(24, 18, 24, 18)
         lay.setSpacing(10)
 
-        header, _, _ = build_card_header(
+        header, lbl_h_title, lbl_h_sub = build_card_header(
             "mdi6.cog-outline",
             CLR_ACCENT,
             "Manage Vault",
             "Change the password or recovery key of an existing vault",
         )
+        register(lbl_h_title, "manage.title", "Manage Vault")
+        register(
+            lbl_h_sub, "manage.sub", "Change the password or recovery key of an existing vault"
+        )
         lay.addLayout(header)
 
-        self.lbl_info = QLabel("Select a vault file to manage.")
+        self.lbl_info = QLabel()
         self.lbl_info.setObjectName("OptionDesc")
         self.lbl_info.setWordWrap(True)
+        register(self.lbl_info, "manage.select", "Select a vault file to manage.")
         lay.addWidget(self.lbl_info)
 
         lay.addSpacing(4)
-        lbl_cur = QLabel("Current password or recovery key")
+        lbl_cur = QLabel()
         lbl_cur.setObjectName("SectionLabel")
+        register(lbl_cur, "manage.current_label", "Current password or recovery key")
         lay.addWidget(lbl_cur)
-        self.entry_current = PasswordLineEdit("Enter the current password or recovery key…")
+        self.entry_current = PasswordLineEdit()
+        register(
+            self.entry_current,
+            "manage.current_placeholder",
+            "Enter the current password or recovery key…",
+            "setPlaceholderText",
+        )
         self.entry_current.setAccessibleName("Current password or recovery key")
         lay.addWidget(self.entry_current)
 
         # Segmented: pilih aksi.
         seg = QHBoxLayout()
         seg.setSpacing(8)
-        self.btn_seg_pw = QPushButton(" Change password")
-        self.btn_seg_rec = QPushButton(" Recovery key")
+        self.btn_seg_pw = QPushButton()
+        register(self.btn_seg_pw, "manage.seg.pw", " Change password")
+        self.btn_seg_rec = QPushButton()
+        register(self.btn_seg_rec, "manage.seg.rec", " Recovery key")
         for b in (self.btn_seg_pw, self.btn_seg_rec):
             b.setCheckable(True)
             b.setObjectName("BtnGen")
@@ -163,7 +187,8 @@ class TabManage(QWidget):
         self.form = CreatePasswordForm()
         lay.addWidget(self.form)
 
-        self.btn_change = QPushButton("Change Password")
+        self.btn_change = QPushButton()
+        register(self.btn_change, "manage.btn.change", "Change Password")
         self.btn_change.setObjectName("BtnInlinePrimary")
         self.btn_change.setFixedHeight(40)
         self.btn_change.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -184,8 +209,9 @@ class TabManage(QWidget):
 
         add_lay.addWidget(make_recovery_info_box())
 
-        method_lbl = QLabel("Recovery method")
+        method_lbl = QLabel()
         method_lbl.setObjectName("SectionLabel")
+        register(method_lbl, "manage.method_label", "Recovery method")
         add_lay.addWidget(method_lbl)
 
         cards = QHBoxLayout()
@@ -195,21 +221,40 @@ class TabManage(QWidget):
             "Generate code",
             "Create a one-time recovery code, shown once.",
         )
+        self.card_gen.tr_set(
+            "recovery.card.code.title",
+            "Generate code",
+            "recovery.card.code.desc",
+            "Create a one-time recovery code, shown once.",
+        )
         self.card_pass = MethodCard(
             "mdi6.form-textbox-password",
             "Use passphrase",
+            "Set a recovery phrase you choose yourself.",
+        )
+        self.card_pass.tr_set(
+            "recovery.card.pass.title",
+            "Use passphrase",
+            "recovery.card.pass.desc",
             "Set a recovery phrase you choose yourself.",
         )
         cards.addWidget(self.card_gen, 1)
         cards.addWidget(self.card_pass, 1)
         add_lay.addLayout(cards)
 
-        self.entry_rec_pass = PasswordLineEdit("Recovery passphrase…")
+        self.entry_rec_pass = PasswordLineEdit()
+        register(
+            self.entry_rec_pass,
+            "manage.passphrase_placeholder",
+            "Recovery passphrase…",
+            "setPlaceholderText",
+        )
         self.entry_rec_pass.setAccessibleName("New recovery passphrase")
         self.entry_rec_pass.hide()
         add_lay.addWidget(self.entry_rec_pass)
 
-        self.btn_add = QPushButton("Add Recovery Key")
+        self.btn_add = QPushButton()
+        register(self.btn_add, "manage.btn.add", "Add Recovery Key")
         self.btn_add.setObjectName("BtnInlinePrimary")
         self.btn_add.setFixedHeight(40)
         self.btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -217,13 +262,15 @@ class TabManage(QWidget):
         lay.addWidget(self.add_controls)
 
         # === Kasus HAPUS recovery (saat vault sudah punya recovery key) ===
-        self.lbl_rec_state = QLabel("This vault has a recovery key.")
+        self.lbl_rec_state = QLabel()
         self.lbl_rec_state.setObjectName("OptionDesc")
         self.lbl_rec_state.setWordWrap(True)
+        register(self.lbl_rec_state, "manage.has_recovery", "This vault has a recovery key.")
         self.lbl_rec_state.hide()
         lay.addWidget(self.lbl_rec_state)
 
-        self.btn_remove = QPushButton("Remove Recovery Key")
+        self.btn_remove = QPushButton()
+        register(self.btn_remove, "manage.btn.remove", "Remove Recovery Key")
         self.btn_remove.setObjectName("BtnInlineSecondary")
         self.btn_remove.setFixedHeight(40)
         self.btn_remove.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -277,12 +324,16 @@ class TabManage(QWidget):
         self.form.reset()
         self.entry_rec_pass.clear()
         if not path or not self.drop_zone.can_open_file():
-            self.lbl_info.setText("Select a vault file to manage.")
+            self.lbl_info.setText(tr("manage.select", "Select a vault file to manage."))
             # Biarkan kontrol tetap interaktif (input bisa diklik) walau belum ada
             # vault — _guard() yang mencegah aksi dengan pesan jelas. Memakai True
             # juga me-reset state setelah sebelumnya memuat vault unsupported.
             self._set_actions_enabled(True)
-            self.status_changed.emit("Manage vault", "Select a vault to manage", "idle")
+            self.status_changed.emit(
+                tr("manage.status.idle.title", "Manage vault"),
+                tr("manage.status.idle.sub", "Select a vault to manage"),
+                "idle",
+            )
             return
         self._refresh_info()
 
@@ -294,28 +345,44 @@ class TabManage(QWidget):
 
         if not self._info.get("supports_change_password"):
             self.lbl_info.setText(
-                f"This vault was made by a different version of Adyton Crypt ({fmt}) "
-                "and can't be managed here. Please update the app."
+                tr(
+                    "manage.unsupported",
+                    "This vault was made by a different version of Adyton Crypt ({fmt}) "
+                    "and can't be managed here. Please update the app.",
+                ).format(fmt=fmt)
             )
             self._set_actions_enabled(False)
             # Badge di kartu vault ikut menandai "unsupported" agar konsisten dengan
             # status di header (bukan tetap "FORMAT ✓").
             self.drop_zone.set_verification_state(
-                "unsupported", f"Different version ({fmt}) — can't be managed here"
+                "unsupported",
+                tr(
+                    "manage.different_version", "Different version ({fmt}) — can't be managed here"
+                ).format(fmt=fmt),
             )
-            self.status_changed.emit("Unsupported format", "Update the app to manage", "warn")
+            self.status_changed.emit(
+                tr("manage.status.unsupported.title", "Unsupported format"),
+                tr("manage.status.unsupported.sub", "Update the app to manage"),
+                "warn",
+            )
             return
 
         has_recovery = self._info.get("has_recovery", False)
         has_hint = self._info.get("has_hint", False)
+        yes, no = tr("common.yes", "yes"), tr("common.no", "no")
         self.lbl_info.setText(
-            f"Format {fmt} · Recovery key: {'yes' if has_recovery else 'no'} · "
-            f"Hint: {'yes' if has_hint else 'no'}"
+            tr("manage.info", "Format {fmt} · Recovery key: {rec} · Hint: {hint}").format(
+                fmt=fmt, rec=yes if has_recovery else no, hint=yes if has_hint else no
+            )
         )
         self._set_actions_enabled(True)
-        self.drop_zone.set_verification_state("pending", "Ready to manage")
+        self.drop_zone.set_verification_state("pending", tr("manage.ready", "Ready to manage"))
         self._update_recovery_section(has_recovery)
-        self.status_changed.emit("Ready to manage", "Enter the current password", "ready")
+        self.status_changed.emit(
+            tr("manage.ready", "Ready to manage"),
+            tr("manage.ready.sub", "Enter the current password"),
+            "ready",
+        )
 
     def _update_recovery_section(self, has_recovery: bool):
         # Sudah punya recovery → tawarkan hapus. Belum → tampilkan pilihan tambah.
@@ -345,10 +412,16 @@ class TabManage(QWidget):
         if self.worker is not None:
             return False
         if not self._vault_path or not self._info.get("supports_change_password"):
-            self.notif.show_msg("warn", "Select a vault to manage first.", 4000)
+            self.notif.show_msg(
+                "warn", tr("manage.guard.select", "Select a vault to manage first."), 4000
+            )
             return False
         if not self.entry_current.text():
-            self.notif.show_msg("warn", "Enter the current password or recovery key.", 4000)
+            self.notif.show_msg(
+                "warn",
+                tr("manage.guard.current", "Enter the current password or recovery key."),
+                4000,
+            )
             return False
         return True
 
@@ -358,7 +431,9 @@ class TabManage(QWidget):
             return
         if not self.form.is_valid():
             self.notif.show_msg(
-                "warn", "Choose a new password that meets all the requirements.", 4000
+                "warn",
+                tr("manage.invalid_pw", "Choose a new password that meets all the requirements."),
+                4000,
             )
             return
         self._run_action(
@@ -371,7 +446,9 @@ class TabManage(QWidget):
         if self._rec_method == _MODE_PASSPHRASE:
             passphrase = self.entry_rec_pass.text()
             if not passphrase.strip():
-                self.notif.show_msg("warn", "Enter a recovery passphrase.", 4000)
+                self.notif.show_msg(
+                    "warn", tr("manage.passphrase_empty", "Enter a recovery passphrase."), 4000
+                )
                 return
             self._run_action(
                 add_recovery_key,
@@ -392,16 +469,17 @@ class TabManage(QWidget):
         if not self._guard():
             return
         dialog = ModernMessageBox(
-            title="Remove Recovery Key",
-            message=(
+            title=tr("manage.remove.title", "Remove Recovery Key"),
+            message=tr(
+                "manage.remove.msg",
                 "The recovery key for this vault will be removed. After this, only the "
-                "password can open it.\n\nRemove the recovery key?"
+                "password can open it.\n\nRemove the recovery key?",
             ),
             icon_name="mdi6.key-remove-outline",
             icon_color=CLR_WARN,
             parent=self,
         )
-        dialog.btn_yes.setText("Remove")
+        dialog.btn_yes.setText(tr("common.remove", "Remove"))
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         self._run_action(remove_recovery_key, self._vault_path, self.entry_current.text())
@@ -418,7 +496,11 @@ class TabManage(QWidget):
         self.drop_zone.set_busy(busy)
         self._set_actions_enabled(not busy)
         if busy:
-            self.status_changed.emit("Working", "Updating the vault", "busy")
+            self.status_changed.emit(
+                tr("manage.status.working.title", "Working"),
+                tr("manage.status.working.sub", "Updating the vault"),
+                "busy",
+            )
 
     def _on_worker_done(self, result):
         self.worker = None
@@ -429,18 +511,40 @@ class TabManage(QWidget):
             self.form.reset()
             self.entry_rec_pass.clear()
             self._refresh_info()  # juga re-enable kontrol
-            self.notif.show_msg("ok", f" {message or 'Vault updated successfully.'}", 6000)
-            self.status_changed.emit("Done", "Vault updated successfully", "success")
-            self.system_notification.emit("Adyton Crypt", "Vault credentials updated.")
+            self.notif.show_msg(
+                "ok", f" {message or tr('manage.done', 'Vault updated successfully.')}", 6000
+            )
+            self.status_changed.emit(
+                tr("manage.status.done.title", "Done"),
+                tr("manage.status.done.sub", "Vault updated successfully"),
+                "success",
+            )
+            self.system_notification.emit(
+                "Adyton Crypt", tr("manage.notif.updated", "Vault credentials updated.")
+            )
             logger.info(f"Manage vault sukses: {message}")
         elif status == VaultStatus.WRONG_PASSWORD:
             self._set_actions_enabled(True)
-            self.notif.show_msg("err", "The current password or recovery key is incorrect.", 7000)
-            self.status_changed.emit("Incorrect credential", "Try again", "error")
+            self.notif.show_msg(
+                "err",
+                tr("manage.wrong", "The current password or recovery key is incorrect."),
+                7000,
+            )
+            self.status_changed.emit(
+                tr("manage.status.wrong.title", "Incorrect credential"),
+                tr("manage.status.wrong.sub", "Try again"),
+                "error",
+            )
         else:
             self._set_actions_enabled(True)
-            self.notif.show_msg("err", message or "Couldn't update the vault.", 8000)
-            self.status_changed.emit("Failed", "Couldn't update the vault", "error")
+            self.notif.show_msg(
+                "err", message or tr("manage.fail", "Couldn't update the vault."), 8000
+            )
+            self.status_changed.emit(
+                tr("manage.status.failed.title", "Failed"),
+                tr("manage.status.failed.sub", "Couldn't update the vault"),
+                "error",
+            )
             logger.error(f"Manage vault gagal: {message}")
 
     # ── External ──────────────────────────────────────────────────────────────

@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import register, tr
 from ..password_strength import (
     CHECKLIST_ITEMS,
     STRENGTH_COLORS,
@@ -34,6 +35,22 @@ from ..widgets import PasswordLineEdit
 
 _STRENGTH_REVEAL_H = 26
 _ANIM_MS = 250  # mengikuti Tab Kunci
+
+# Kunci i18n untuk label checklist & meter — sejajar urutan dengan
+# password_strength.CHECKLIST_ITEMS / STRENGTH_LABELS (sumber kebenaran English).
+_CHECKLIST_KEYS = [
+    ("pw.chk.len", "At least 8 characters"),
+    ("pw.chk.upper", "Uppercase letter (A-Z)"),
+    ("pw.chk.lower", "Lowercase letter (a-z)"),
+    ("pw.chk.num", "Number (0-9)"),
+    ("pw.chk.sym", "Symbol (!@#$%^&*)"),
+]
+_STRENGTH_KEYS = [
+    ("pw.weak", "Weak"),
+    ("pw.fair", "Fair"),
+    ("pw.strong", "Strong"),
+    ("pw.verystrong", "Very Strong"),
+]
 
 
 class CreatePasswordForm(QWidget):
@@ -52,8 +69,9 @@ class CreatePasswordForm(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)  # margin luar disediakan panel
         lay.setSpacing(10)  # = lay_pw Tab Kunci
 
-        lbl1 = QLabel("Password")
+        lbl1 = QLabel()
         lbl1.setObjectName("SectionLabel")
+        register(lbl1, "pw.label", "Password")
         lay.addWidget(lbl1)
 
         # Grup pw1: entry + strength + checklist menempel rapat (spacing 0),
@@ -61,7 +79,8 @@ class CreatePasswordForm(QWidget):
         v_pw1_group = QVBoxLayout()
         v_pw1_group.setSpacing(0)
 
-        self.entry_pw1 = PasswordLineEdit("Enter a strong password…")
+        self.entry_pw1 = PasswordLineEdit()
+        register(self.entry_pw1, "pw.placeholder", "Enter a strong password…", "setPlaceholderText")
         self.entry_pw1.setAccessibleName("New password")
         self.entry_pw1.textChanged.connect(self._on_change)
         v_pw1_group.addWidget(self.entry_pw1)
@@ -71,11 +90,15 @@ class CreatePasswordForm(QWidget):
 
         lay.addSpacing(6)  # jarak lega sebelum konfirmasi (Tab Kunci)
 
-        lbl2 = QLabel("Confirm Password")
+        lbl2 = QLabel()
         lbl2.setObjectName("SectionLabel")
+        register(lbl2, "pw.confirm", "Confirm Password")
         lay.addWidget(lbl2)
 
-        self.entry_pw2 = PasswordLineEdit("Repeat your password…")
+        self.entry_pw2 = PasswordLineEdit()
+        register(
+            self.entry_pw2, "pw.confirm_placeholder", "Repeat your password…", "setPlaceholderText"
+        )
         self.entry_pw2.setAccessibleName("Confirm new password")
         self.entry_pw2.textChanged.connect(self._on_change)
         lay.addWidget(self.entry_pw2)
@@ -99,7 +122,7 @@ class CreatePasswordForm(QWidget):
             self._bars.append(bar)
             row.addWidget(bar, 1)
 
-        self._lbl_str = QLabel("Strength")
+        self._lbl_str = QLabel(tr("pw.strength", "Strength"))
         self._lbl_str.setAlignment(Qt.AlignmentFlag.AlignRight)
         self._lbl_str.setStyleSheet(muted_label_style("9pt") + " font-weight: 600;")
         self._lbl_str.setMinimumWidth(140)
@@ -122,13 +145,15 @@ class CreatePasswordForm(QWidget):
         # Tata letak sel sama persis dengan Tab Kunci.
         cells = [(0, 0), (1, 0), (2, 0), (0, 1), (1, 1)]
         self._chk: list[tuple[QLabel, QLabel]] = []
-        for text, (r, c) in zip(CHECKLIST_ITEMS, cells, strict=True):
+        for i, (text, (r, c)) in enumerate(zip(CHECKLIST_ITEMS, cells, strict=True)):
             row = QHBoxLayout()
             row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(6)
             icon = QLabel()
             icon.setPixmap(qta.icon("mdi6.check-circle-outline", color=CLR_BORDER).pixmap(16, 16))
-            lbl = QLabel(text)
+            lbl = QLabel()
+            # default = teks English dari CHECKLIST_ITEMS (sumber kebenaran), key dari peta.
+            register(lbl, _CHECKLIST_KEYS[i][0], text)
             lbl.setObjectName("ChecklistLabel")
             lbl.setProperty("valid", False)
             lbl.setWordWrap(True)
@@ -177,10 +202,11 @@ class CreatePasswordForm(QWidget):
             bar.setStyleSheet(f"background-color: {color}; border-radius: 3px;")
 
         if score < 0:
-            self._lbl_str.setText("Strength: -")
+            self._lbl_str.setText(tr("pw.strength.none", "Strength: -"))
             self._lbl_str.setStyleSheet(muted_label_style("9pt") + " font-weight: 600;")
         else:
-            self._lbl_str.setText(f"Strength: {STRENGTH_LABELS[score]}")
+            label = tr(_STRENGTH_KEYS[score][0], STRENGTH_LABELS[score])
+            self._lbl_str.setText(tr("pw.strength.val", "Strength: {label}").format(label=label))
             self._lbl_str.setStyleSheet(
                 f"color: {STRENGTH_COLORS[score]}; font-size: 9pt; font-weight: bold;"
             )
@@ -204,13 +230,13 @@ class CreatePasswordForm(QWidget):
             self._icon_match.setPixmap(
                 qta.icon("mdi6.check-circle-outline", color=CLR_SUCCESS).pixmap(16, 16)
             )
-            self._lbl_match.setText("Passwords match")
+            self._lbl_match.setText(tr("pw.match", "Passwords match"))
             self._lbl_match.setStyleSheet(f"color: {CLR_SUCCESS};")
         else:
             self._icon_match.setPixmap(
                 qta.icon("mdi6.close-circle-outline", color=CLR_DANGER).pixmap(16, 16)
             )
-            self._lbl_match.setText("Passwords don't match")
+            self._lbl_match.setText(tr("pw.nomatch", "Passwords don't match"))
             self._lbl_match.setStyleSheet(f"color: {CLR_DANGER};")
 
     # ── Public API ────────────────────────────────────────────────────────────

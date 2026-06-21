@@ -53,7 +53,10 @@ from .utils import apply_shadow
 
 def make_generator_button() -> QPushButton:
     """Tombol "Generator" standar (dipakai panel password Kunci & Teks)."""
-    btn = QPushButton(" Generator")
+    from .i18n import register
+
+    btn = QPushButton()
+    register(btn, "generator", " Generator")
     btn.setIcon(qta.icon("mdi6.creation", color="white"))
     btn.setFixedHeight(36)
     btn.setObjectName("BtnGen")
@@ -132,6 +135,13 @@ class MethodCard(QFrame):
         self._title.setText(title)
         self._desc.setText(desc)
 
+    def tr_set(self, title_key: str, title_def: str, desc_key: str, desc_def: str) -> None:
+        """Daftarkan judul/deskripsi untuk i18n live (lewat tree-walk retranslate)."""
+        from .i18n import register
+
+        register(self._title, title_key, title_def)
+        register(self._desc, desc_key, desc_def)
+
     def mousePressEvent(self, event):
         if self.isEnabled():
             self.clicked.emit()
@@ -159,9 +169,12 @@ def make_recovery_info_box(
     icon = QLabel()
     icon.setPixmap(qta.icon("mdi6.information-outline", color=CLR_ACCENT).pixmap(16, 16))
     lay.addWidget(icon, 0, Qt.AlignmentFlag.AlignTop)
-    txt = QLabel(text)
+    from .i18n import register
+
+    txt = QLabel()
     txt.setObjectName("OptionDesc")
     txt.setWordWrap(True)
+    register(txt, "recovery.infobox", text)
     lay.addWidget(txt, 1)
     return box
 
@@ -206,34 +219,82 @@ def build_card_header(
 
 
 def build_tips_box(
-    tips: list[tuple[str, str, str]],
+    tips: list[tuple[str, str, str, str]],
     *,
     content_margins: tuple[int, int, int, int] = (14, 10, 14, 10),
     spacing: int = 7,
     icon_px: int = 14,
     row_spacing: int = 8,
 ) -> QFrame:
-    """Kotak tips standar (#TipsBox). `tips` = list of (icon_name, color, text)."""
+    """Kotak tips standar (#TipsBox). `tips` = list of (icon_name, color, key, default).
+
+    Tiap baris teks didaftarkan via ``register`` sehingga ikut ter-retranslate
+    saat bahasa berganti live.
+    """
+    from .i18n import register
+
     box = QFrame()
     box.setObjectName("TipsBox")
     lay = QVBoxLayout(box)
     lay.setContentsMargins(*content_margins)
     lay.setSpacing(spacing)
 
-    for icon_name, color, text in tips:
+    for icon_name, color, key, default in tips:
         row = QHBoxLayout()
         row.setSpacing(row_spacing)
         lbl_ic = QLabel()
         lbl_ic.setPixmap(qta.icon(icon_name, color=color).pixmap(icon_px, icon_px))
         lbl_ic.setFixedSize(icon_px, icon_px)
         row.addWidget(lbl_ic, alignment=Qt.AlignmentFlag.AlignTop)
-        lbl_tx = QLabel(text)
+        lbl_tx = QLabel()
+        register(lbl_tx, key, default)
         lbl_tx.setWordWrap(True)
         lbl_tx.setObjectName("TipText")
         row.addWidget(lbl_tx, 1)
         lay.addLayout(row)
 
     return box
+
+
+# ── MODAL SCRIM ─────────────────────────────────────────────────────
+class ScrimDialogMixin:
+    """Mixin untuk QDialog frameless modal: meredupkan window induk dengan
+    scrim gelap selama dialog terbuka.
+
+    Scrim adalah child dari top-level window induk, di-raise ke atas sehingga
+    menutupi konten induk tapi tetap DI BAWAH dialog (window terpisah di atasnya,
+    persis seperti pola overlay di SettingsWindow). Panggil ``_show_modal_scrim``
+    dari ``showEvent`` dan ``_hide_modal_scrim`` dari ``hideEvent``.
+    """
+
+    _SCRIM_COLOR = "rgba(0, 0, 0, 0.45)"
+
+    def _scrim_host(self):
+        parent = getattr(self, "parent_widget", None) or self.parentWidget()
+        if parent is None:
+            return None
+        win = parent.window()
+        return win if win is not None and win.isVisible() else None
+
+    def _show_modal_scrim(self) -> None:
+        host = self._scrim_host()
+        if host is None:
+            return
+        self._hide_modal_scrim()  # jaga-jaga: jangan menumpuk scrim
+        scrim = QFrame(host)
+        scrim.setObjectName("ModalScrim")
+        scrim.setStyleSheet(f"QFrame#ModalScrim {{ background: {self._SCRIM_COLOR}; }}")
+        scrim.setGeometry(host.rect())
+        scrim.raise_()
+        scrim.show()
+        self._modal_scrim = scrim
+
+    def _hide_modal_scrim(self) -> None:
+        scrim = getattr(self, "_modal_scrim", None)
+        if scrim is not None:
+            scrim.hide()
+            scrim.deleteLater()
+            self._modal_scrim = None
 
 
 # ── DRAG-DROP FRAME ─────────────────────────────────────────────────
@@ -756,8 +817,10 @@ class PasswordLineEdit(QFrame):
         self.btn_toggle.installEventFilter(self)
         # Highlight InputBox saat field/tombol mata fokus (state 'focused' di QSS).
         self.line_edit.installEventFilter(self)
+        from .i18n import tr
+
         self.btn_toggle.setAccessibleName("Show or hide password")
-        self.btn_toggle.setToolTip("Show password")
+        self.btn_toggle.setToolTip(tr("pw.show", "Show password"))
         self.line_edit.returnPressed.connect(self.returnPressed)
         lay.addWidget(self.btn_toggle)
 
@@ -788,14 +851,16 @@ class PasswordLineEdit(QFrame):
             self.style().polish(self)
 
     def _toggle_visibility(self):
+        from .i18n import tr
+
         if self.line_edit.echoMode() == QLineEdit.EchoMode.Password:
             self.line_edit.setEchoMode(QLineEdit.EchoMode.Normal)
             self.btn_toggle.setIcon(qta.icon("mdi6.eye-off-outline", color=self._accent_color))
-            self.btn_toggle.setToolTip("Hide password")
+            self.btn_toggle.setToolTip(tr("pw.hide", "Hide password"))
         else:
             self.line_edit.setEchoMode(QLineEdit.EchoMode.Password)
             self.btn_toggle.setIcon(qta.icon("mdi6.eye-outline", color=self._muted_color))
-            self.btn_toggle.setToolTip("Show password")
+            self.btn_toggle.setToolTip(tr("pw.show", "Show password"))
 
     # --- Public API ---
     def text(self) -> str:

@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ..i18n import register
 from ..styles import CLR_WARN
 from ..widgets import apply_shadow, build_card_header, make_generator_button
 from .create_password_form import CreatePasswordForm
@@ -34,13 +35,15 @@ class PasswordPanelLock(QFrame):
         lay.setSpacing(10)
 
         self.btn_gen = make_generator_button()
-        header, _, _ = build_card_header(
+        header, lbl_t, lbl_s = build_card_header(
             "mdi6.key-outline",
             CLR_WARN,
             "Set a Password",
             "A strong password keeps your data safe",
             button=self.btn_gen,
         )
+        register(lbl_t, "card.setpw.title", "Set a Password")
+        register(lbl_s, "card.setpw.sub.lock", "A strong password keeps your data safe")
         lay.addLayout(header)
         lay.addSpacing(4)
 

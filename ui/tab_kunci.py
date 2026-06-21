@@ -31,6 +31,7 @@ from .components.options_panel import OptionsPanel
 from .components.password_panel_lock import PasswordPanelLock
 from .constants import APP_NAME
 from .dialogs import ModernMessageBox, RecoveryCodeDialog
+from .i18n import tr
 from .settings_store import get_settings
 from .utils import (
     ProgressETA,
@@ -107,7 +108,9 @@ class TabKunci(QWidget):
         main_layout.addLayout(h_cols)
 
         self.btn_aksi = BigActionBtn(
-            "Lock Now", "Click to start encrypting your files", icon_name="mdi6.lock-outline"
+            tr("lock.action.title", "Lock Now"),
+            tr("lock.action.sub", "Click to start encrypting your files"),
+            icon_name="mdi6.lock-outline",
         )
         self.btn_aksi.setAccessibleName("Lock Vault button")
         self.btn_aksi.setEnabled(False)
@@ -155,24 +158,41 @@ class TabKunci(QWidget):
         if self.worker is not None:
             return
         if self._has_files and self._is_password_valid:
-            self.status_changed.emit("Ready to lock", "Target & password ready", "ready")
+            self.status_changed.emit(
+                tr("lock.status.ready", "Ready to lock"),
+                tr("lock.status.ready.sub", "Target & password ready"),
+                "ready",
+            )
         elif self._has_files:
-            self.status_changed.emit("Complete the password", "Create a strong password", "ready")
+            self.status_changed.emit(
+                tr("lock.status.complete_pw", "Complete the password"),
+                tr("lock.status.complete_pw.sub", "Create a strong password"),
+                "ready",
+            )
         else:
-            self.status_changed.emit("AES-256 • GCM", "Local encryption active", "idle")
+            self.status_changed.emit(
+                tr("status.aes", "AES-256 • GCM"),
+                tr("status.local", "Local encryption active"),
+                "idle",
+            )
 
     def _update_btn_label(self, is_hapus_asli: bool):
         if self._external_busy and self.worker is None:
             self.btn_aksi.setTextLabels(
-                "Another operation is running", "Wait for it to finish, or cancel it first"
+                tr("busy.other.title", "Another operation is running"),
+                tr("busy.other.sub", "Wait for it to finish, or cancel it first"),
             )
             return
         if is_hapus_asli:
             self.btn_aksi.setTextLabels(
-                "Encrypt & Delete Original", "The original file will be deleted after locking"
+                tr("lock.action.delete.title", "Encrypt & Delete Original"),
+                tr("lock.action.delete.sub", "The original file will be deleted after locking"),
             )
         else:
-            self.btn_aksi.setTextLabels("Lock Now", "Click to start encrypting your files")
+            self.btn_aksi.setTextLabels(
+                tr("lock.action.title", "Lock Now"),
+                tr("lock.action.sub", "Click to start encrypting your files"),
+            )
 
     def set_external_busy(self, busy: bool) -> None:
         """Kunci aksi kunci saat tab lain sedang menjalankan operasi crypto."""
@@ -184,7 +204,8 @@ class TabKunci(QWidget):
             self.btn_aksi.setEnabled(False)
             self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             self.btn_aksi.setTextLabels(
-                "Another operation is running", "Wait for it to finish, or cancel it first"
+                tr("busy.other.title", "Another operation is running"),
+                tr("busy.other.sub", "Wait for it to finish, or cancel it first"),
             )
         else:
             self.btn_aksi.setProgressVisible(False)
@@ -206,7 +227,10 @@ class TabKunci(QWidget):
         if self._external_busy and self.worker is None:
             self.notif.show_msg(
                 "warn",
-                "Another operation is running. Wait for it to finish or cancel the current process.",
+                tr(
+                    "busy.other.warn",
+                    "Another operation is running. Wait for it to finish or cancel the current process.",
+                ),
                 4000,
             )
             return
@@ -226,17 +250,21 @@ class TabKunci(QWidget):
         if self.password_panel.has_pending_passphrase_error():
             self.notif.show_msg(
                 "warn",
-                "Enter a recovery passphrase, or turn off the recovery key.",
+                tr(
+                    "lock.recovery.empty",
+                    "Enter a recovery passphrase, or turn off the recovery key.",
+                ),
                 4000,
             )
             return
 
         if hapus_asli:
             dialog = ModernMessageBox(
-                title="Confirm Delete",
-                message=(
+                title=tr("lock.dialog.delete.title", "Confirm Delete"),
+                message=tr(
+                    "lock.dialog.delete.msg",
                     "The original file or folder will be permanently deleted after the vault is created and verified.\n\n"
-                    "Make sure you have a backup of anything important before continuing."
+                    "Make sure you have a backup of anything important before continuing.",
                 ),
                 parent=self,
             )
@@ -247,7 +275,10 @@ class TabKunci(QWidget):
         self.btn_aksi.clearFocus()
 
         path_simpan, _ = QFileDialog.getSaveFileName(
-            self, "Save Vault", f"{default_name}.adtn", "Locked File (*.adtn)"
+            self,
+            tr("lock.save_vault", "Save Vault"),
+            f"{default_name}.adtn",
+            tr("lock.save_filter", "Locked File (*.adtn)"),
         )
         if not path_simpan:
             return
@@ -298,10 +329,17 @@ class TabKunci(QWidget):
 
         if busy:
             self.btn_aksi.setProgressVisible(True, 0.0)
-            self.btn_aksi.setTextLabels("Locking vault", "Preparing data • Click to cancel")
+            self.btn_aksi.setTextLabels(
+                tr("lock.busy.title", "Locking vault"),
+                tr("lock.busy.sub", "Preparing data • Click to cancel"),
+            )
             self.btn_aksi.setEnabled(True)
             self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-            self.status_changed.emit("Locking vault", "Keep the app open", "busy")
+            self.status_changed.emit(
+                tr("lock.status.locking", "Locking vault"),
+                tr("lock.status.locking.sub", "Keep the app open"),
+                "busy",
+            )
         else:
             self.btn_aksi.setProgressVisible(False)
             self._update_btn_label(self.options_panel.is_hapus_asli())
@@ -321,19 +359,34 @@ class TabKunci(QWidget):
         if status == VaultStatus.SUCCESS:
             logger.info(f"Enkripsi sukses: {msg}")
             self.notif.show_msg("ok", f" {msg}", 6000)
-            self.status_changed.emit("Locked", "Vault created successfully", "success")
+            self.status_changed.emit(
+                tr("lock.status.locked", "Locked"),
+                tr("lock.status.locked.sub", "Vault created successfully"),
+                "success",
+            )
 
             # PANCARKAN SINYAL KE APP.PY UNTUK WINOTIFY
-            self.system_notification.emit(APP_NAME, "Vault locked securely.")
+            self.system_notification.emit(
+                APP_NAME, tr("lock.notif.locked", "Vault locked securely.")
+            )
 
         elif status == VaultStatus.CANCELLED:
             logger.info("Enkripsi dibatalkan oleh pengguna.")
-            self.status_changed.emit("Cancelled", "The locking process was cancelled", "warn")
-            self.notif.show_msg("warn", "Operation cancelled.", 4000)
+            self.status_changed.emit(
+                tr("lock.status.cancelled", "Cancelled"),
+                tr("lock.status.cancelled.sub", "The locking process was cancelled"),
+                "warn",
+            )
+            self.notif.show_msg("warn", tr("notif.cancelled", "Operation cancelled."), 4000)
         else:
             user_msg = format_user_error(status, msg, "kunci")
             logger.error(f"Gagal mengunci: {msg}")
             self.status_changed.emit(
-                "Failed to lock", "Check your file, permissions, or available disk space", "error"
+                tr("lock.status.failed", "Failed to lock"),
+                tr(
+                    "lock.status.failed.sub",
+                    "Check your file, permissions, or available disk space",
+                ),
+                "error",
             )
             self.notif.show_msg("err", user_msg, 8000)

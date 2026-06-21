@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..i18n import register
 from ..styles import CLR_WARN
 from ..widgets import MethodCard, PasswordLineEdit, ToggleSwitch, make_recovery_info_box
 
@@ -71,11 +72,13 @@ class RecoveryHintPanel(QWidget):
         row.setSpacing(12)
         txt = QVBoxLayout()
         txt.setSpacing(3)
-        title = QLabel("Add a recovery key")
+        title = QLabel()
         title.setObjectName("SectionLabel")
-        desc = QLabel("A second way in if you ever forget the password.")
+        register(title, "recovery.add.title", "Add a recovery key")
+        desc = QLabel()
         desc.setObjectName("OptionDesc")
         desc.setWordWrap(True)
+        register(desc, "recovery.add.desc", "A second way in if you ever forget the password.")
         txt.addWidget(title)
         txt.addWidget(desc)
 
@@ -94,8 +97,9 @@ class RecoveryHintPanel(QWidget):
 
         body.addWidget(make_recovery_info_box())
 
-        method_lbl = QLabel("Recovery method")
+        method_lbl = QLabel()
         method_lbl.setObjectName("SectionLabel")
+        register(method_lbl, "recovery.method", "Recovery method")
         body.addWidget(method_lbl)
 
         cards = QHBoxLayout()
@@ -105,16 +109,34 @@ class RecoveryHintPanel(QWidget):
             "Generate code",
             "Create a one-time recovery code, shown once.",
         )
+        self.card_code.tr_set(
+            "recovery.card.code.title",
+            "Generate code",
+            "recovery.card.code.desc",
+            "Create a one-time recovery code, shown once.",
+        )
         self.card_pass = MethodCard(
             "mdi6.form-textbox-password",
             "Use passphrase",
+            "Set a recovery phrase you choose yourself.",
+        )
+        self.card_pass.tr_set(
+            "recovery.card.pass.title",
+            "Use passphrase",
+            "recovery.card.pass.desc",
             "Set a recovery phrase you choose yourself.",
         )
         cards.addWidget(self.card_code, 1)
         cards.addWidget(self.card_pass, 1)
         body.addLayout(cards)
 
-        self.entry_pass = PasswordLineEdit("Recovery passphrase…")
+        self.entry_pass = PasswordLineEdit()
+        register(
+            self.entry_pass,
+            "recovery.passphrase_placeholder",
+            "Recovery passphrase…",
+            "setPlaceholderText",
+        )
         self.entry_pass.setAccessibleName("Recovery passphrase")
         self.entry_pass.hide()
         body.addWidget(self.entry_pass)
@@ -124,18 +146,30 @@ class RecoveryHintPanel(QWidget):
 
         # --- Hint (selalu terlihat) ---
         lay.addSpacing(6)
-        hint_title = QLabel("Password hint (optional)")
+        hint_title = QLabel()
         hint_title.setObjectName("SectionLabel")
+        register(hint_title, "hint.title", "Password hint (optional)")
         lay.addWidget(hint_title)
 
         hint_frame, self.entry_hint = _make_text_input("e.g. our first trip together")
+        register(
+            self.entry_hint,
+            "hint.placeholder",
+            "e.g. our first trip together",
+            "setPlaceholderText",
+        )
         self.entry_hint.setAccessibleName("Password hint")
         self.entry_hint.setMaxLength(160)
         lay.addWidget(hint_frame)
 
-        hint_warn = QLabel("Stored unencrypted in the vault — never put your actual password here.")
+        hint_warn = QLabel()
         hint_warn.setObjectName("OptionDesc")
         hint_warn.setWordWrap(True)
+        register(
+            hint_warn,
+            "hint.warn",
+            "Stored unencrypted in the vault — never put your actual password here.",
+        )
         hint_warn.setStyleSheet(f"color: {CLR_WARN};")
         lay.addWidget(hint_warn)
 

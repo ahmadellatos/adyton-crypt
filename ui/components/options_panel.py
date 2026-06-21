@@ -4,6 +4,7 @@ from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from ..dialogs import ModernMessageBox
+from ..i18n import register, tr
 from ..styles import CLR_WARN_DK
 from ..widgets import ToggleSwitch
 
@@ -83,10 +84,12 @@ class OptionsPanel(QWidget):
 
         v_chk_txt1 = QVBoxLayout()
         v_chk_txt1.setSpacing(3)
-        lbl_chk_title1 = QLabel("Delete original after locking")
+        lbl_chk_title1 = QLabel()
         lbl_chk_title1.setObjectName("SectionLabel")
-        lbl_chk_desc1 = QLabel("Standard deletion — fast & safe for SSDs.")
+        register(lbl_chk_title1, "options.delete.title", "Delete original after locking")
+        lbl_chk_desc1 = QLabel()
         lbl_chk_desc1.setObjectName("OptionDesc")
+        register(lbl_chk_desc1, "options.delete.desc", "Standard deletion — fast & safe for SSDs.")
         lbl_chk_desc1.setWordWrap(True)
         v_chk_txt1.addWidget(lbl_chk_title1)
         v_chk_txt1.addWidget(lbl_chk_desc1)
@@ -118,10 +121,14 @@ class OptionsPanel(QWidget):
 
         v_chk_txt2 = QVBoxLayout()
         v_chk_txt2.setSpacing(2)
-        lbl_chk_title2 = QLabel("Advanced: Secure Wipe (overwrite data)")
+        lbl_chk_title2 = QLabel()
         lbl_chk_title2.setObjectName("SectionLabel")
-        lbl_chk_desc2 = QLabel("Slower — for HDDs or highly sensitive data.")
+        register(lbl_chk_title2, "options.secure.title", "Advanced: Secure Wipe (overwrite data)")
+        lbl_chk_desc2 = QLabel()
         lbl_chk_desc2.setObjectName("OptionDesc")
+        register(
+            lbl_chk_desc2, "options.secure.desc", "Slower — for HDDs or highly sensitive data."
+        )
         lbl_chk_desc2.setWordWrap(True)
         v_chk_txt2.addWidget(lbl_chk_title2)
         v_chk_txt2.addWidget(lbl_chk_desc2)
@@ -159,12 +166,15 @@ class OptionsPanel(QWidget):
             return
         if not self.chk_secure._checked:
             dialog = ModernMessageBox(
-                title="Heads Up: Hardware Compatibility",
-                message="Secure Wipe overwrites the original data with random bytes before deleting, making recovery much harder.\n\n"
-                "Important:\n"
-                "• Avoid this on SSDs — repeated overwrites accelerate drive wear.\n"
-                "• Use it only for traditional hard drives (HDD).\n\n"
-                "Enable Secure Wipe?",
+                title=tr("options.secure.dialog.title", "Heads Up: Hardware Compatibility"),
+                message=tr(
+                    "options.secure.dialog.msg",
+                    "Secure Wipe overwrites the original data with random bytes before deleting, making recovery much harder.\n\n"
+                    "Important:\n"
+                    "• Avoid this on SSDs — repeated overwrites accelerate drive wear.\n"
+                    "• Use it only for traditional hard drives (HDD).\n\n"
+                    "Enable Secure Wipe?",
+                ),
                 icon_name="mdi6.alert-octagon-outline",
                 icon_color=CLR_WARN_DK,
                 parent=self,

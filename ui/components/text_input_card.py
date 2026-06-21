@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from core.text_vault import TEXT_VAULT_PREFIX
 
+from ..i18n import register, tr
 from ..styles import (
     CLR_ACCENT,
     CLR_BORDER,
@@ -52,7 +53,8 @@ class TextInputCard(QFrame):
         lay.setSpacing(10)
 
         # ── Header ────────────────────────────────────────────────────────────
-        self.btn_paste = QPushButton(" Paste")
+        self.btn_paste = QPushButton()
+        register(self.btn_paste, "text.input.paste", " Paste")
         self.btn_paste.setIcon(qta.icon("mdi6.clipboard-arrow-down-outline", color="white"))
         self.btn_paste.setFixedHeight(36)
         self.btn_paste.setObjectName("BtnGen")
@@ -60,13 +62,15 @@ class TextInputCard(QFrame):
         self.btn_paste.setAccessibleName("Paste text from clipboard")
         self.btn_paste.clicked.connect(self._paste_clipboard)
 
-        header, _, _ = build_card_header(
+        header, lbl_t, lbl_s = build_card_header(
             "mdi6.text-box-edit-outline",
             CLR_ACCENT,
             "Text input",
             "Type or paste the text you want to encrypt/decrypt",
             button=self.btn_paste,
         )
+        register(lbl_t, "text.input.title", "Text input")
+        register(lbl_s, "text.input.sub", "Type or paste the text you want to encrypt/decrypt")
         lay.addLayout(header)
 
         lay.addSpacing(4)
@@ -74,8 +78,11 @@ class TextInputCard(QFrame):
         # ── Text area ─────────────────────────────────────────────────────────
         self.text_edit = QTextEdit()
         self.text_edit.setObjectName("TextInputArea")
-        self.text_edit.setPlaceholderText(
-            "Type or paste text here…\n\nTip: Paste encrypted text (ADTN_TEXT:1:…) to decrypt it."
+        register(
+            self.text_edit,
+            "text.input.placeholder",
+            "Type or paste text here…\n\nTip: Paste encrypted text (ADTN_TEXT:1:…) to decrypt it.",
+            "setPlaceholderText",
         )
         self.text_edit.setMinimumHeight(180)
         self.text_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -104,11 +111,12 @@ class TextInputCard(QFrame):
         row_footer = QHBoxLayout()
         row_footer.setSpacing(8)
 
-        self.lbl_char_count = QLabel("0 characters")
+        self.lbl_char_count = QLabel(tr("text.input.count", "{n} characters").format(n=0))
         self.lbl_char_count.setObjectName("MutedText")
         self.lbl_char_count.setStyleSheet(f"font-size: 8.5pt; color: {CLR_TEXT_MUTED};")
 
-        self.btn_clear = QPushButton("Clear")
+        self.btn_clear = QPushButton()
+        register(self.btn_clear, "text.input.clear", "Clear")
         self.btn_clear.setIcon(qta.icon("mdi6.trash-can-outline", color=CLR_TEXT_MUTED))
         self.btn_clear.setObjectName("BtnTransparent")
         self.btn_clear.setFixedHeight(34)
@@ -155,10 +163,14 @@ class TextInputCard(QFrame):
         # Counter merah saat di batas (hanya relevan untuk plaintext/enkripsi).
         if n >= limit:
             self.lbl_char_count.setStyleSheet(f"font-size: 8.5pt; color: {CLR_DANGER};")
-            self.lbl_char_count.setText(f"{n:,} / {limit:,} characters (max)")
+            self.lbl_char_count.setText(
+                tr("text.input.count_max", "{n} / {max} characters (max)").format(
+                    n=f"{n:,}", max=f"{limit:,}"
+                )
+            )
         else:
             self.lbl_char_count.setStyleSheet(f"font-size: 8.5pt; color: {CLR_TEXT_MUTED};")
-            self.lbl_char_count.setText(f"{n:,} characters")
+            self.lbl_char_count.setText(tr("text.input.count", "{n} characters").format(n=f"{n:,}"))
         self.text_changed.emit(text)
 
     def _paste_clipboard(self):
@@ -167,7 +179,9 @@ class TextInputCard(QFrame):
         if text:
             self.text_edit.setPlainText(text)
         else:
-            self.text_edit.setPlaceholderText("Clipboard is empty or contains no text.")
+            self.text_edit.setPlaceholderText(
+                tr("text.input.clipboard_empty", "Clipboard is empty or contains no text.")
+            )
 
     # ── Public API ───────────────────────────────────────────────────────────
 

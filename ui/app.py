@@ -41,6 +41,7 @@ except ImportError:
 
 from .constants import APP_AUMID, APP_NAME, APP_VERSION
 from .dialogs import ModernMessageBox
+from .i18n import i18n, register, retranslate, tr
 from .menus import AccessibleCenteredMenu, CenteredMenuAction
 from .onboarding import OnboardingView
 from .settings_store import get_settings
@@ -83,6 +84,10 @@ class AppBrankas(FramelessMainWindow):
         self._quitting = False
         self.setMinimumSize(1280, 720)
         self.setObjectName("MainWindow")
+
+        # Bahasa aktif mengikuti preferensi tersimpan SEBELUM membangun UI, agar
+        # semua register() saat build langsung memakai bahasa yang benar.
+        i18n().set_language(get_settings().language())
 
         app_icon = self._load_app_icon()
         self.setWindowIcon(app_icon)
@@ -163,7 +168,11 @@ class AppBrankas(FramelessMainWindow):
 
         # Status pill keamanan: tiap tab punya status sendiri; pill menampilkan
         # status tab yang sedang aktif (di-refresh saat ganti tab).
-        self._default_status = ("AES-256 • GCM", "Local encryption active", "idle")
+        self._default_status = (
+            tr("status.aes", "AES-256 • GCM"),
+            tr("status.local", "Local encryption active"),
+            "idle",
+        )
         self._tab_status = {
             0: self._default_status,
             1: self._default_status,
@@ -203,7 +212,11 @@ class AppBrankas(FramelessMainWindow):
         self.tab_group.buttonClicked.connect(self._update_action_button_tab_order)
 
         self._update_action_button_tab_order()
+        self._current_page = 0
         self._update_page_header(0)  # judul awal: Kunci Folder
+
+        # Retranslate seluruh chrome saat bahasa berganti (mis. dari Settings).
+        i18n().language_changed.connect(self._on_app_language_changed)
 
         # Auto-lock idle: bersihkan kolom sensitif + clipboard setelah idle.
         self._autolock_timer = QTimer(self)
@@ -306,21 +319,30 @@ class AppBrankas(FramelessMainWindow):
 
         tray_menu = AccessibleCenteredMenu()
 
-        act_show = CenteredMenuAction("Open Adyton Crypt", "mdi6.window-maximize", parent=tray_menu)
+        act_show = CenteredMenuAction(
+            tr("tray.open", "Open Adyton Crypt"), "mdi6.window-maximize", parent=tray_menu
+        )
         act_show.triggered.connect(self.showNormal)
         tray_menu.addAction(act_show)
 
         act_intro = CenteredMenuAction(
-            "Replay Introduction", "mdi6.compass-outline", parent=tray_menu
+            tr("tray.replay", "Replay Introduction"), "mdi6.compass-outline", parent=tray_menu
         )
         act_intro.triggered.connect(self._replay_onboarding)
         tray_menu.addAction(act_intro)
 
         act_quit = CenteredMenuAction(
-            "Quit Completely", "mdi6.power", icon_color="#E89089", parent=tray_menu
+            tr("tray.quit", "Quit Completely"), "mdi6.power", icon_color="#E89089", parent=tray_menu
         )
         act_quit.triggered.connect(self._quit_sepenuhnya)
         tray_menu.addAction(act_quit)
+
+        # Disimpan agar bisa di-retranslate saat bahasa berganti.
+        self._tray_actions = [
+            (act_show, "tray.open", "Open Adyton Crypt"),
+            (act_intro, "tray.replay", "Replay Introduction"),
+            (act_quit, "tray.quit", "Quit Completely"),
+        ]
 
         self.tray.setContextMenu(tray_menu)
         self.tray.show()
@@ -361,7 +383,10 @@ class AppBrankas(FramelessMainWindow):
         self.btn_nav_teks.setEnabled(True)
 
         msg = (
-            "You can switch tabs, but new operations are paused until the current one finishes."
+            tr(
+                "locks.switch_msg",
+                "You can switch tabs, but new operations are paused until the current one finishes.",
+            )
             if busy
             else ""
         )
@@ -447,17 +472,18 @@ class AppBrankas(FramelessMainWindow):
             self.showNormal()
             self.activateWindow()
             dialog = ModernMessageBox(
-                title="Operation in Progress",
-                message=(
+                title=tr("quit.title", "Operation in Progress"),
+                message=tr(
+                    "quit.msg",
                     "Adyton is currently encrypting or decrypting a file.\n\n"
                     "Quitting now may corrupt the file or cause data loss. "
-                    "Please wait for it to finish, or cancel the operation first."
+                    "Please wait for it to finish, or cancel the operation first.",
                 ),
                 icon_name="mdi6.alert-octagon-outline",
                 icon_color="#E89089",
                 parent=self,
             )
-            dialog.btn_yes.setText("Got it")
+            dialog.btn_yes.setText(tr("common.gotit", "Got it"))
             dialog.btn_cancel.hide()
             dialog.exec()
             return
@@ -473,8 +499,11 @@ class AppBrankas(FramelessMainWindow):
         event.ignore()
         self.hide()
         self._show_system_notif(
-            f"{APP_NAME} is still running",
-            "Adyton is in the System Tray. Any active operations will continue in the background.",
+            tr("close.title", "{app} is still running").format(app=APP_NAME),
+            tr(
+                "close.msg",
+                "Adyton is in the System Tray. Any active operations will continue in the background.",
+            ),
         )
         logger.info("Window di-minimize ke System Tray.")
 
@@ -508,19 +537,21 @@ class AppBrankas(FramelessMainWindow):
         lay.addSpacing(20)
 
         # Tombol navigasi (ikon + label kecil di bawahnya)
-        self.btn_nav_kunci = self._make_tab_button("Lock", "mdi6.lock-outline", "Lock Folder tab")
+        self.btn_nav_kunci = self._make_tab_button(
+            "Lock", "nav.lock", "mdi6.lock-outline", "Lock Folder tab", "nav.lock.tip"
+        )
         self.btn_nav_kunci.setChecked(True)
 
         self.btn_nav_buka = self._make_tab_button(
-            "Open", "mdi6.lock-open-variant-outline", "Open Vault tab"
+            "Open", "nav.open", "mdi6.lock-open-variant-outline", "Open Vault tab", "nav.open.tip"
         )
 
         self.btn_nav_teks = self._make_tab_button(
-            "Text", "mdi6.text-box-outline", "Encrypt Text tab"
+            "Text", "nav.text", "mdi6.text-box-outline", "Encrypt Text tab", "nav.text.tip"
         )
 
         self.btn_nav_manage = self._make_tab_button(
-            "Manage", "mdi6.key-outline", "Manage Vault tab"
+            "Manage", "nav.manage", "mdi6.key-outline", "Manage Vault tab", "nav.manage.tip"
         )
 
         self.tab_group = QButtonGroup(self)
@@ -537,7 +568,9 @@ class AppBrankas(FramelessMainWindow):
         lay.addStretch()
 
         # Settings di dasar rail — bukan tab (tidak checkable), membuka dialog.
-        self.btn_nav_settings = self._make_tab_button("Settings", "mdi6.cog-outline", "Settings")
+        self.btn_nav_settings = self._make_tab_button(
+            "Settings", "nav.settings", "mdi6.cog-outline", "Settings", "nav.settings"
+        )
         self.btn_nav_settings.setCheckable(False)
         self.btn_nav_settings.clicked.connect(self._open_settings)
         lay.addWidget(self.btn_nav_settings, alignment=Qt.AlignmentFlag.AlignHCenter)
@@ -579,7 +612,7 @@ class AppBrankas(FramelessMainWindow):
         self.lbl_status_icon.setPixmap(
             qta.icon("mdi6.shield-check-outline", color=CLR_ACCENT).pixmap(16, 16)
         )
-        self.lbl_status_text = QLabel("AES-256 • GCM")
+        self.lbl_status_text = QLabel(tr("status.aes", "AES-256 • GCM"))
         self.lbl_status_text.setObjectName("StatusPillText")
         self.lbl_status_text.setStyleSheet(
             f"color: {CLR_ACCENT}; font-weight: 700; font-size: 9pt;"
@@ -590,10 +623,12 @@ class AppBrankas(FramelessMainWindow):
         lay.addWidget(self.status_pill, 0, Qt.AlignmentFlag.AlignVCenter)
         parent_layout.addWidget(topbar)
 
-    def _make_tab_button(self, label: str, icon_name: str, accessible: str) -> QToolButton:
+    def _make_tab_button(
+        self, label: str, label_key: str, icon_name: str, accessible: str, tip_key: str
+    ) -> QToolButton:
         """Factory tombol navigasi rail (ikon + label kecil di bawah)."""
         btn = QToolButton()
-        btn.setText(label)
+        register(btn, label_key, label)
         btn.setIcon(qta.icon(icon_name, color=CLR_TEXT_DIM, color_on=CLR_ACCENT))
         btn.setIconSize(QSize(22, 22))
         btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
@@ -601,8 +636,8 @@ class AppBrankas(FramelessMainWindow):
         btn.setCheckable(True)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setFixedSize(72, 60)
-        btn.setToolTip(accessible)
-        btn.setAccessibleName(accessible)
+        register(btn, tip_key, accessible, "setToolTip")
+        register(btn, tip_key, accessible, "setAccessibleName")
         btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         return btn
 
@@ -620,14 +655,15 @@ class AppBrankas(FramelessMainWindow):
         lbl_safe_icon.setPixmap(
             qta.icon("mdi6.shield-check-outline", color=CLR_TEXT_MUTED).pixmap(15, 15)
         )
-        lbl_safe_text = QLabel("Your password is never sent anywhere")
+        lbl_safe_text = QLabel()
         lbl_safe_text.setObjectName("MutedText")
+        register(lbl_safe_text, "footer.safe", "Your password is never sent anywhere")
         lay_safe.addWidget(lbl_safe_icon)
         lay_safe.addWidget(lbl_safe_text)
 
         lay_ver = QHBoxLayout()
         lay_ver.setSpacing(6)
-        lbl_ver_text = QLabel(f"Version {APP_VERSION}")
+        lbl_ver_text = QLabel(tr("footer.version", "Version {v}").format(v=APP_VERSION))
         lbl_ver_text.setObjectName("MutedText")
         lbl_ver_icon = QLabel()
         lbl_ver_icon.setPixmap(
@@ -645,18 +681,54 @@ class AppBrankas(FramelessMainWindow):
     # EVENT HANDLERS
     # =========================================================================
 
-    # Judul + subtitle yang tampil di kiri atas untuk tiap tab (indeks stack).
+    # Judul + subtitle per tab (indeks stack): (title_key, title_def, sub_key, sub_def).
     PAGE_HEADERS = {
-        0: ("Lock Folder", "Choose a file or folder, set a password, and lock it."),
-        1: ("Open Vault", "Select an encrypted vault file and enter your password to open it."),
-        2: ("Text", "Encrypt or decrypt text with a password."),
-        3: ("Manage Vault", "Change the password or recovery key of an existing vault."),
+        0: (
+            "header.lock.title",
+            "Lock Folder",
+            "header.lock.sub",
+            "Choose a file or folder, set a password, and lock it.",
+        ),
+        1: (
+            "header.open.title",
+            "Open Vault",
+            "header.open.sub",
+            "Select an encrypted vault file and enter your password to open it.",
+        ),
+        2: (
+            "header.text.title",
+            "Text",
+            "header.text.sub",
+            "Encrypt or decrypt text with a password.",
+        ),
+        3: (
+            "header.manage.title",
+            "Manage Vault",
+            "header.manage.sub",
+            "Change the password or recovery key of an existing vault.",
+        ),
     }
 
     def _update_page_header(self, index: int) -> None:
-        title, subtitle = self.PAGE_HEADERS.get(index, ("", ""))
-        self.lbl_page_title.setText(title)
-        self.lbl_page_sub.setText(subtitle)
+        self._current_page = index
+        tk, td, sk, sd = self.PAGE_HEADERS.get(index, ("", "", "", ""))
+        self.lbl_page_title.setText(tr(tk, td) if tk else "")
+        self.lbl_page_sub.setText(tr(sk, sd) if sk else "")
+
+    def _on_app_language_changed(self, *_) -> None:
+        """Terapkan ulang semua teks chrome saat bahasa berganti (live)."""
+        retranslate(self)
+        self._update_page_header(self._current_page)
+        for act, key, default in getattr(self, "_tray_actions", []):
+            act.set_text(tr(key, default))
+        # Pill status balik ke idle (default) dalam bahasa baru; status transien
+        # akan ter-refresh sendiri pada aksi berikutnya.
+        self._default_status = (
+            tr("status.aes", "AES-256 • GCM"),
+            tr("status.local", "Local encryption active"),
+            "idle",
+        )
+        self._revert_status_to_idle()
 
     def _on_tab_status(self, idx: int, title: str, subtitle: str, state: str) -> None:
         """Simpan status per-tab; tampilkan di pill hanya jika tab itu sedang aktif."""
