@@ -281,3 +281,39 @@ def test_tampered_wrapped_master_key_fails_closed(tmp_path):
 
     status, _ = buka_brankas(str(vault_path), PASSWORD)
     assert status == VaultStatus.WRONG_PASSWORD
+
+
+# ── Virtual-name sanitize: vault stays decryptable regardless of its name ─────────
+
+
+def test_sanitize_virtual_name_always_validates():
+    from core.vault import _sanitize_virtual_name, _validate_virtual_folder_name
+
+    for raw in ("._dec_evil", "report...", "NUL", "a/b\\c", "   ", "....", "CON.txt"):
+        safe = _sanitize_virtual_name(raw)
+        # Hasil sanitasi WAJIB lolos validasi yang sama dengan saat dekripsi.
+        assert _validate_virtual_folder_name(safe) == safe
+    # Nama yang sudah valid tidak diubah.
+    assert _sanitize_virtual_name("Holiday Photos") == "Holiday Photos"
+
+
+def test_multifile_vault_with_unsafe_stem_still_decrypts(tmp_path):
+    """Regresi #2: vault multi-file yang disimpan dengan stem yang DITOLAK validasi
+    dekripsi (mis. diawali '._dec_') dulu sukses dibuat tapi tak pernah bisa dibuka.
+    Sanitasi nama saat membuat menjamin metadata & arcname tar tetap konsisten."""
+    f1 = tmp_path / "a.txt"
+    f1.write_text("alpha", encoding="utf-8")
+    f2 = tmp_path / "b.txt"
+    f2.write_text("beta", encoding="utf-8")
+
+    # "._dec_evil" = nama file Windows yang legal, tapi ditolak saat dekripsi.
+    vault_path = tmp_path / "._dec_evil.adtn"
+    status, message = kunci_brankas([str(f1), str(f2)], str(vault_path), PASSWORD)
+    assert status == VaultStatus.SUCCESS, message
+
+    status, restored_name = buka_brankas(str(vault_path), PASSWORD)
+    assert status == VaultStatus.SUCCESS
+    assert not restored_name.startswith("._dec_")  # pola temp internal sudah dinetralkan
+    restored = tmp_path / restored_name
+    assert (restored / "a.txt").read_text(encoding="utf-8") == "alpha"
+    assert (restored / "b.txt").read_text(encoding="utf-8") == "beta"

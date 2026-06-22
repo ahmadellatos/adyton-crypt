@@ -246,6 +246,13 @@ class TabKunci(QWidget):
         hapus_asli = self.options_panel.is_hapus_asli()
         secure_wipe = self.options_panel.is_secure_wipe()
 
+        # Enter di field password memicu _proses walau tombol aksi sedang disabled
+        # (mis. belum ada target, atau password kosong). Cegah lebih dulu agar tidak
+        # menyentuh paths[0] saat daftar kosong (IndexError) atau memproses password
+        # kosong. Mirror guard di TabBuka._proses.
+        if not paths or not pw:
+            return
+
         # Recovery passphrase kosong: cegah lebih awal sebelum dialog apa pun.
         if self.password_panel.has_pending_passphrase_error():
             self.notif.show_msg(

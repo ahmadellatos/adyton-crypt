@@ -258,8 +258,7 @@ class AppBrankas(FramelessMainWindow):
         """Bersihkan state sensitif saat idle: field password, hasil Tab Teks,
         dan clipboard. App ini tidak menyimpan sesi vault terbuka, jadi 'auto-lock'
         = panic-clear yang aman & tidak mengganggu data di disk."""
-        from PySide6.QtGui import QGuiApplication
-
+        from .utils import clear_clipboard_if_ours
         from .widgets import PasswordLineEdit
 
         for le in self.findChildren(PasswordLineEdit):
@@ -273,10 +272,10 @@ class AppBrankas(FramelessMainWindow):
                 if callable(fn):
                     with contextlib.suppress(Exception):
                         fn()
-        cb = QGuiApplication.clipboard()
-        if cb is not None:
-            with contextlib.suppress(Exception):
-                cb.clear()
+        # Hanya hapus clipboard bila isinya masih salinan sensitif milik Adyton —
+        # jangan menghapus konten yang user salin dari aplikasi lain.
+        with contextlib.suppress(Exception):
+            clear_clipboard_if_ours()
         self._refresh_autolock_from_settings()  # jadwalkan lagi untuk siklus berikutnya
 
     # =========================================================================
@@ -353,9 +352,15 @@ class AppBrankas(FramelessMainWindow):
     # =========================================================================
 
     def _is_busy(self) -> bool:
-        return (self.tab_kunci.worker is not None and self.tab_kunci.worker.isRunning()) or (
-            self.tab_buka.worker is not None and self.tab_buka.worker.isRunning()
-        )
+        # Periksa worker SEMUA tab, bukan hanya Kunci/Buka. TabManage (ganti
+        # password / recovery) dan TabTeks juga menjalankan QThread; kalau diabaikan,
+        # "Quit Completely" saat salah satunya berjalan akan membongkar proses dengan
+        # thread masih hidup (crash) dan bisa memutus penulisan header vault.
+        for tab in (self.tab_kunci, self.tab_buka, self.tab_teks, self.tab_manage):
+            worker = getattr(tab, "worker", None)
+            if worker is not None and worker.isRunning():
+                return True
+        return False
 
     # =========================================================================
     # TRAY & LOCKS

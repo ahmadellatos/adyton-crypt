@@ -132,6 +132,46 @@ def global_exception_handler(exc_type, exc_value, exc_traceback) -> None:
 # IPC HANDLER
 # =========================================================================
 
+# Payload IPC dibingkai: panjang 4-byte big-endian + body UTF-8. Tanpa framing,
+# satu readAll() bisa hanya menangkap chunk pertama saat payload tiba terpotong
+# (mis. banyak path dari context menu) → path ekor hilang diam-diam.
+IPC_LENGTH_PREFIX = 4
+IPC_MAX_PAYLOAD = 1 << 20  # 1 MB — jauh di atas kebutuhan; batasi alokasi dari client lokal
+
+
+def _send_ipc_payload(socket: QLocalSocket, payload: str) -> bool:
+    """Tulis payload ber-frame (panjang 4-byte + body UTF-8) ke socket."""
+    data = payload.encode("utf-8")
+    socket.write(len(data).to_bytes(IPC_LENGTH_PREFIX, "big") + data)
+    return socket.waitForBytesWritten(1000)
+
+
+def _recv_ipc_payload(client: QLocalSocket) -> str | None:
+    """Baca satu payload ber-frame secara utuh; None bila gagal/terpotong/terlalu besar."""
+    buf = bytearray()
+
+    def _fill_to(n: int) -> bool:
+        while len(buf) < n:
+            if client.bytesAvailable() == 0 and not client.waitForReadyRead(1000):
+                return False
+            chunk = client.readAll().data()
+            if not chunk:
+                return False
+            buf.extend(chunk)
+        return True
+
+    if not _fill_to(IPC_LENGTH_PREFIX):
+        return None
+    length = int.from_bytes(bytes(buf[:IPC_LENGTH_PREFIX]), "big")
+    if length <= 0 or length > IPC_MAX_PAYLOAD:
+        return None
+    if not _fill_to(IPC_LENGTH_PREFIX + length):
+        return None
+    try:
+        return bytes(buf[IPC_LENGTH_PREFIX : IPC_LENGTH_PREFIX + length]).decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
 
 def _bring_to_front(window: "AppBrankas") -> None:
     window.showNormal()
@@ -149,13 +189,10 @@ def handle_wakeup(server: QLocalServer, window: "AppBrankas") -> None:
     client = server.nextPendingConnection()
     if client is None:
         return
-    # Data bisa sudah ter-buffer sebelum slot ini jalan (umum di koneksi pertama);
-    # hanya tunggu bila belum ada apa pun, agar tidak melewatkan payload.
-    if client.bytesAvailable() == 0 and not client.waitForReadyRead(1000):
-        client.disconnectFromServer()
-        return
     try:
-        payload = client.readAll().data().decode("utf-8")
+        payload = _recv_ipc_payload(client)
+        if payload is None:
+            return
         if payload.startswith("QUICK|"):
             parts = payload.split("|")
             mode = parts[1] if len(parts) > 1 else ""
@@ -193,9 +230,7 @@ def try_send_to_existing_instance(file_arg: str) -> bool:
         return False
 
     logger.info("Instance lain aktif. Mengirim sinyal WAKEUP + Path File.")
-    payload = f"WAKEUP|{file_arg}".encode()
-    socket.write(payload)
-    socket.waitForBytesWritten(500)
+    _send_ipc_payload(socket, f"WAKEUP|{file_arg}")
     socket.disconnectFromServer()
     return True
 
@@ -212,9 +247,7 @@ def try_forward_quick_action(mode: str, paths: list[str]) -> bool:
         socket.deleteLater()
         return False
 
-    payload = ("QUICK|" + mode + "|" + "|".join(paths)).encode("utf-8")
-    socket.write(payload)
-    socket.waitForBytesWritten(1000)
+    _send_ipc_payload(socket, "QUICK|" + mode + "|" + "|".join(paths))
     socket.flush()
     # Tunggu server selesai membaca lalu menutup koneksi — mencegah race di mana
     # proses ini keluar dan merobohkan pipe sebelum server sempat membaca.
@@ -332,6 +365,18 @@ def run_full_app(app: QApplication, args: argparse.Namespace) -> int:
 
     if ipc_server is not None:
         ipc_server.newConnection.connect(lambda: handle_wakeup(ipc_server, window))
+    else:
+        # IPC gagal listen → app tetap jalan untuk pemakaian manual, tapi
+        # double-click .adtn dan forwarding menu klik-kanan tidak akan sampai ke
+        # window ini. Jangan diam-diam: beri tahu user (non-fatal).
+        QMessageBox.warning(
+            window,
+            APP_NAME,
+            "Couldn't start the background link that lets Windows hand files to "
+            "Adyton Crypt.\n\nThe app still works normally, but opening a vault by "
+            "double-clicking a .adtn file or using the right-click menu may not "
+            "bring it here this session. Restarting the app usually fixes this.",
+        )
 
     window.show()
 

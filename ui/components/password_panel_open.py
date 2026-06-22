@@ -124,6 +124,10 @@ class PasswordPanelOpen(QFrame):
         self.lbl_hint = QLabel("")
         self.lbl_hint.setObjectName("MutedText")
         self.lbl_hint.setWordWrap(True)
+        # Hint berasal dari pembuat vault dan ditampilkan ke siapa pun yang membuka
+        # file. Paksa PlainText agar markup Qt (mis. <b>, <img>) tidak pernah
+        # di-render — hindari layout rusak / teks menyamar dari hint berbahaya.
+        self.lbl_hint.setTextFormat(Qt.TextFormat.PlainText)
         lay.addWidget(self.lbl_hint, 1)
         return box
 

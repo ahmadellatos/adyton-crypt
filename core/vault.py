@@ -145,11 +145,22 @@ def hapus_permanen(
             except Exception:
                 logger.debug("Secure wipe overwrite gagal (file akan tetap dihapus)")
 
+        # Secure wipe: ganti nama file ke acak sebelum unlink agar nama asli
+        # (yang sendiri bisa membocorkan isi, mis. "Gaji_2026.pdf") tidak
+        # tertinggal di direktori/MFT NTFS untuk dibaca tool recovery. Symlink
+        # tidak di-rename — cukup dilepas tautannya.
+        target = path
+        if secure_wipe and not path.is_symlink():
+            with contextlib.suppress(OSError):
+                scrambled = path.with_name(uuid.uuid4().hex)
+                os.replace(path, scrambled)
+                target = scrambled
+
         try:
-            path.unlink(missing_ok=True)
+            target.unlink(missing_ok=True)
         except PermissionError:
-            path.chmod(stat.S_IWRITE | stat.S_IREAD)
-            path.unlink(missing_ok=True)
+            target.chmod(stat.S_IWRITE | stat.S_IREAD)
+            target.unlink(missing_ok=True)
 
     elif path.is_dir():
         for child in list(path.iterdir()):
@@ -955,6 +966,40 @@ def _validate_virtual_folder_name(name: str) -> str:
     return name
 
 
+def _sanitize_virtual_name(name: str) -> str:
+    """Pastikan nama root yang disimpan di metadata vault selalu lolos
+    :func:`_validate_virtual_folder_name`.
+
+    Dipanggil saat MEMBUAT vault. Tanpa ini, nama file vault / sumber yang
+    mengandung karakter ilegal, berakhir titik/spasi, memakai nama device reserved
+    Windows, atau diawali pola temp internal bisa menghasilkan vault yang sukses
+    dibuat TAPI ditolak saat dibuka (undecryptable). Nilai hasilnya dipakai
+    konsisten untuk metadata maupun root arcname tar sehingga round-trip cocok.
+    """
+    safe = "".join("_" if (ch in '/\\<>:"|?*' or ord(ch) < 32) else ch for ch in name)
+    safe = safe.rstrip(" .")
+
+    reserved = {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *(f"COM{i}" for i in range(1, 10)),
+        *(f"LPT{i}" for i in range(1, 10)),
+    }
+    if safe and (safe.split(".", 1)[0].upper() in reserved or safe.startswith("._dec_")):
+        safe = "_" + safe
+
+    # Batasi panjang byte (truncate aman terhadap multibyte) lalu rapikan ujung.
+    safe = safe.encode("utf-8")[:MAX_VIRTUAL_NAME_LENGTH].decode("utf-8", "ignore").rstrip(" .")
+
+    # Jaring pengaman: apa pun yang masih gagal validasi jatuh ke fallback aman.
+    try:
+        return _validate_virtual_folder_name(safe)
+    except ValueError:
+        return "Brankas"
+
+
 def _buka_brankas_from_open_file(
     fk,
     target_path: Path,
@@ -1173,10 +1218,10 @@ def kunci_brankas(
             )
 
     if len(valid_paths) == 1:
-        nama_virtual = Path(valid_paths[0]).name
+        nama_virtual = _sanitize_virtual_name(Path(valid_paths[0]).name)
         target_dir = ""
     else:
-        nama_virtual = target_path.stem or "Brankas_Rahasia"
+        nama_virtual = _sanitize_virtual_name(target_path.stem or "Brankas_Rahasia")
         target_dir = nama_virtual
 
     backup_path: Path | None = None
@@ -1251,10 +1296,13 @@ def kunci_brankas(
             with tarfile.open(fileobj=out_stream, mode="w|") as tar:
                 for p in valid_paths:
                     path_item = Path(p)
+                    # Single-file: root arcname HARUS = nama_virtual (sudah disanitasi)
+                    # agar cocok dengan nama yang divalidasi saat dekripsi. Multi-file:
+                    # semua item ditaruh di bawah folder target_dir (= nama_virtual).
                     arcname = (
                         (Path(target_dir) / path_item.name).as_posix()
                         if target_dir
-                        else path_item.name
+                        else nama_virtual
                     )
                     tar.add(path_item, arcname=arcname)
 
@@ -1643,17 +1691,15 @@ def change_password(
     if len(new_header) != hdr["header_end"]:
         return VaultStatus.ERROR, "Internal error: header length changed during re-key."
 
-    try:
-        with path.open("r+b") as fk:
-            fk.seek(0)
-            fk.write(new_header)
-            fk.flush()
-            os.fsync(fk.fileno())
-    except Exception as exc:
-        logger.exception("Gagal menulis header saat ganti password.")
-        return VaultStatus.ERROR, str(exc)
-
-    return VaultStatus.SUCCESS, "Password changed successfully."
+    # Tulis lewat temp file + atomic os.replace, BUKAN overwrite in-place. Region
+    # keyslot bisa melebihi satu sektor disk (hint + beberapa slot), jadi tulis
+    # in-place rentan torn-write saat power-loss di tengah tulis → vault rusak dan
+    # tak bisa dibuka oleh password lama MAUPUN baru. Konsisten dengan
+    # add_recovery_key / remove_recovery_key.
+    status, message = _rewrite_header_full(path, hdr["header_end"], new_header)
+    if status == VaultStatus.SUCCESS:
+        return VaultStatus.SUCCESS, "Password changed successfully."
+    return status, message
 
 
 def add_recovery_key(

@@ -10,7 +10,7 @@ from loguru import logger
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QVBoxLayout, QWidget
 
-from core.vault import VaultStatus, buka_brankas, vault_info
+from core.vault import VaultStatus, buka_brankas
 from core.worker import CryptoWorker
 
 from .buttons import BigActionBtn
@@ -101,10 +101,10 @@ class TabBuka(QWidget):
         self.password_panel.set_idle_state()
         if path:
             if self._has_file:
-                info = vault_info(path)
-                self.password_panel.show_vault_meta(
-                    info.get("hint"), info.get("has_recovery", False)
-                )
+                # Reuse meta yang sudah ditangkap drop zone dari satu pembacaan header;
+                # jangan baca header lagi (hindari I/O ganda di main thread).
+                hint, has_recovery = self.drop_zone.get_vault_meta()
+                self.password_panel.show_vault_meta(hint, has_recovery)
                 self.status_changed.emit(
                     tr("open.status.ready", "Vault ready to open"),
                     tr("open.status.ready.sub", "Valid format • Not yet verified"),

@@ -176,12 +176,18 @@ class TextInputCard(QFrame):
     def _paste_clipboard(self):
         clipboard = QGuiApplication.clipboard()
         text = clipboard.text()
-        if text:
-            self.text_edit.setPlainText(text)
-        else:
+        if not text:
             self.text_edit.setPlaceholderText(
                 tr("text.input.clipboard_empty", "Clipboard is empty or contains no text.")
             )
+            return
+        # Batasi panjang SEBELUM setPlainText. Tanpa ini, paste multi-MB akan dimuat
+        # & di-reflow seluruhnya dulu (freeze), baru dipotong _on_text_changed.
+        # MAX_DECRYPT_CHARS = batas terbesar yang mungkin; _on_text_changed lalu
+        # menerapkan batas presisi per-mode (dan menandai counter "max").
+        if len(text) > MAX_DECRYPT_CHARS:
+            text = text[:MAX_DECRYPT_CHARS]
+        self.text_edit.setPlainText(text)
 
     # ── Public API ───────────────────────────────────────────────────────────
 

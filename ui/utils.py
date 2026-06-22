@@ -3,6 +3,7 @@ Utilitas umum untuk UI Adyton Crypt.
 Berisi helper untuk progress bar dan estimasi waktu.
 """
 
+import sys
 import time
 
 
@@ -239,6 +240,38 @@ def start_crypto_worker(worker, progress_callback, finished_callback) -> None:
 CLIPBOARD_AUTO_CLEAR_MS = 30_000
 
 
+def _set_clipboard_sensitive(clipboard, text: str) -> None:
+    """Taruh ``text`` ke clipboard, dan di Windows tandai sebagai sensitif.
+
+    Auto-clear hanya membersihkan isi clipboard *aktif*; ia tidak bisa menghapus
+    salinan yang sudah terlanjur masuk Clipboard History (Win+V) atau ter-sinkron
+    ke Cloud Clipboard antar-perangkat. Untuk teks sensitif (plaintext hasil
+    dekripsi, recovery code) kita pasang format clipboard khusus Windows yang
+    memberi tahu OS agar TIDAK menyimpannya ke history maupun cloud.
+
+    Di platform lain (atau bila QMimeData tak tersedia) jatuh ke ``setText`` biasa.
+    """
+    if sys.platform != "win32":
+        clipboard.setText(text)
+        return
+    try:
+        from PySide6.QtCore import QByteArray, QMimeData
+
+        mime = QMimeData()
+        mime.setText(text)
+        # Nama format clipboard terdaftar resmi Windows. Kehadiran
+        # ExcludeClipboardContentFromMonitorProcessing saja sudah cukup; dua
+        # lainnya eksplisit menolak history (Win+V) & sinkronisasi cloud.
+        zero = QByteArray(b"\x00\x00\x00\x00")  # DWORD 0
+        mime.setData("ExcludeClipboardContentFromMonitorProcessing", zero)
+        mime.setData("CanIncludeInClipboardHistory", zero)
+        mime.setData("CanUploadToCloudClipboard", zero)
+        clipboard.setMimeData(mime)
+    except Exception:
+        # Jangan sampai gagal menyalin hanya karena penanda privasi bermasalah.
+        clipboard.setText(text)
+
+
 class _ClipboardAutoClear:
     """Salin teks ke clipboard, lalu hapus otomatis setelah timeout.
 
@@ -264,14 +297,15 @@ class _ClipboardAutoClear:
         clipboard = self._clipboard()
         if clipboard is None:
             return
-        clipboard.setText(text)
+        _set_clipboard_sensitive(clipboard, text)
         self._pending = text
 
         if timeout_ms <= 0:
-            # Auto-clear dimatikan (setting "Off") — salin saja tanpa menjadwalkan clear.
+            # Auto-clear timer dimatikan (setting "Off"), tapi _pending TETAP dilacak
+            # agar auto-lock idle masih bisa panic-clear salinan sensitif milik kita
+            # tanpa menyentuh clipboard aplikasi lain.
             if self._timer is not None:
                 self._timer.stop()
-            self._pending = None
             return
 
         if self._timer is None:
@@ -290,6 +324,22 @@ class _ClipboardAutoClear:
             if clipboard.text() == self._pending:
                 clipboard.clear()
         self._pending = None
+
+    def clear_if_ours(self) -> bool:
+        """Bersihkan clipboard HANYA bila isinya masih sama dengan salinan sensitif
+        terakhir milik kita. Kembalikan True bila benar-benar dibersihkan.
+
+        Dipakai auto-lock idle agar panic-clear tidak menghapus clipboard yang user
+        salin dari aplikasi lain.
+        """
+        clipboard = self._clipboard()
+        if clipboard is None or self._pending is None:
+            return False
+        if clipboard.text() == self._pending:
+            clipboard.clear()
+            self._pending = None
+            return True
+        return False
 
 
 _clipboard_auto_clear = _ClipboardAutoClear()
@@ -313,3 +363,11 @@ def copy_to_clipboard_auto_clear(text: str, timeout_ms: int = _USE_SETTING) -> N
         except Exception:
             timeout_ms = CLIPBOARD_AUTO_CLEAR_MS
     _clipboard_auto_clear.copy(text, timeout_ms)
+
+
+def clear_clipboard_if_ours() -> bool:
+    """Panic-clear clipboard untuk auto-lock idle: hanya hapus bila isinya masih
+    salinan sensitif terakhir dari Adyton (plaintext dekripsi / recovery code).
+    Tidak pernah menghapus konten yang user salin dari aplikasi lain.
+    """
+    return _clipboard_auto_clear.clear_if_ours()
