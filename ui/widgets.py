@@ -419,17 +419,10 @@ class CustomToolTip(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
-
-        self.setStyleSheet(f"""
-            QLabel {{
-                background-color: {CLR_WINDOW};
-                color: {CLR_TEXT_MAIN};
-                border: 1px solid {CLR_BORDER};
-                border-radius: 8px;
-                padding: 7px 12px;
-                font-size: 9pt;
-            }}
-        """)
+        # Gaya diambil dari QSS global (selektor `QToolTip, QLabel#CustomToolTip`)
+        # supaya tooltip path (widget kustom ini) IDENTIK dengan tooltip native —
+        # satu sumber kebenaran, tak ada style inline yang bisa melenceng.
+        self.setObjectName("CustomToolTip")
         self.hide()
 
         # Timer tunggal untuk polling pergerakan mouse setiap 50ms
@@ -449,6 +442,21 @@ class CustomToolTip(QLabel):
         self._pending_text = text
         self._last_cursor_pos = QCursor.pos()
         self._time_hovered = 0
+        self._monitor_timer.start()
+
+    def show_now(self, text):
+        """Tampilkan SEGERA (dipakai filter tooltip global, setelah delay native Qt).
+
+        Berbeda dari ``request_show`` yang menunggu 1 dtk mouse diam: di sini Qt sudah
+        menerapkan delay hover-nya, jadi langsung tampil. Timer tetap jalan untuk
+        sembunyi-saat-gerak & auto-hide. Idempotent bila teks sama & sudah tampil.
+        """
+        if self.isVisible() and text == self._pending_text:
+            return
+        self._pending_text = text
+        self._last_cursor_pos = QCursor.pos()
+        self._do_show()
+        self._time_hovered = self._show_delay_ms  # lewati gerbang 'show delay'
         self._monitor_timer.start()
 
     def _check_mouse_state(self):

@@ -8,7 +8,7 @@ import os
 
 from loguru import logger
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QDialog, QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
 from core.vault import VaultStatus, buka_brankas
 from core.worker import CryptoWorker
@@ -18,9 +18,11 @@ from .buttons import BigActionBtn
 # --- IMPORT SMART COMPONENTS (Sesuai dengan nama asli file lu!) ---
 from .components.drop_zone_open import DropZoneOpen
 from .components.password_panel_open import PasswordPanelOpen
+from .components.recent_vaults_bar import RecentVaultsBar
 from .constants import APP_NAME
 from .dialogs import ModernMessageBox
 from .i18n import tr
+from .settings_store import get_settings
 from .styles import CLR_DANGER
 from .utils import (
     ProgressETA,
@@ -70,7 +72,32 @@ class TabBuka(QWidget):
         h_container.setSpacing(28)  # More generous separation between columns
         h_container.addWidget(self.drop_zone, 1)
         h_container.addWidget(self.password_panel, 1)
-        main_layout.addLayout(h_container)
+
+        # Strip Recent Vaults full-width (opt-in; sembunyi saat mati/kosong).
+        self.recent_bar = RecentVaultsBar()
+        self.recent_bar.open_requested.connect(self._open_recent)
+
+        # Kolom + Recent dibungkus scroll; tombol aksi (pill) di-anchor DI LUAR scroll
+        # agar selalu terlihat, dan konten panjang (Security Details + Recent) bisa
+        # digulir alih-alih terpotong saat tinggi jendela mepet.
+        scroll_content = QWidget()
+        sc_lay = QVBoxLayout(scroll_content)
+        sc_lay.setContentsMargins(0, 0, 0, 0)
+        sc_lay.setSpacing(22)
+        sc_lay.addLayout(h_container, 1)
+        sc_lay.addWidget(self.recent_bar)
+
+        self.content_scroll = QScrollArea()
+        self.content_scroll.setObjectName("OpenScrollArea")
+        self.content_scroll.setWidget(scroll_content)
+        self.content_scroll.setWidgetResizable(True)
+        self.content_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.content_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.content_scroll.setStyleSheet(
+            "QScrollArea#OpenScrollArea, QScrollArea#OpenScrollArea > QWidget > QWidget"
+            " { background: transparent; }"
+        )
+        main_layout.addWidget(self.content_scroll, 1)
 
         self.btn_aksi = BigActionBtn(
             tr("open.action.title", "Open Vault"),
@@ -85,7 +112,13 @@ class TabBuka(QWidget):
         )  # Option B: sedikit lebih berani
 
         main_layout.addWidget(self.btn_aksi)
+
         self.notif = AnimatedNotifBar(self)
+
+    def _open_recent(self, path: str) -> None:
+        if self.worker is not None or self._external_busy:
+            return
+        self.drop_zone.load_file(path)
 
     def _connect_signals(self):
         self.btn_aksi.clicked.connect(self._proses)
@@ -291,6 +324,8 @@ class TabBuka(QWidget):
             self._cached_pw = None
 
         if status == VaultStatus.SUCCESS:
+            # Catat ke Recent SEBELUM reset_zone() membersihkan path terpilih.
+            get_settings().add_recent_vault(self.drop_zone.get_file())
             self.drop_zone.set_verification_state("verified")
             self.drop_zone.reset_zone()
             self.status_changed.emit(

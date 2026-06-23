@@ -842,9 +842,9 @@ def load_stylesheet() -> str:
     }}
 
     /* --- TOOLTIPS & TITLE BAR --- */
-    QLabel#CustomToolTip {{ background-color: {CLR_WINDOW}; color: {CLR_TEXT_MAIN}; border: 1px solid {CLR_BORDER}; border-radius: 8px; padding: 7px 12px; font-size: 9pt; font-family: {FONT_UI}; }}
-
-    QToolTip {{
+    /* Satu definisi untuk tooltip native (QToolTip) DAN tooltip kustom path
+       (QLabel#CustomToolTip) — gayanya dijamin identik dan tak bisa melenceng. */
+    QToolTip, QLabel#CustomToolTip {{
         background-color: {CLR_WINDOW};
         color: {CLR_TEXT_MAIN};
         border: 1px solid {CLR_BORDER};

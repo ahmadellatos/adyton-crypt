@@ -49,7 +49,7 @@ from .tab_buka import TabBuka
 from .tab_kunci import TabKunci
 from .tab_manage import TabManage
 from .tab_teks import TabTeks  # <-- [TAMBAHAN] Import Tab Teks
-from .widgets import CustomTitleBar
+from .widgets import CustomTitleBar, CustomToolTip
 
 # =========================================================================
 # MAIN WINDOW
@@ -75,6 +75,49 @@ class _ActivityFilter(QObject):
         ):
             self._on_activity()
         return False
+
+
+class _GlobalToolTipFilter(QObject):
+    """Rute SEMUA tooltip lewat satu ``CustomToolTip`` (gaya & perilaku seragam).
+
+    Menangkap ``QEvent.ToolTip`` (sudah lewat delay native Qt), menampilkan tooltip
+    kustom di kursor, lalu mengonsumsi event agar tooltip native tak ikut muncul.
+    Mendukung tooltip widget (``setToolTip``, naik ke parent) maupun item view
+    (``Qt.ToolTipRole``). Bila tak ada teks, event diteruskan (mis. menu native).
+    """
+
+    def __init__(self, tooltip: CustomToolTip):
+        super().__init__()
+        self._tooltip = tooltip
+
+    def eventFilter(self, obj, event):
+        if event.type() != QEvent.Type.ToolTip:
+            return False
+        text = self._resolve(obj, event)
+        if text:
+            self._tooltip.show_now(text)
+            return True  # cegah tooltip native
+        self._tooltip.hide_tooltip()
+        return False
+
+    def _resolve(self, obj, event) -> str:
+        from PySide6.QtWidgets import QAbstractItemView, QWidget
+
+        w = obj
+        while isinstance(w, QWidget):
+            tip = w.toolTip()
+            if tip:
+                return tip
+            # Item view: tooltip per-item lewat ToolTipRole (event dikirim ke viewport).
+            view = w if isinstance(w, QAbstractItemView) else w.parentWidget()
+            if isinstance(view, QAbstractItemView):
+                idx = view.indexAt(view.viewport().mapFromGlobal(event.globalPos()))
+                if idx.isValid():
+                    data = idx.data(Qt.ItemDataRole.ToolTipRole)
+                    if data:
+                        return str(data)
+            w = w.parentWidget()
+        return ""
 
 
 class AppBrankas(FramelessMainWindow):
@@ -226,6 +269,13 @@ class AppBrankas(FramelessMainWindow):
         _app = QApplication.instance()
         if _app is not None:
             _app.installEventFilter(self._activity_filter)
+
+        # Tooltip global: semua tooltip (widget & item view) lewat satu CustomToolTip
+        # agar gaya + perilakunya identik dengan tooltip path di Open/Lock.
+        self._global_tooltip = CustomToolTip()
+        self._tooltip_filter = _GlobalToolTipFilter(self._global_tooltip)
+        if _app is not None:
+            _app.installEventFilter(self._tooltip_filter)
         get_settings().changed.connect(self._on_settings_changed)
         self._refresh_autolock_from_settings()
 

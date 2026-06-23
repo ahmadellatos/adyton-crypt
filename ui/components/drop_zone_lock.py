@@ -42,7 +42,6 @@ from ..styles import (
 )
 from ..utils import format_file_size
 from ..widgets import (
-    CustomToolTip,
     DragDropFrame,
     HeroIconWidget,
 )
@@ -369,7 +368,6 @@ class DropZoneLock(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._paths = []
-        self._custom_tooltip = CustomToolTip(self)
         self._build_ui()
         self._setup_accessibility()
 
@@ -582,11 +580,6 @@ class DropZoneLock(QWidget):
         self.btn_split_add.btn_clear.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def eventFilter(self, obj, event):
-        # Existing: tooltip hide on ClearButton enter
-        if event.type() == QEvent.Type.Enter and isinstance(obj, ClearButton):
-            self._custom_tooltip.hide_tooltip()
-            return False
-
         # Keyboard: Enter/Space for buttons + Delete key support di list view
         if event.type() == QEvent.Type.KeyPress:
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):

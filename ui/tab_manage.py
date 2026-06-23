@@ -31,6 +31,7 @@ from core.worker import CryptoWorker
 
 from .components.create_password_form import CreatePasswordForm
 from .components.drop_zone_open import DropZoneOpen
+from .components.recent_vaults_bar import RecentVaultsBar
 from .dialogs import ModernMessageBox, RecoveryCodeDialog
 from .i18n import register, tr
 from .styles import CLR_ACCENT, CLR_WARN
@@ -68,9 +69,8 @@ class TabManage(QWidget):
 
         self.drop_zone = DropZoneOpen()
 
-        # Card kanan dibungkus holder transparan [card, stretch] di dalam scroll
-        # area: card mengikuti tinggi kontennya (stretch transparan menyerap ruang
-        # di bawahnya), dan scroll tetap aktif bila konten lebih tinggi dari layar.
+        # Card kanan dibungkus holder transparan [card, stretch]: card mengikuti
+        # tinggi kontennya (stretch transparan menyerap ruang di bawahnya).
         holder = QWidget()
         holder_lay = QVBoxLayout(holder)
         holder_lay.setContentsMargins(0, 0, 0, 0)
@@ -78,34 +78,54 @@ class TabManage(QWidget):
         holder_lay.addWidget(self._build_panel())
         holder_lay.addStretch(1)
 
-        self.panel_scroll = QScrollArea()
-        self.panel_scroll.setObjectName("ManageScrollArea")
-        self.panel_scroll.setWidget(holder)
-        self.panel_scroll.setWidgetResizable(True)
-        self.panel_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.panel_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.panel_scroll.setStyleSheet(
-            "QScrollArea#ManageScrollArea, QScrollArea#ManageScrollArea > QWidget > QWidget"
-            " { background: transparent; }"
-        )
+        # Kolom kiri: drop zone mengisi ruang di ATAS, Recent mengisi sisa di BAWAH-nya
+        # (memanfaatkan ruang kosong karena panel kanan—form ganti password—lebih tinggi).
+        # Recent dibatasi 2 kartu agar muat di kolom setengah-lebar. Saat Recent mati/
+        # kosong ia sembunyi (0px) dan drop zone mengisi penuh → tetap tanpa void.
+        self.recent_bar = RecentVaultsBar(max_cards=2)
+        self.recent_bar.open_requested.connect(self._open_recent)
+        left_col = QWidget()
+        left_lay = QVBoxLayout(left_col)
+        left_lay.setContentsMargins(0, 0, 0, 0)
+        left_lay.setSpacing(22)
+        # Drop zone hug-content (tidak melar mengikuti panel kanan yang tinggi);
+        # Recent menyusul di bawah; trailing stretch menyerap sisa ruang sebagai
+        # padding transparan tipis (alih-alih membesarkan kartu drop zone).
+        left_lay.addWidget(self.drop_zone, 0)
+        left_lay.addWidget(self.recent_bar, 0)
+        left_lay.addStretch(1)
 
         cols = QHBoxLayout()
         cols.setSpacing(28)
-        # Drop zone kiri mengisi kolom penuh — sama seperti di tab Open.
-        cols.addWidget(self.drop_zone, 1)
-        cols.addWidget(self.panel_scroll, 1)
-        main_layout.addLayout(cols)
+        cols.addWidget(left_col, 1)
+        cols.addWidget(holder, 1)
 
-        # Samakan tinggi drop zone dengan tab Open: di sana, di bawah kolom ada
-        # BigActionBtn (tinggi tetap 58px) + jarak layout (22px) yang memperpendek
-        # kolom sebesar 80px. Tab ini tak punya tombol aksi besar, jadi kita sisakan
-        # ruang setara di bawah kolom agar drop zone-nya sama tinggi persis.
-        bottom_spacer = QWidget()
-        bottom_spacer.setFixedHeight(58)  # = BigActionBtn.setFixedHeight(58) di buttons.py
-        bottom_spacer.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        main_layout.addWidget(bottom_spacer)
+        # Kolom dibungkus SATU scroll luar (mengganti scroll-panel lama) agar Security
+        # Details / form panjang tidak terpotong saat tinggi jendela mepet.
+        scroll_content = QWidget()
+        sc_lay = QVBoxLayout(scroll_content)
+        sc_lay.setContentsMargins(0, 0, 0, 0)
+        sc_lay.setSpacing(0)
+        sc_lay.addLayout(cols, 1)
+
+        self.content_scroll = QScrollArea()
+        self.content_scroll.setObjectName("ManageScrollArea")
+        self.content_scroll.setWidget(scroll_content)
+        self.content_scroll.setWidgetResizable(True)
+        self.content_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.content_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.content_scroll.setStyleSheet(
+            "QScrollArea#ManageScrollArea, QScrollArea#ManageScrollArea > QWidget > QWidget"
+            " { background: transparent; }"
+        )
+        main_layout.addWidget(self.content_scroll, 1)
 
         self.notif = AnimatedNotifBar(self)
+
+    def _open_recent(self, path: str) -> None:
+        if self.worker is not None:
+            return
+        self.drop_zone.load_file(path)
 
     def _build_panel(self) -> QFrame:
         card = QFrame()

@@ -44,7 +44,6 @@ from ..styles import (
 )
 from ..utils import format_file_size
 from ..widgets import (
-    CustomToolTip,
     DragDropFrame,
     ElidedLabel,
     HeroIconWidget,
@@ -66,7 +65,6 @@ class DropZoneOpen(QWidget):
         # file dipilih, agar TabBuka tidak perlu membaca header lagi (vault_info).
         self._vault_hint: str | None = None
         self._vault_has_recovery = False
-        self._custom_tooltip = CustomToolTip(self)
         self._build_ui()
         self._setup_accessibility()
 
@@ -422,6 +420,8 @@ class DropZoneOpen(QWidget):
         # Update widgets
         self.lbl_filename.setText(filename)
         self.lbl_fullpath.setText(fullpath)
+        # Tooltip path = path penuh; ditampilkan oleh filter tooltip global (app.py).
+        self.lbl_fullpath.setToolTip(fullpath)
         self.lbl_ready.setText(str(vault_info["subtitle"]))
         self._set_badge(str(vault_info["badge"]), str(vault_info["badge_state"]))
 
@@ -702,18 +702,8 @@ class DropZoneOpen(QWidget):
             self.btn_clear.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
     def eventFilter(self, obj, event):
-        # Tooltip for full path on hover (filled state)
-        if event.type() == event.Type.Enter:
-            target = getattr(self, "lbl_fullpath", None)
-            if obj == target and self._path_file:
-                self._custom_tooltip.request_show(self._path_file)
-                return True
-        elif event.type() == event.Type.Leave:
-            target = getattr(self, "lbl_fullpath", None)
-            if obj == target:
-                self._custom_tooltip.hide_tooltip()
-                return True
-        elif event.type() == event.Type.KeyPress:
+        # Tooltip path kini lewat setToolTip + filter global; di sini cukup keyboard.
+        if event.type() == event.Type.KeyPress:
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
                 if obj == self.btn_browse_center:
                     obj.click()
@@ -737,7 +727,6 @@ class DropZoneOpen(QWidget):
         self._format_badge_state = "idle"
         self._vault_hint = None
         self._vault_has_recovery = False
-        self._custom_tooltip.hide_tooltip()
         self.stack_file.setCurrentIndex(0)
         self._update_card_style(True)
 

@@ -10,6 +10,10 @@ bisa bereaksi tanpa restart.
 
 from __future__ import annotations
 
+import json
+import os
+import time
+
 from PySide6.QtCore import QObject, QSettings, Signal
 
 from core.constants import DEFAULT_KDF_LEVEL, KDF_LEVELS
@@ -24,6 +28,8 @@ KEY_AUTO_LOCK_ENABLED = "privacy/auto_lock_enabled"
 KEY_AUTO_LOCK_MINUTES = "privacy/auto_lock_minutes"
 KEY_THEME = "appearance/theme"
 KEY_LANGUAGE = "appearance/language"
+KEY_RECENT_ENABLED = "privacy/recent_enabled"
+KEY_RECENT_VAULTS = "privacy/recent_vaults"  # JSON list of {"path", "ts"}
 
 _DEFAULTS: dict[str, object] = {
     KEY_KDF_LEVEL: DEFAULT_KDF_LEVEL,
@@ -34,12 +40,14 @@ _DEFAULTS: dict[str, object] = {
     KEY_AUTO_LOCK_MINUTES: 5,
     KEY_THEME: "dark",
     KEY_LANGUAGE: "en",
+    KEY_RECENT_ENABLED: False,  # opt-in: jejak vault default mati (privasi)
 }
 
 CLIPBOARD_SECOND_CHOICES = (0, 15, 30, 60)
 AUTO_LOCK_MINUTE_CHOICES = (1, 5, 15)
 THEME_CHOICES = ("dark", "system")
 LANGUAGE_CHOICES = ("en", "id")
+RECENT_VAULTS_MAX = 4  # jumlah maksimum entri yang disimpan/ditampilkan
 
 
 class SettingsStore(QObject):
@@ -103,6 +111,67 @@ class SettingsStore(QObject):
     def set_auto_lock_minutes(self, value: int) -> None:
         self._set(KEY_AUTO_LOCK_MINUTES, int(value))
 
+    # ── Recent vaults (akses cepat di Tab Buka/Kelola) ──────────────────────
+    @staticmethod
+    def _norm_path(path: str) -> str:
+        """Bentuk kanonik untuk dedupe (case-insensitive di Windows)."""
+        return os.path.normcase(os.path.abspath(path))
+
+    def recent_enabled(self) -> bool:
+        return self._get(KEY_RECENT_ENABLED, bool)
+
+    def set_recent_enabled(self, value: bool) -> None:
+        value = bool(value)
+        # Mematikan = hapus jejak yang sudah tersimpan (privasi: opt-out bersih).
+        if not value:
+            self._s.remove(KEY_RECENT_VAULTS)
+        self._set(KEY_RECENT_ENABLED, value)
+
+    def recent_vaults(self) -> list[dict]:
+        """Daftar entri {path, ts}, terbaru lebih dulu. Kosong bila tak ada/rusak."""
+        raw = self._s.value(KEY_RECENT_VAULTS, "", type=str)
+        if not raw:
+            return []
+        try:
+            data = json.loads(raw)
+        except (ValueError, TypeError):
+            return []
+        if not isinstance(data, list):
+            return []
+        out: list[dict] = []
+        for item in data:
+            if isinstance(item, dict) and item.get("path"):
+                out.append({"path": str(item["path"]), "ts": int(item.get("ts", 0))})
+        return out
+
+    def add_recent_vault(self, path: str | None) -> None:
+        """Catat satu vault. No-op bila fitur mati atau path kosong.
+
+        Dedupe by path (move-to-front), batasi ``RECENT_VAULTS_MAX``.
+        """
+        if not path or not self.recent_enabled():
+            return
+        target = self._norm_path(path)
+        entries = [e for e in self.recent_vaults() if self._norm_path(e["path"]) != target]
+        entries.insert(0, {"path": os.path.abspath(path), "ts": int(time.time())})
+        del entries[RECENT_VAULTS_MAX:]
+        self._write_recent(entries)
+
+    def remove_recent_vault(self, path: str) -> None:
+        target = self._norm_path(path)
+        entries = [e for e in self.recent_vaults() if self._norm_path(e["path"]) != target]
+        self._write_recent(entries)
+
+    def clear_recent_vaults(self) -> None:
+        self._s.remove(KEY_RECENT_VAULTS)
+        self._s.sync()
+        self.changed.emit(KEY_RECENT_VAULTS)
+
+    def _write_recent(self, entries: list[dict]) -> None:
+        self._s.setValue(KEY_RECENT_VAULTS, json.dumps(entries))
+        self._s.sync()
+        self.changed.emit(KEY_RECENT_VAULTS)
+
     # ── Appearance ──────────────────────────────────────────────────────────
     def theme(self) -> str:
         return self._get(KEY_THEME, str)
@@ -120,6 +189,7 @@ class SettingsStore(QObject):
     def reset_to_defaults(self) -> None:
         for key in _DEFAULTS:
             self._s.remove(key)
+        self._s.remove(KEY_RECENT_VAULTS)  # bukan di _DEFAULTS (disimpan sebagai JSON)
         self._s.sync()
         self.changed.emit("*")
 

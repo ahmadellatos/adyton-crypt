@@ -242,6 +242,28 @@ class SettingsWindow(QDialog):
         self.combo_minutes.currentIndexChanged.connect(
             lambda *_: self.s.set_auto_lock_minutes(int(self.combo_minutes.currentData()))
         )
+
+        self.sw_recent = ToggleSwitch(checked=False)
+        self.btn_clear_recent = QPushButton("Clear")
+        self.btn_clear_recent.setObjectName("SettingsClearRecent")
+        self.btn_clear_recent.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_clear_recent.setStyleSheet(
+            "QPushButton#SettingsClearRecent { border: none; background: transparent;"
+            f" color: {CLR_TEXT_DIM}; font-size: 11px; }}"
+            f" QPushButton#SettingsClearRecent:hover {{ color: {CLR_ACCENT}; }}"
+        )
+        self.btn_clear_recent.clicked.connect(self.s.clear_recent_vaults)
+        self.lbl_recent = self._label("settings.recent", "Remember recent vaults", main=True)
+        self.lbl_recent_desc = self._label(
+            "settings.recent.desc",
+            "Show recently locked or opened vaults for quick access.",
+        )
+        recent_ctrl = QHBoxLayout()
+        recent_ctrl.setSpacing(8)
+        recent_ctrl.addWidget(self.btn_clear_recent)
+        recent_ctrl.addWidget(self.sw_recent)
+        lay.addLayout(self._row(self.lbl_recent, self.lbl_recent_desc, recent_ctrl, divider=True))
+        self.sw_recent.toggled.connect(self._on_recent_toggled)
         self.body_lay.addWidget(sec)
 
         # ── Appearance ──
@@ -420,6 +442,10 @@ class SettingsWindow(QDialog):
         self.s.set_auto_lock_enabled(on)
         self.combo_minutes.setVisible(on)
 
+    def _on_recent_toggled(self, on: bool):
+        self.s.set_recent_enabled(on)
+        self.btn_clear_recent.setVisible(on)
+
     def _on_language_changed(self, *_):
         lang = str(self.combo_lang.currentData())
         self.s.set_language(lang)
@@ -446,6 +472,8 @@ class SettingsWindow(QDialog):
             self.combo_minutes, [(1, None), (5, None), (15, None)], self.s.auto_lock_minutes()
         )
         self.combo_minutes.setVisible(self.s.auto_lock_enabled())
+        self.sw_recent.setChecked(self.s.recent_enabled())
+        self.btn_clear_recent.setVisible(self.s.recent_enabled())
         self._fill_combo(self.combo_theme, [("dark", "Dark"), ("system", "System")], self.s.theme())
         self._fill_combo(
             self.combo_lang, [("en", "English"), ("id", "Indonesia")], self.s.language()
@@ -516,6 +544,7 @@ class SettingsWindow(QDialog):
             ],
             self.s.theme(),
         )
+        self.btn_clear_recent.setText(tr("settings.recent.clear", "Clear"))
         self.btn_reset.setText(tr("settings.reset", "Reset to defaults"))
         self.btn_done.setText(tr("settings.done", "Done"))
 

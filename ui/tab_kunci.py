@@ -57,6 +57,7 @@ class TabKunci(QWidget):
         self._has_files = False
         self._progress_eta = ProgressETA()
         self._external_busy = False
+        self._last_saved_path: str | None = None  # untuk catat Recent saat sukses
 
         self._build_ui()
         self._connect_signals()
@@ -289,6 +290,7 @@ class TabKunci(QWidget):
         )
         if not path_simpan:
             return
+        self._last_saved_path = path_simpan
 
         # Resolusi recovery key (opsional). Untuk mode "code", tampilkan kode dan
         # minta user mengonfirmasi sudah menyimpannya SEBELUM lock dimulai.
@@ -357,6 +359,7 @@ class TabKunci(QWidget):
         status, msg = result
 
         if status == VaultStatus.SUCCESS:
+            get_settings().add_recent_vault(self._last_saved_path)
             self.drop_zone.clear_paths()
             self.options_panel.reset_options()
 
