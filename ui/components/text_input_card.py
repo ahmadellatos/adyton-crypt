@@ -59,7 +59,7 @@ class TextInputCard(QFrame):
         self.btn_paste.setFixedHeight(36)
         self.btn_paste.setObjectName("BtnGen")
         self.btn_paste.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_paste.setAccessibleName("Paste text from clipboard")
+        register(self.btn_paste, "a11y.btn.paste", "Paste text from clipboard", "setAccessibleName")
         self.btn_paste.clicked.connect(self._paste_clipboard)
 
         header, lbl_t, lbl_s = build_card_header(
@@ -121,7 +121,7 @@ class TextInputCard(QFrame):
         self.btn_clear.setObjectName("BtnTransparent")
         self.btn_clear.setFixedHeight(34)
         self.btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_clear.setAccessibleName("Clear input text")
+        register(self.btn_clear, "a11y.btn.clear_input", "Clear input text", "setAccessibleName")
         self.btn_clear.clicked.connect(self.clear_text)
 
         row_footer.addWidget(self.lbl_char_count)

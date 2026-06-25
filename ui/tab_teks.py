@@ -32,7 +32,7 @@ from .components.text_input_card import (
     TextInputCard,
 )
 from .components.text_result_card import TextResultCard
-from .i18n import tr
+from .i18n import register, tr
 from .styles import (
     CLR_ON_ACCENT,
 )
@@ -137,7 +137,7 @@ class TabTeks(QWidget):
             tr("text.action.enc.sub", "Enter text and create a password to begin"),
             icon_name="mdi6.lock-outline",
         )
-        self.btn_aksi.setAccessibleName("Encrypt Text button")
+        register(self.btn_aksi, "a11y.btn.encrypt_text", "Encrypt Text button", "setAccessibleName")
         self.btn_aksi.setEnabled(False)
         self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         apply_shadow(self.btn_aksi, blur_radius=24, y_offset=5, opacity=85)

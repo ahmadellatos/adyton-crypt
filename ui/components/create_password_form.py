@@ -57,6 +57,10 @@ class CreatePasswordForm(QWidget):
     """Form pembuatan password: input + strength + checklist + konfirmasi."""
 
     valid_state_changed = Signal(bool)
+    # True saat SEMUA item checklist password (5 kriteria yang terlihat)
+    # terpenuhi — independen dari apakah konfirmasi cocok / skor kekuatan.
+    # Dipakai mis. untuk meng-enable toggle recovery key.
+    requirements_met_changed = Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -81,7 +85,7 @@ class CreatePasswordForm(QWidget):
 
         self.entry_pw1 = PasswordLineEdit()
         register(self.entry_pw1, "pw.placeholder", "Enter a strong password…", "setPlaceholderText")
-        self.entry_pw1.setAccessibleName("New password")
+        register(self.entry_pw1, "a11y.pw.new", "New password", "setAccessibleName")
         self.entry_pw1.textChanged.connect(self._on_change)
         v_pw1_group.addWidget(self.entry_pw1)
         v_pw1_group.addWidget(self._build_strength())
@@ -99,7 +103,7 @@ class CreatePasswordForm(QWidget):
         register(
             self.entry_pw2, "pw.confirm_placeholder", "Repeat your password…", "setPlaceholderText"
         )
-        self.entry_pw2.setAccessibleName("Confirm new password")
+        register(self.entry_pw2, "a11y.pw.confirm", "Confirm new password", "setAccessibleName")
         self.entry_pw2.textChanged.connect(self._on_change)
         lay.addWidget(self.entry_pw2)
 
@@ -184,6 +188,7 @@ class CreatePasswordForm(QWidget):
         self._sync_strength(pw1)
         self._sync_checklist(pw1)
         self._sync_match(pw1, pw2)
+        self.requirements_met_changed.emit(all(password_rules(pw1)))
         ok = bool(pw1) and pw1 == pw2 and is_strong(pw1)
         self.valid_state_changed.emit(ok)
 

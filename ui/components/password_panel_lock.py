@@ -54,6 +54,9 @@ class PasswordPanelLock(QFrame):
 
         lay.addSpacing(8)
         self.recovery_hint = RecoveryHintPanel()
+        # Toggle "Add recovery key" aktif hanya setelah semua syarat checklist
+        # password terpenuhi.
+        self.form.requirements_met_changed.connect(self.recovery_hint.set_password_ready)
         lay.addWidget(self.recovery_hint)
 
         lay.addStretch()

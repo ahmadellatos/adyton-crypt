@@ -77,7 +77,12 @@ class TextResultCard(QFrame):
         self.btn_copy.setFixedHeight(36)
         self.btn_copy.setObjectName("BtnGen")
         self.btn_copy.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_copy.setAccessibleName("Copy result to clipboard")
+        register(
+            self.btn_copy,
+            "a11y.btn.copy_result",
+            "Copy result to clipboard",
+            "setAccessibleName",
+        )
         self.btn_copy.clicked.connect(self._copy_to_clipboard)
 
         self.btn_qr = QPushButton()
@@ -86,7 +91,12 @@ class TextResultCard(QFrame):
         self.btn_qr.setFixedHeight(36)
         self.btn_qr.setObjectName("BtnGen")
         self.btn_qr.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_qr.setAccessibleName("Show QR code of the encryption result")
+        register(
+            self.btn_qr,
+            "a11y.btn.show_qr",
+            "Show QR code of the encryption result",
+            "setAccessibleName",
+        )
         self.btn_qr.setToolTip(
             tr(
                 "text.result.qr.tip",

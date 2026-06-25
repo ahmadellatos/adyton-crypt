@@ -21,7 +21,7 @@ from .components.password_panel_open import PasswordPanelOpen
 from .components.recent_vaults_bar import RecentVaultsBar
 from .constants import APP_NAME
 from .dialogs import ModernMessageBox
-from .i18n import tr
+from .i18n import register, tr
 from .settings_store import get_settings
 from .styles import CLR_DANGER
 from .utils import (
@@ -104,7 +104,7 @@ class TabBuka(QWidget):
             tr("open.action.sub", "Enter the password to open"),
             icon_name="mdi6.lock-open-variant-outline",
         )
-        self.btn_aksi.setAccessibleName("Open Vault button")
+        register(self.btn_aksi, "a11y.btn.open_vault", "Open Vault button", "setAccessibleName")
         self.btn_aksi.setEnabled(False)
         self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         apply_shadow(

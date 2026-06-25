@@ -35,6 +35,7 @@ from .styles import (
     CLR_ACCENT,
     CLR_BORDER,
     CLR_CARD,
+    CLR_HOVER_BG,
     CLR_INPUT_BORDER,
     CLR_INSET,
     CLR_LINE,
@@ -143,7 +144,7 @@ class SettingsWindow(QDialog):
         btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_close.setStyleSheet(
             "QPushButton#SettingsClose { border:none; border-radius:8px; background:transparent; }"
-            f" QPushButton#SettingsClose:hover {{ background:{CLR_LIST_SELECTED}; }}"
+            f" QPushButton#SettingsClose:hover {{ background:{CLR_HOVER_BG}; }}"
         )
         btn_close.clicked.connect(self.accept)
         lay.addWidget(btn_close)

@@ -31,7 +31,7 @@ from .components.options_panel import OptionsPanel
 from .components.password_panel_lock import PasswordPanelLock
 from .constants import APP_NAME
 from .dialogs import ModernMessageBox, RecoveryCodeDialog
-from .i18n import tr
+from .i18n import register, tr
 from .settings_store import get_settings
 from .utils import (
     ProgressETA,
@@ -113,7 +113,7 @@ class TabKunci(QWidget):
             tr("lock.action.sub", "Click to start encrypting your files"),
             icon_name="mdi6.lock-outline",
         )
-        self.btn_aksi.setAccessibleName("Lock Vault button")
+        register(self.btn_aksi, "a11y.btn.lock_vault", "Lock Vault button", "setAccessibleName")
         self.btn_aksi.setEnabled(False)
         self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         apply_shadow(

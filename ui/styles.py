@@ -189,10 +189,17 @@ def load_stylesheet() -> str:
         background-color: rgba({ACCENT_RGB}, 0.08);
         color: {CLR_TEXT_MAIN};
     }}
-    /* Ring fokus hanya untuk tab non-aktif (mis. navigasi keyboard); tab aktif
-       sudah ditandai background terisi, jadi ring tidak perlu & tak menyangkut. */
-    QToolButton#NavBtn:focus:!checked {{
+    /* Ring fokus HANYA untuk navigasi keyboard. Properti dinamis `kbFocus` diset
+       oleh _FocusRingFilter (True bila input fisik terakhir keyboard), jadi ring tak
+       muncul saat klik mouse. Navigasi panah antar tab (grup exclusive) ikut
+       meng-check tab tujuan sehingga tombol fokus hampir selalu :checked — karena
+       itu :checked pun perlu rule-nya. Warna teks utama agar kontras dengan latar
+       aksen tab aktif (selaras dengan TabBtn). */
+    QToolButton#NavBtn[kbFocus="true"]:!checked {{
         border: 2px solid {CLR_ACCENT};
+    }}
+    QToolButton#NavBtn[kbFocus="true"]:checked {{
+        border: 2px solid {CLR_TEXT_MAIN};
     }}
 
     /* --- SEGMENTED CONTROL (mis. toggle Enkripsi/Dekripsi) --- */
@@ -205,18 +212,20 @@ def load_stylesheet() -> str:
     QPushButton#TabBtn {{
         background-color: transparent;
         color: {CLR_TEXT_MUTED};
-        border: none;
+        border: 1.5px solid transparent;
         border-radius: 10px;
         font-weight: 700;
         font-size: 9.5pt;
         padding: 6px 18px;
     }}
 
+    /* Segmen terpilih: tint teal halus + teks/ikon teal, TANPA border (border
+       dasar transparan 1.5px agar lebar tak bergeser). Border hanya muncul saat
+       navigasi keyboard (lihat aturan [kbFocus] di bawah). */
     QPushButton#TabBtn:checked {{
-        background-color: {CLR_ACCENT};
-        color: {CLR_ON_ACCENT};
+        background-color: rgba({ACCENT_RGB}, 0.12);
+        color: {CLR_ACCENT_TEXT};
         font-weight: 700;
-        border: none;
     }}
 
     QPushButton#TabBtn:hover:!checked {{
@@ -224,13 +233,11 @@ def load_stylesheet() -> str:
         color: {CLR_TEXT_MAIN};
     }}
 
-    QPushButton#TabBtn:focus {{
-        border: 2px solid {CLR_ACCENT};
-    }}
-
-    QPushButton#TabBtn:checked:focus {{
-        background-color: {CLR_ACCENT};
-        border: 2px solid {CLR_TEXT_MAIN};
+    /* Border teal HANYA saat navigasi keyboard. Properti dinamis `kbFocus` diset
+       oleh _FocusRingFilter (True bila input fisik terakhir keyboard), jadi
+       klik mouse pada segmen TIDAK memunculkan border. */
+    QPushButton#TabBtn[kbFocus="true"] {{
+        border: 1.5px solid {CLR_ACCENT};
     }}
 
     /* --- TYPOGRAPHY (skala Design System §3) --- */
@@ -394,9 +401,8 @@ def load_stylesheet() -> str:
         border-radius: 11px;
     }}
 
-    QPushButton#BtnEye:hover {{
-        color: {CLR_TEXT_MAIN};
-    }}
+    /* BtnEye: hover (cerahkan ikon) ditangani di Python — ikon qtawesome tak
+       terpengaruh QSS `color`. Lihat PasswordField._update_toggle_icon. */
 
     QLabel#IconInside {{
         background-color: transparent;
@@ -407,7 +413,7 @@ def load_stylesheet() -> str:
     /* --- FOCUS & A11Y STATES --- */
     * {{ outline: none; }}
     QFrame#InputBox[focused="true"] {{ background-color: {CLR_CANVAS}; border: 1.5px solid {CLR_ACCENT}; }}
-    QFrame[checked="true"]:focus, QFrame[checked="false"]:focus {{ border: 2px solid {CLR_TEXT_MAIN}; }}
+    QFrame[checked="true"][kbFocus="true"], QFrame[checked="false"][kbFocus="true"] {{ border: 2px solid {CLR_TEXT_MAIN}; }}
 
     /* --- BUTTONS (tombol sekunder/ghost — 46 · radius 13) --- */
     QPushButton {{
@@ -428,7 +434,7 @@ def load_stylesheet() -> str:
     QPushButton:pressed {{
         background-color: {CLR_PRESSED_BG};
     }}
-    QPushButton:focus {{
+    QPushButton[kbFocus="true"] {{
         border: 2px solid {CLR_ACCENT};
         background-color: {CLR_INSET};
     }}
@@ -450,7 +456,7 @@ def load_stylesheet() -> str:
         background-color: {CLR_HOVER_BG};
         color: {CLR_TEXT_MAIN};
     }}
-    QPushButton#BtnGhost:focus, QPushButton#BtnEye:focus {{
+    QPushButton#BtnGhost[kbFocus="true"], QPushButton#BtnEye[kbFocus="true"] {{
         border: 2px solid {CLR_ACCENT};
         background-color: transparent;
         border-radius: 11px;
@@ -473,7 +479,7 @@ def load_stylesheet() -> str:
     QPushButton#BtnAksiBesar:pressed {{
         background-color: {CLR_ACCENT_DK};
     }}
-    QPushButton#BtnAksiBesar:focus {{
+    QPushButton#BtnAksiBesar[kbFocus="true"] {{
         border: 2px solid {CLR_TEXT_MAIN};
         background-color: {CLR_ACCENT};
     }}
@@ -497,7 +503,7 @@ def load_stylesheet() -> str:
         background-color: {CLR_HOVER_BG};
         border: 1px solid {CLR_HOVER_BORDER};
     }}
-    QPushButton#BtnBrowseLg:focus {{
+    QPushButton#BtnBrowseLg[kbFocus="true"] {{
         border: 2px solid {CLR_ACCENT};
         background-color: {CLR_BTN_TRANSPARENT};
     }}
@@ -522,13 +528,13 @@ def load_stylesheet() -> str:
         border-color: {CLR_HOVER_BORDER};
     }}
 
-    QPushButton#BtnGantiFile:focus {{
+    QPushButton#BtnGantiFile[kbFocus="true"] {{
         border: 1px solid {CLR_ACCENT};
         background-color: {CLR_INSET};
     }}
 
     QPushButton#BtnGen {{
-        background-color: transparent;
+        background-color: {CLR_BTN_TRANSPARENT};
         border: 1px solid {CLR_BTN_BORDER};
         border-radius: 11px;
         color: {CLR_TEXT_MAIN};
@@ -540,9 +546,9 @@ def load_stylesheet() -> str:
         background-color: {CLR_HOVER_BG};
         border: 1px solid {CLR_HOVER_BORDER};
     }}
-    QPushButton#BtnGen:focus {{
+    QPushButton#BtnGen[kbFocus="true"] {{
         border: 2px solid {CLR_ACCENT};
-        background-color: transparent;
+        background-color: {CLR_BTN_TRANSPARENT};
     }}
 
     /* --- CUSTOM CHECKBOX (20x20 · radius 7) --- */
@@ -558,7 +564,7 @@ def load_stylesheet() -> str:
         background: {CLR_DANGER};
         border: 1.5px solid {CLR_DANGER};
     }}
-    QFrame#ChkHapus:focus {{
+    QFrame#ChkHapus[kbFocus="true"] {{
         border: 2px solid {CLR_TEXT_MAIN};
     }}
 
@@ -574,7 +580,7 @@ def load_stylesheet() -> str:
         background: {CLR_WARN_DK};
         border: 1.5px solid {CLR_WARN_DK};
     }}
-    QFrame#ChkSecure:focus {{
+    QFrame#ChkSecure[kbFocus="true"] {{
         border: 2px solid {CLR_TEXT_MAIN};
     }}
 
@@ -827,6 +833,10 @@ def load_stylesheet() -> str:
     QPushButton#BtnInlinePrimary:pressed {{
         background-color: {CLR_ACCENT_DK};
     }}
+    QPushButton#BtnInlinePrimary:disabled {{
+        background-color: {CLR_ACCENT_DISABLED};
+        color: {CLR_TEXT_FAINT};
+    }}
 
     QPushButton#BtnInlineSecondary {{
         background-color: transparent;
@@ -837,8 +847,12 @@ def load_stylesheet() -> str:
         font-weight: 700;
     }}
     QPushButton#BtnInlineSecondary:hover {{
-        border-color: {CLR_ACCENT};
-        color: {CLR_ACCENT};
+        background-color: {CLR_HOVER_BG};
+        border-color: {CLR_HOVER_BORDER};
+    }}
+    QPushButton#BtnInlineSecondary:disabled {{
+        color: {CLR_TEXT_FAINT};
+        border-color: {CLR_LINE};
     }}
 
     /* --- TOOLTIPS & TITLE BAR --- */
@@ -856,7 +870,7 @@ def load_stylesheet() -> str:
 
     QPushButton#BtnAlertConfirm {{ background-color: {CLR_DANGER}; color: {CLR_ON_ACCENT}; border: 2px solid transparent; border-radius: 11px; font-weight: 800; }}
     QPushButton#BtnAlertConfirm:hover {{ background-color: {CLR_DANGER_HOVER}; }}
-    QPushButton#BtnAlertConfirm:focus {{ border: 2px solid {CLR_TEXT_MAIN}; background-color: {CLR_DANGER_HOVER}; }}
+    QPushButton#BtnAlertConfirm[kbFocus="true"] {{ border: 2px solid {CLR_TEXT_MAIN}; background-color: {CLR_DANGER_HOVER}; }}
 
     /* Dialog secondary button (Batal) */
     QPushButton#BtnDialogCancel {{
@@ -867,10 +881,10 @@ def load_stylesheet() -> str:
         font-weight: 600;
     }}
     QPushButton#BtnDialogCancel:hover {{
-        background-color: {CLR_INSET};
-        border-color: {CLR_ACCENT};
+        background-color: {CLR_HOVER_BG};
+        border-color: {CLR_HOVER_BORDER};
     }}
-    QPushButton#BtnDialogCancel:focus {{
+    QPushButton#BtnDialogCancel[kbFocus="true"] {{
         border: 2px solid {CLR_ACCENT};
     }}
 

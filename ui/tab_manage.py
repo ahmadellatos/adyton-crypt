@@ -4,8 +4,9 @@ Deskripsi: Tab "Manage Vault" — ganti password dan kelola recovery key untuk
            vault yang sudah ada, tanpa mengenkripsi ulang data.
 """
 
+import qtawesome as qta
 from loguru import logger
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDialog,
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -34,7 +36,7 @@ from .components.drop_zone_open import DropZoneOpen
 from .components.recent_vaults_bar import RecentVaultsBar
 from .dialogs import ModernMessageBox, RecoveryCodeDialog
 from .i18n import register, tr
-from .styles import CLR_ACCENT, CLR_WARN
+from .styles import CLR_ACCENT, CLR_TEXT_DIM, CLR_WARN
 from .widgets import (
     AnimatedNotifBar,
     MethodCard,
@@ -57,9 +59,13 @@ class TabManage(QWidget):
         self.worker: CryptoWorker | None = None
         self._vault_path: str | None = None
         self._info: dict = {}
+        # Sibuk (operasi berjalan) — precondition vault dihitung langsung dari
+        # _vault_path + _info di _refresh_action_buttons.
+        self._busy = False
         self._build_ui()
         self._connect_signals()
         self._sync_stack_height(self.stack.currentIndex())
+        self._refresh_action_buttons()  # mulai: tombol aksi nonaktif
 
     # ── UI ──────────────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -165,21 +171,37 @@ class TabManage(QWidget):
             "Enter the current password or recovery key…",
             "setPlaceholderText",
         )
-        self.entry_current.setAccessibleName("Current password or recovery key")
+        register(
+            self.entry_current,
+            "a11y.manage.current",
+            "Current password or recovery key",
+            "setAccessibleName",
+        )
         lay.addWidget(self.entry_current)
 
-        # Segmented: pilih aksi.
-        seg = QHBoxLayout()
-        seg.setSpacing(8)
+        # Segmented: pilih aksi (gaya konsisten dgn toggle Enkripsi/Dekripsi).
+        seg_container = QFrame()
+        seg_container.setObjectName("TabContainer")
+        seg_container.setFixedHeight(38)
+        seg = QHBoxLayout(seg_container)
+        seg.setContentsMargins(3, 3, 3, 3)
+        seg.setSpacing(3)
         self.btn_seg_pw = QPushButton()
         register(self.btn_seg_pw, "manage.seg.pw", " Change password")
+        self.btn_seg_pw.setIcon(
+            qta.icon("mdi6.lock-outline", color=CLR_TEXT_DIM, color_on=CLR_ACCENT)
+        )
         self.btn_seg_rec = QPushButton()
         register(self.btn_seg_rec, "manage.seg.rec", " Recovery key")
+        self.btn_seg_rec.setIcon(
+            qta.icon("mdi6.key-outline", color=CLR_TEXT_DIM, color_on=CLR_ACCENT)
+        )
         for b in (self.btn_seg_pw, self.btn_seg_rec):
             b.setCheckable(True)
-            b.setObjectName("BtnGen")
-            b.setFixedHeight(34)
+            b.setObjectName("TabBtn")
+            b.setIconSize(QSize(16, 16))
             b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             seg.addWidget(b, 1)
         self._seg_group = QButtonGroup(self)
         self._seg_group.setExclusive(True)
@@ -187,7 +209,7 @@ class TabManage(QWidget):
         self._seg_group.addButton(self.btn_seg_rec, 1)
         self.btn_seg_pw.setChecked(True)
         lay.addSpacing(2)
-        lay.addLayout(seg)
+        lay.addWidget(seg_container)
 
         self.stack = QStackedWidget()
         self.stack.addWidget(self._build_page_password())
@@ -269,7 +291,12 @@ class TabManage(QWidget):
             "Recovery passphrase…",
             "setPlaceholderText",
         )
-        self.entry_rec_pass.setAccessibleName("New recovery passphrase")
+        register(
+            self.entry_rec_pass,
+            "a11y.manage.new_rec",
+            "New recovery passphrase",
+            "setAccessibleName",
+        )
         self.entry_rec_pass.hide()
         add_lay.addWidget(self.entry_rec_pass)
 
@@ -311,6 +338,7 @@ class TabManage(QWidget):
         self.card_pass.set_selected(method == _MODE_PASSPHRASE)
         self.entry_rec_pass.setVisible(method == _MODE_PASSPHRASE)
         self._sync_stack_height()
+        self._refresh_action_buttons()
 
     def _sync_stack_height(self, *_) -> None:
         """Patok tinggi stack ke halaman aktif agar card mengikuti kontennya.
@@ -336,6 +364,11 @@ class TabManage(QWidget):
         self.btn_change.clicked.connect(self._change_password)
         self.btn_add.clicked.connect(self._add_recovery)
         self.btn_remove.clicked.connect(self._remove_recovery)
+        # Gate tombol aksi: aktif hanya saat precondition + validitas terpenuhi
+        # (analog Lock Now / Open Vault / Encrypt Text).
+        self.form.valid_state_changed.connect(lambda *_: self._refresh_action_buttons())
+        self.entry_current.textChanged.connect(lambda *_: self._refresh_action_buttons())
+        self.entry_rec_pass.textChanged.connect(lambda *_: self._refresh_action_buttons())
 
     # ── Vault selection ───────────────────────────────────────────────────────
     def _on_file_changed(self, path: str):
@@ -413,19 +446,33 @@ class TabManage(QWidget):
         self._sync_stack_height(self.stack.currentIndex())
 
     def _set_actions_enabled(self, enabled: bool):
+        # Input tetap interaktif; tombol AKSI di-gate terpisah lewat
+        # _refresh_action_buttons (disable sampai precondition + valid).
         for w in (
             self.entry_current,
             self.btn_seg_pw,
             self.btn_seg_rec,
             self.form,
-            self.btn_change,
-            self.btn_add,
-            self.btn_remove,
             self.card_gen,
             self.card_pass,
             self.entry_rec_pass,
         ):
             w.setEnabled(enabled)
+        self._refresh_action_buttons()
+
+    def _refresh_action_buttons(self):
+        """Tombol aksi aktif HANYA saat preconditionnya terpenuhi — analog tombol
+        Lock Now / Open Vault / Encrypt Text yang disable sampai valid:
+        vault valid termuat, tak sibuk, kredensial saat ini terisi, dan input
+        aksi (password baru / passphrase recovery) memenuhi syarat."""
+        # Precondition vault = persis seperti _guard() (dihitung langsung dari
+        # state, bukan flag yang bisa basi saat drop-zone re-emit file_changed).
+        vault_ok = bool(self._vault_path) and self._info.get("supports_change_password", False)
+        ready = vault_ok and not self._busy and bool(self.entry_current.text())
+        self.btn_change.setEnabled(ready and self.form.is_valid())
+        rec_ok = self._rec_method == _MODE_CODE or bool(self.entry_rec_pass.text().strip())
+        self.btn_add.setEnabled(ready and rec_ok)
+        self.btn_remove.setEnabled(ready)
 
     # ── Validation helpers ────────────────────────────────────────────────────
     def _guard(self) -> bool:
@@ -513,6 +560,7 @@ class TabManage(QWidget):
         self.worker.start()
 
     def _set_busy(self, busy: bool):
+        self._busy = busy
         self.drop_zone.set_busy(busy)
         self._set_actions_enabled(not busy)
         if busy:
@@ -524,6 +572,9 @@ class TabManage(QWidget):
 
     def _on_worker_done(self, result):
         self.worker = None
+        # Undo state "busy" untuk SEMUA hasil: drop zone (Change Vault File / X),
+        # input, dan flag _busy. Tanpa ini, kontrol kiri ketinggalan disabled.
+        self._set_busy(False)
         status, message = result
 
         if status == VaultStatus.SUCCESS:
@@ -544,7 +595,6 @@ class TabManage(QWidget):
             )
             logger.info(f"Manage vault sukses: {message}")
         elif status == VaultStatus.WRONG_PASSWORD:
-            self._set_actions_enabled(True)
             self.notif.show_msg(
                 "err",
                 tr("manage.wrong", "The current password or recovery key is incorrect."),
@@ -556,7 +606,6 @@ class TabManage(QWidget):
                 "error",
             )
         else:
-            self._set_actions_enabled(True)
             self.notif.show_msg(
                 "err", message or tr("manage.fail", "Couldn't update the vault."), 8000
             )

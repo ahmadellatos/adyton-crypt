@@ -68,13 +68,44 @@ class _ActivityFilter(QObject):
         self._on_activity = on_activity
 
     def eventFilter(self, obj, event):
-        if event.type() in (
+        et = event.type()
+        if et in (
             QEvent.Type.KeyPress,
             QEvent.Type.MouseButtonPress,
             QEvent.Type.Wheel,
         ):
-            self._on_activity()
+            self._on_activity(et)
         return False
+
+
+class _FocusRingFilter(QObject):
+    """Filter fokus app-wide: ring fokus keyboard-only untuk SEMUA komponen.
+
+    Qt ``:focus`` tak bisa membedakan fokus dari mouse vs keyboard. Filter ini,
+    dipasang di ``QApplication``, menandai widget yang sedang fokus dengan
+    properti QSS ``kbFocus`` HANYA bila input fisik terakhir keyboard (flag
+    global ``QApplication.property("kbdNav")``). Semua aturan QSS ``:focus``
+    diubah ke ``[kbFocus="true"]``, dan ring di paintEvent (ToggleSwitch /
+    MethodCard) membaca properti yang sama — sehingga seragam dengan nav rail:
+    ring hanya muncul saat navigasi keyboard, tidak saat klik mouse.
+    """
+
+    def eventFilter(self, obj, event):
+        et = event.type()
+        if et == QEvent.Type.FocusIn and isinstance(obj, QWidget):
+            app = QApplication.instance()
+            self._set(obj, bool(app.property("kbdNav")) if app is not None else False)
+        elif et == QEvent.Type.FocusOut and isinstance(obj, QWidget):
+            self._set(obj, False)
+        return False
+
+    @staticmethod
+    def _set(widget, on: bool):
+        if bool(widget.property("kbFocus")) != on:
+            widget.setProperty("kbFocus", on)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+            widget.update()  # repaint untuk ring berbasis paintEvent
 
 
 class _GlobalToolTipFilter(QObject):
@@ -266,9 +297,12 @@ class AppBrankas(FramelessMainWindow):
         self._autolock_timer.setSingleShot(True)
         self._autolock_timer.timeout.connect(self._auto_lock_clear)
         self._activity_filter = _ActivityFilter(self._on_user_activity)
+        # Ring fokus keyboard-only untuk SEMUA komponen (lihat _FocusRingFilter).
+        self._focus_ring_filter = _FocusRingFilter()
         _app = QApplication.instance()
         if _app is not None:
             _app.installEventFilter(self._activity_filter)
+            _app.installEventFilter(self._focus_ring_filter)
 
         # Tooltip global: semua tooltip (widget & item view) lewat satu CustomToolTip
         # agar gaya + perilakunya identik dengan tooltip path di Open/Lock.
@@ -299,7 +333,14 @@ class AppBrankas(FramelessMainWindow):
         else:
             self._autolock_timer.stop()
 
-    def _on_user_activity(self) -> None:
+    def _on_user_activity(self, etype=None) -> None:
+        # Lacak jenis input fisik terakhir → flag global QApplication "kbdNav"
+        # (dibaca _FocusRingFilter untuk ring fokus keyboard-only). KeyPress →
+        # keyboard; klik/scroll → mouse.
+        if etype in (QEvent.Type.KeyPress, QEvent.Type.MouseButtonPress, QEvent.Type.Wheel):
+            app = QApplication.instance()
+            if app is not None:
+                app.setProperty("kbdNav", etype == QEvent.Type.KeyPress)
         # Reset hitung mundur tiap ada aktivitas, hanya bila auto-lock aktif.
         if self._autolock_timer.isActive():
             self._autolock_timer.start(self._autolock_timer.interval())

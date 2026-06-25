@@ -16,6 +16,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
@@ -61,26 +62,41 @@ def make_generator_button() -> QPushButton:
     btn.setFixedHeight(36)
     btn.setObjectName("BtnGen")
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    btn.setAccessibleName("Generate Strong Password")
+    register(btn, "a11y.gen_password", "Generate Strong Password", "setAccessibleName")
     return btn
 
 
-class MethodCard(QFrame):
-    """Kartu pilihan metode (selectable, gaya radio-card).
+class MethodCard(QAbstractButton):
+    """Kartu pilihan metode (radio-card) — perilaku & a11y setara segmented control.
 
-    Dipakai bersama di Tab Manage dan panel recovery Tab Lock agar pemilih metode
-    recovery (Generate code / Use passphrase) tampil konsisten.
+    Dipakai bersama di Tab Manage, panel recovery Tab Lock, dan pemilih KDF di
+    Settings agar pemilih metode tampil & berperilaku konsisten.
+
+    Berbasis ``QAbstractButton`` (bukan QFrame) agar Qt otomatis mengekspos state
+    *checked* ke screen reader dan menangani fokus/keyboard secara native — persis
+    seperti tombol segmented (QPushButton checkable) di Tab Manage: role a11y
+    ``CheckBox`` + state checked, tiap kartu satu tab-stop, Space/Enter memilih.
+
+    ``checkable`` mengekspos state-nya; ``nextCheckState`` di-override agar kartu
+    aktif tak bisa di-uncheck (perilaku eksklusif). Pemilihan eksklusif antar
+    kartu (mematikan yang lain) tetap diatur handler parent — sama seperti
+    sebelumnya — sehingga tak butuh QButtonGroup di tiap call-site.
     """
-
-    clicked = Signal()
 
     def __init__(self, icon_name: str, title: str, desc: str, parent=None):
         super().__init__(parent)
         self.setObjectName("MethodCard")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Checkable → state checked terekspos a11y (role CheckBox, seperti segmented).
+        self.setCheckable(True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # QAbstractButton default vertikalnya Fixed → tiap kartu pakai tinggi
+        # sendiri (jadi tinggi sebelah saat deskripsi wrap beda). Samakan dengan
+        # QFrame (Preferred) agar row menyetarakan tinggi kedua kartu.
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self.setAccessibleName(title)
         self._icon_name = icon_name
-        self._selected = False
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(14, 12, 14, 12)
@@ -105,35 +121,43 @@ class MethodCard(QFrame):
         lay.addWidget(self._desc)
         lay.addStretch(1)
 
-        self.set_selected(False)
+        # Klik di mana pun pada kartu mengenai tombol, bukan label anak.
+        for w in (self._icon, self._indicator, self._title, self._desc):
+            w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
-    def set_selected(self, selected: bool):
-        self._selected = selected
-        border = CLR_ACCENT if selected else CLR_BORDER
-        bg = "rgba(79, 191, 201, 0.10)" if selected else "rgba(255, 255, 255, 0.02)"
-        self.setStyleSheet(
-            f"QFrame#MethodCard {{ border: 1.5px solid {border}; border-radius: 12px;"
-            f" background: {bg}; }}"
-        )
+        # Visual mengikuti state checked (klik native / setChecked sama-sama jalan).
+        self.toggled.connect(self._render)
+        self._render(False)
+
+    def _render(self, checked: bool):
+        # Background/border kartu digambar di paintEvent (QAbstractButton.paintEvent
+        # pure-virtual, jadi stylesheet bg tak otomatis tergambar). Di sini cukup
+        # perbarui ikon + indikator lalu minta repaint.
         self._icon.setPixmap(
-            qta.icon(self._icon_name, color=CLR_ACCENT if selected else CLR_TEXT_MUTED).pixmap(
+            qta.icon(self._icon_name, color=CLR_ACCENT if checked else CLR_TEXT_MUTED).pixmap(
                 20, 20
             )
         )
         self._indicator.setPixmap(
             qta.icon(
-                "mdi6.check-circle" if selected else "mdi6.circle-outline",
-                color=CLR_ACCENT if selected else CLR_TEXT_MUTED,
+                "mdi6.check-circle" if checked else "mdi6.circle-outline",
+                color=CLR_ACCENT if checked else CLR_TEXT_MUTED,
             ).pixmap(18, 18)
         )
+        self.update()
+
+    # ── API kompatibel (dipakai call-site lama) ──────────────────────────────
+    def set_selected(self, selected: bool):
+        self.setChecked(selected)
 
     def is_selected(self) -> bool:
-        return self._selected
+        return self.isChecked()
 
     def set_texts(self, title: str, desc: str) -> None:
         """Perbarui judul + deskripsi (dipakai saat ganti bahasa)."""
         self._title.setText(title)
         self._desc.setText(desc)
+        self.setAccessibleName(title)
 
     def tr_set(self, title_key: str, title_def: str, desc_key: str, desc_def: str) -> None:
         """Daftarkan judul/deskripsi untuk i18n live (lewat tree-walk retranslate)."""
@@ -141,11 +165,43 @@ class MethodCard(QFrame):
 
         register(self._title, title_key, title_def)
         register(self._desc, desc_key, desc_def)
+        # Nama aksesibilitas kartu = judulnya, ikut bahasa.
+        register(self, title_key, title_def, "setAccessibleName")
 
-    def mousePressEvent(self, event):
-        if self.isEnabled():
-            self.clicked.emit()
-        super().mousePressEvent(event)
+    def nextCheckState(self):
+        # Kartu aktif tak boleh di-uncheck sendiri (perilaku eksklusif, seperti
+        # grup segmented). Klik/Space pada kartu non-aktif → jadi aktif; pada
+        # kartu aktif → tetap aktif. Mematikan kartu lain diurus handler parent.
+        if not self.isChecked():
+            self.setChecked(True)
+
+    def keyPressEvent(self, event):
+        # Space sudah ditangani QAbstractButton secara native; tambahkan Enter.
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.click()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
+    def paintEvent(self, event):
+        # QAbstractButton.paintEvent pure-virtual → gambar sendiri seluruhnya
+        # (jangan panggil super()). Background + border mengikuti state checked.
+        checked = self.isChecked()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        bg = QColor(79, 191, 201, 26) if checked else QColor(255, 255, 255, 5)
+        painter.setBrush(bg)
+        painter.setPen(QPen(QColor(CLR_ACCENT if checked else CLR_BORDER), 1.5))
+        painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 11, 11)
+
+        # Cincin fokus keyboard di dalam border, warna teks utama agar jelas beda
+        # dari border aksen penanda "selected". Properti kbFocus diset oleh
+        # _FocusRingFilter hanya saat navigasi keyboard (bukan klik mouse).
+        if self.property("kbFocus"):
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(CLR_TEXT_MAIN), 1.5))
+            painter.drawRoundedRect(self.rect().adjusted(3, 3, -3, -3), 9, 9)
 
 
 def make_recovery_info_box(
@@ -825,9 +881,11 @@ class PasswordLineEdit(QFrame):
         self.btn_toggle.installEventFilter(self)
         # Highlight InputBox saat field/tombol mata fokus (state 'focused' di QSS).
         self.line_edit.installEventFilter(self)
-        from .i18n import tr
+        from .i18n import register, tr
 
-        self.btn_toggle.setAccessibleName("Show or hide password")
+        register(
+            self.btn_toggle, "a11y.toggle_password", "Show or hide password", "setAccessibleName"
+        )
         self.btn_toggle.setToolTip(tr("pw.show", "Show password"))
         self.line_edit.returnPressed.connect(self.returnPressed)
         lay.addWidget(self.btn_toggle)
@@ -841,6 +899,9 @@ class PasswordLineEdit(QFrame):
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
                 self.btn_toggle.click()
                 return True
+        if obj is self.btn_toggle and event.type() in (event.Type.Enter, event.Type.Leave):
+            # Hover: cerahkan ikon mata (feedback hover yang terlihat).
+            self._update_toggle_icon(hover=event.type() == event.Type.Enter)
         if obj in (self.line_edit, self.btn_toggle) and event.type() in (
             event.Type.FocusIn,
             event.Type.FocusOut,
@@ -863,12 +924,12 @@ class PasswordLineEdit(QFrame):
 
         if self.line_edit.echoMode() == QLineEdit.EchoMode.Password:
             self.line_edit.setEchoMode(QLineEdit.EchoMode.Normal)
-            self.btn_toggle.setIcon(qta.icon("mdi6.eye-off-outline", color=self._accent_color))
             self.btn_toggle.setToolTip(tr("pw.hide", "Hide password"))
         else:
             self.line_edit.setEchoMode(QLineEdit.EchoMode.Password)
-            self.btn_toggle.setIcon(qta.icon("mdi6.eye-outline", color=self._muted_color))
             self.btn_toggle.setToolTip(tr("pw.show", "Show password"))
+        # Perbarui ikon, hormati apakah kursor masih di atas tombol.
+        self._update_toggle_icon(hover=self.btn_toggle.underMouse())
 
     # --- Public API ---
     def text(self) -> str:
@@ -903,11 +964,15 @@ class PasswordLineEdit(QFrame):
     def echoMode(self):
         return self.line_edit.echoMode()
 
-    def _update_toggle_icon(self):
+    def _update_toggle_icon(self, hover: bool = False):
+        # Hover mencerahkan ikon (qtawesome tak ikut QSS :hover). Warna mengikuti
+        # state echo mode: tersembunyi = mata muted, terlihat = mata-coret aksen.
         if self.line_edit.echoMode() == QLineEdit.EchoMode.Password:
-            self.btn_toggle.setIcon(qta.icon("mdi6.eye-outline", color=self._muted_color))
+            color = CLR_TEXT_MAIN if hover else self._muted_color
+            self.btn_toggle.setIcon(qta.icon("mdi6.eye-outline", color=color))
         else:
-            self.btn_toggle.setIcon(qta.icon("mdi6.eye-off-outline", color=self._accent_color))
+            color = CLR_ACCENT_HOVER if hover else self._accent_color
+            self.btn_toggle.setIcon(qta.icon("mdi6.eye-off-outline", color=color))
 
 
 # ── TOGGLE SWITCH (iOS-style pill) ────────────────────────────────
@@ -1003,8 +1068,11 @@ class ToggleSwitch(QFrame):
         painter.setBrush(QColor("#FFFFFF"))
         painter.drawEllipse(int(round(x)), margin, knob_d, knob_d)
 
-        # Ring fokus keyboard
-        if self.hasFocus():
+        # Ring fokus keyboard-only (kbFocus diset _FocusRingFilter). Warna kontras
+        # per state: aksen saat OFF (track abu-abu), putih saat ON (track aksen) —
+        # agar ring tetap jelas terlihat di kedua kondisi.
+        if self.property("kbFocus"):
+            ring = QColor(CLR_TEXT_MAIN if self._checked else CLR_ACCENT)
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(QColor(CLR_ACCENT), 1.5))
-            painter.drawRoundedRect(r.adjusted(1, 1, -1, -1), radius, radius)
+            painter.setPen(QPen(ring, 2))
+            painter.drawRoundedRect(r.adjusted(1, 1, -1, -1), radius - 1, radius - 1)

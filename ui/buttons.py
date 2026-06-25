@@ -203,7 +203,7 @@ class BigActionBtn(QPushButton):
             QPushButton#BtnAksiBesar:hover {{
                 border: none;
             }}
-            QPushButton#BtnAksiBesar:focus {{
+            QPushButton#BtnAksiBesar[kbFocus="true"] {{
                 border: 2px solid {CLR_TEXT_MAIN};
             }}
             QPushButton#BtnAksiBesar:disabled {{
@@ -294,7 +294,7 @@ class ClearButton(QPushButton):
             /* HOVER: latar bahaya untuk penanda destruktif */
             QPushButton:hover {{ background: {CLR_DANGER}; border-radius: 7px; }}
             /* FOCUS: cincin aksen, latar transparan (jangan bahaya) */
-            QPushButton:focus {{ border: 2px solid {CLR_ACCENT}; background: transparent; border-radius: 7px; }}
+            QPushButton[kbFocus="true"] {{ border: 2px solid {CLR_ACCENT}; background: transparent; border-radius: 7px; }}
         """)
 
     def enterEvent(self, event):
@@ -353,7 +353,7 @@ class TambahClearSplitButton(QFrame):
                 border-bottom-right-radius: 0px;
             }}
             QPushButton:hover {{ color: {CLR_TEXT_MAIN}; background-color: {CLR_HOVER_BG}; }}
-            QPushButton:focus {{ border: 2px solid {CLR_ACCENT}; background-color: {CLR_HOVER_BG}; }}
+            QPushButton[kbFocus="true"] {{ border: 2px solid {CLR_ACCENT}; background-color: {CLR_HOVER_BG}; }}
             QPushButton::menu-indicator {{ image: none; width: 0px; }}
         """
         self._style_add_full = f"""
@@ -369,7 +369,7 @@ class TambahClearSplitButton(QFrame):
                 border-radius: 10px;
             }}
             QPushButton:hover {{ color: {CLR_TEXT_MAIN}; background-color: {CLR_HOVER_BG}; }}
-            QPushButton:focus {{ border: 2px solid {CLR_ACCENT}; background-color: {CLR_HOVER_BG}; }}
+            QPushButton[kbFocus="true"] {{ border: 2px solid {CLR_ACCENT}; background-color: {CLR_HOVER_BG}; }}
             QPushButton::menu-indicator {{ image: none; width: 0px; }}
         """
         self.btn_add.setStyleSheet(self._style_add_split)
@@ -399,7 +399,7 @@ class TambahClearSplitButton(QFrame):
             QPushButton:hover {{
                 background-color: {CLR_DANGER};
             }}
-            QPushButton:focus {{
+            QPushButton[kbFocus="true"] {{
                 border: 2px solid {CLR_ACCENT};
                 background-color: {CLR_INSET};
             }}

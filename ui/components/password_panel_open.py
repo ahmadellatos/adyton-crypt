@@ -67,7 +67,9 @@ class PasswordPanelOpen(QFrame):
         self.v_pw.addWidget(self.hint_box)
 
         self.entry_pw = PasswordLineEdit(_placeholder_pw())
-        self.entry_pw.setAccessibleName("Password to open the vault")
+        register(
+            self.entry_pw, "a11y.pw.open_vault", "Password to open the vault", "setAccessibleName"
+        )
         self.entry_pw.textChanged.connect(self._on_pw_change)
         self.v_pw.addWidget(self.entry_pw)
 

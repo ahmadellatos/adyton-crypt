@@ -483,8 +483,13 @@ class DropZoneLock(QWidget):
 
         self.btn_split_add = TambahClearSplitButton(self.menu, self._clear_all_paths)
         self.btn_add = self.btn_split_add.btn_add
-        self.btn_add.setAccessibleName("Add Target")
-        self.btn_split_add.btn_clear.setAccessibleName("Clear All Targets")
+        register(self.btn_add, "a11y.btn.add_target", "Add Target", "setAccessibleName")
+        register(
+            self.btn_split_add.btn_clear,
+            "a11y.btn.clear_targets",
+            "Clear All Targets",
+            "setAccessibleName",
+        )
 
         row_hdr.addWidget(icon_folder)
         row_hdr.addLayout(v_hdr_text)
@@ -533,9 +538,12 @@ class DropZoneLock(QWidget):
         self.list_view.setAcceptDrops(False)
         self.list_view.setDropIndicatorShown(False)
 
-        self.list_view.setAccessibleName("Target List")
-        self.list_view.setAccessibleDescription(
-            "List of files and folders to lock. Use the delete button or the Delete key on your keyboard."
+        register(self.list_view, "a11y.list.targets", "Target List", "setAccessibleName")
+        register(
+            self.list_view,
+            "a11y.list.targets_desc",
+            "List of files and folders to lock. Use the delete button or the Delete key on your keyboard.",
+            "setAccessibleDescription",
         )
 
         self.target_model = TargetListModel()

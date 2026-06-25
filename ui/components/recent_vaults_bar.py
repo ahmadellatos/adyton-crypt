@@ -30,6 +30,7 @@ from ..styles import (
     CLR_ACCENT,
     CLR_BORDER,
     CLR_CARD,
+    CLR_HOVER_BG,
     CLR_HOVER_BORDER,
     CLR_INSET,
     CLR_TEXT_DIM,
@@ -76,7 +77,7 @@ class _RecentCard(QFrame):
         self.setStyleSheet(
             f"QFrame#RecentCard {{ background: {CLR_INSET}; border: 1px solid {CLR_BORDER};"
             " border-radius: 12px; }"
-            f" QFrame#RecentCard:hover {{ border: 1px solid {CLR_HOVER_BORDER}; }}"
+            f" QFrame#RecentCard:hover {{ background: {CLR_HOVER_BG}; border: 1px solid {CLR_HOVER_BORDER}; }}"
         )
         h = QHBoxLayout(self)
         h.setContentsMargins(11, 9, 7, 9)

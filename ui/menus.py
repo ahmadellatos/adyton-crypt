@@ -94,6 +94,14 @@ class HoverMenuWidget(QWidget):
 class AccessibleCenteredMenu(QMenu):
     def __init__(self, parent=None):
         super().__init__(parent)
+        # Cegah "kebocoran" sudut: window popup QMenu sebenarnya persegi dan
+        # opaque, sehingga area di luar lengkungan border-radius menampilkan
+        # background default. Dengan background translucent + tanpa frame/shadow
+        # native, sudut di luar radius menjadi benar-benar transparan.
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        self.setWindowFlag(Qt.WindowType.NoDropShadowWindowHint, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
         self.hovered.connect(self._on_action_hovered)
         self.aboutToHide.connect(self._reset_highlights)
 
@@ -124,10 +132,14 @@ class CenteredMenuAction(QWidgetAction):
         self.parent_menu = parent
         self.w = HoverMenuWidget(text, icon_name, icon_color, text_color, self, parent)
         self.setDefaultWidget(self.w)
+        # Teks pada QAction-nya sendiri (selain label di custom widget) agar
+        # screen reader mengumumkan nama item — tanpa ini item terbaca kosong.
+        self.setText(text)
 
     def set_text(self, text: str) -> None:
         """Perbarui label menu (dipakai saat ganti bahasa)."""
         self.w.lbl_text.setText(text)
+        self.setText(text)  # jaga nama aksesibilitas tetap sinkron
 
     def set_highlighted(self, highlighted: bool):
         self.w.set_highlighted(highlighted)

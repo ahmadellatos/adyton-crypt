@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..i18n import register, tr
-from ..styles import CLR_ACCENT, CLR_ON_ACCENT, CLR_TEXT_DIM, CLR_WARN
+from ..styles import CLR_ACCENT, CLR_TEXT_DIM, CLR_WARN
 from ..widgets import (
     PasswordLineEdit,
     apply_shadow,
@@ -72,7 +72,7 @@ class PasswordPanelTeks(QFrame):
         self.btn_mode_enkripsi = QPushButton()
         register(self.btn_mode_enkripsi, "text.mode.enc", " Encrypt")
         self.btn_mode_enkripsi.setIcon(
-            qta.icon("mdi6.lock-outline", color=CLR_TEXT_DIM, color_on=CLR_ON_ACCENT)
+            qta.icon("mdi6.lock-outline", color=CLR_TEXT_DIM, color_on=CLR_ACCENT)
         )
         self.btn_mode_enkripsi.setIconSize(QSize(16, 16))
         self.btn_mode_enkripsi.setObjectName("TabBtn")
@@ -85,7 +85,7 @@ class PasswordPanelTeks(QFrame):
         self.btn_mode_dekripsi = QPushButton()
         register(self.btn_mode_dekripsi, "text.mode.dec", " Decrypt")
         self.btn_mode_dekripsi.setIcon(
-            qta.icon("mdi6.lock-open-variant-outline", color=CLR_TEXT_DIM, color_on=CLR_ON_ACCENT)
+            qta.icon("mdi6.lock-open-variant-outline", color=CLR_TEXT_DIM, color_on=CLR_ACCENT)
         )
         self.btn_mode_dekripsi.setIconSize(QSize(16, 16))
         self.btn_mode_dekripsi.setObjectName("TabBtn")
@@ -116,7 +116,12 @@ class PasswordPanelTeks(QFrame):
             "Type your password here…",
             "setPlaceholderText",
         )
-        self.entry_decrypt.setAccessibleName("Text decryption password")
+        register(
+            self.entry_decrypt,
+            "a11y.pw.text_decrypt",
+            "Text decryption password",
+            "setAccessibleName",
+        )
         self.entry_decrypt.textChanged.connect(lambda _: self._check_valid())
         lay.addWidget(self.entry_decrypt)
 

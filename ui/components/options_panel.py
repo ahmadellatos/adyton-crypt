@@ -95,7 +95,12 @@ class OptionsPanel(QWidget):
         v_chk_txt1.addWidget(lbl_chk_desc1)
 
         self.switch_hapus = ToggleSwitch(checked=False)
-        self.switch_hapus.setAccessibleName("Delete original file after locking")
+        register(
+            self.switch_hapus,
+            "a11y.switch.delete_original",
+            "Delete original file after locking",
+            "setAccessibleName",
+        )
 
         lay_chk1.addLayout(v_chk_txt1, 1)
         lay_chk1.addWidget(self.switch_hapus, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -132,7 +137,12 @@ class OptionsPanel(QWidget):
         lbl_chk_desc2.setWordWrap(True)
         v_chk_txt2.addWidget(lbl_chk_title2)
         v_chk_txt2.addWidget(lbl_chk_desc2)
-        self.chk_secure.setAccessibleName("Secure Wipe — overwrite original data")
+        register(
+            self.chk_secure,
+            "a11y.switch.secure_wipe",
+            "Secure Wipe — overwrite original data",
+            "setAccessibleName",
+        )
 
         lay_chk2.addWidget(self.chk_secure, alignment=Qt.AlignmentFlag.AlignVCenter)
         lay_chk2.addLayout(v_chk_txt2, 1)

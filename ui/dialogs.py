@@ -228,7 +228,12 @@ class RecoveryCodeDialog(ScrimDialogMixin, QDialog):
         gate_row = QHBoxLayout()
         gate_row.setSpacing(12)
         self.switch_saved = ToggleSwitch(checked=False)
-        self.switch_saved.setAccessibleName("I have saved my recovery key")
+        register(
+            self.switch_saved,
+            "a11y.switch.saved_recovery",
+            "I have saved my recovery key",
+            "setAccessibleName",
+        )
         gate_lbl = QLabel()
         register(gate_lbl, "recovery.dialog.gate", "I've saved my recovery key")
         gate_lbl.setObjectName("SectionLabel")

@@ -8,7 +8,7 @@ Deskripsi: Opsi opsional saat MEMBUAT vault (Tab Kunci): recovery key + password
            Tab Manage.
 """
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -23,6 +23,27 @@ from ..styles import CLR_WARN
 from ..widgets import MethodCard, PasswordLineEdit, ToggleSwitch, make_recovery_info_box
 
 
+class _InputBoxFocusTracker(QObject):
+    """Aktifkan focus ring InputBox (properti QSS ``focused``) saat QLineEdit di
+    dalamnya mendapat/melepas fokus. Meniru perilaku ``PasswordLineEdit`` agar
+    field hint seragam dengan field lain (yang sebelumnya tak punya focus ring)."""
+
+    def __init__(self, frame: QFrame, edit: QLineEdit):
+        super().__init__(frame)  # parent ke frame → umur hidup mengikuti frame
+        self._frame = frame
+        self._edit = edit
+        edit.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if obj is self._edit and event.type() in (QEvent.Type.FocusIn, QEvent.Type.FocusOut):
+            focused = event.type() == QEvent.Type.FocusIn
+            if bool(self._frame.property("focused")) != focused:
+                self._frame.setProperty("focused", focused)
+                self._frame.style().unpolish(self._frame)
+                self._frame.style().polish(self._frame)
+        return super().eventFilter(obj, event)
+
+
 def _make_text_input(placeholder: str) -> tuple[QFrame, QLineEdit]:
     """Input teks biasa dengan styling InputBox yang sama seperti field lain."""
     frame = QFrame()
@@ -35,6 +56,7 @@ def _make_text_input(placeholder: str) -> tuple[QFrame, QLineEdit]:
     edit.setFixedHeight(52)
     edit.setPlaceholderText(placeholder)
     lay.addWidget(edit)
+    _InputBoxFocusTracker(frame, edit)  # focus ring (parented ke frame)
     return frame, edit
 
 
@@ -49,6 +71,10 @@ class RecoveryHintPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._mode = self.MODE_CODE
+        # Toggle recovery aktif hanya bila password sudah memenuhi syarat DAN
+        # tidak sedang ada operasi berjalan.
+        self._password_ready = False
+        self._busy = False
         self._build_ui()
 
     def _build_ui(self):
@@ -83,7 +109,15 @@ class RecoveryHintPanel(QWidget):
         txt.addWidget(desc)
 
         self.switch_recovery = ToggleSwitch(checked=False)
-        self.switch_recovery.setAccessibleName("Add a recovery key")
+        # Nonaktif sampai password memenuhi semua syarat checklist (diatur lewat
+        # set_password_ready dari CreatePasswordForm.requirements_met_changed).
+        self.switch_recovery.setEnabled(False)
+        register(
+            self.switch_recovery,
+            "a11y.switch.add_recovery",
+            "Add a recovery key",
+            "setAccessibleName",
+        )
 
         row.addLayout(txt, 1)
         row.addWidget(self.switch_recovery, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -137,7 +171,12 @@ class RecoveryHintPanel(QWidget):
             "Recovery passphrase…",
             "setPlaceholderText",
         )
-        self.entry_pass.setAccessibleName("Recovery passphrase")
+        register(
+            self.entry_pass,
+            "a11y.pw.recovery_passphrase",
+            "Recovery passphrase",
+            "setAccessibleName",
+        )
         self.entry_pass.hide()
         body.addWidget(self.entry_pass)
 
@@ -158,7 +197,7 @@ class RecoveryHintPanel(QWidget):
             "e.g. our first trip together",
             "setPlaceholderText",
         )
-        self.entry_hint.setAccessibleName("Password hint")
+        register(self.entry_hint, "a11y.pw.hint", "Password hint", "setAccessibleName")
         self.entry_hint.setMaxLength(160)
         lay.addWidget(hint_frame)
 
@@ -217,14 +256,29 @@ class RecoveryHintPanel(QWidget):
             and not self.recovery_passphrase().strip()
         )
 
+    def set_password_ready(self, ready: bool):
+        """Aktifkan toggle recovery hanya setelah password memenuhi semua syarat
+        checklist. Bila syarat tak lagi terpenuhi, toggle dimatikan & recovery
+        ditutup supaya tak bisa aktif tanpa password yang valid."""
+        self._password_ready = bool(ready)
+        self._refresh_switch_enabled()
+        if not self._password_ready and self.switch_recovery.isChecked():
+            self.switch_recovery.setChecked(False)
+
     def set_busy(self, busy: bool):
-        self.switch_recovery.setEnabled(not busy)
+        self._busy = bool(busy)
+        self._refresh_switch_enabled()
         self.card_code.setEnabled(not busy)
         self.card_pass.setEnabled(not busy)
         self.entry_pass.setEnabled(not busy)
         self.entry_hint.setEnabled(not busy)
 
+    def _refresh_switch_enabled(self):
+        self.switch_recovery.setEnabled(self._password_ready and not self._busy)
+
     def reset(self):
+        self._password_ready = False
+        self._refresh_switch_enabled()
         self.switch_recovery.setChecked(False)
         self._mode = self.MODE_CODE
         self.card_code.set_selected(True)
