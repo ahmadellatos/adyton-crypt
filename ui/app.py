@@ -594,13 +594,14 @@ class AppBrankas(FramelessMainWindow):
 
         event.ignore()
         self.hide()
-        self._show_system_notif(
-            tr("close.title", "{app} is still running").format(app=APP_NAME),
-            tr(
-                "close.msg",
-                "Adyton is in the System Tray. Any active operations will continue in the background.",
-            ),
-        )
+        if get_settings().tray_notif():
+            self._show_system_notif(
+                tr("close.title", "{app} is still running").format(app=APP_NAME),
+                tr(
+                    "close.msg",
+                    "Adyton is in the System Tray. Any active operations will continue in the background.",
+                ),
+            )
         logger.info("Window di-minimize ke System Tray.")
 
     # =========================================================================

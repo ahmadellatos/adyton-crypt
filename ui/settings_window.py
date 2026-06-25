@@ -267,6 +267,26 @@ class SettingsWindow(QDialog):
         self.sw_recent.toggled.connect(self._on_recent_toggled)
         self.body_lay.addWidget(sec)
 
+        # ── Notifications ──
+        sec, lay = self._section(
+            "mdi6.bell-outline",
+            "settings.notifications",
+            "Notifications",
+            "settings.notifications.cap",
+            "Alerts from the app",
+        )
+        self.sw_tray_notif = ToggleSwitch(checked=True)
+        self.lbl_tray_notif = self._label(
+            "settings.tray_notif", "Notify when minimized to tray", main=True
+        )
+        self.lbl_tray_notif_desc = self._label(
+            "settings.tray_notif.desc",
+            "Show a notification when the window hides to the system tray.",
+        )
+        lay.addLayout(self._row(self.lbl_tray_notif, self.lbl_tray_notif_desc, self.sw_tray_notif))
+        self.sw_tray_notif.toggled.connect(self.s.set_tray_notif)
+        self.body_lay.addWidget(sec)
+
         # ── Appearance ──
         sec, lay = self._section(
             "mdi6.palette-outline",
@@ -475,6 +495,7 @@ class SettingsWindow(QDialog):
         self.combo_minutes.setVisible(self.s.auto_lock_enabled())
         self.sw_recent.setChecked(self.s.recent_enabled())
         self.btn_clear_recent.setVisible(self.s.recent_enabled())
+        self.sw_tray_notif.setChecked(self.s.tray_notif())
         self._fill_combo(self.combo_theme, [("dark", "Dark"), ("system", "System")], self.s.theme())
         self._fill_combo(
             self.combo_lang, [("en", "English"), ("id", "Indonesia")], self.s.language()

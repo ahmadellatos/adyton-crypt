@@ -40,7 +40,7 @@ from ..styles import (
     CLR_TEXT_MAIN,
     CLR_WARN,
 )
-from ..utils import format_file_size
+from ..utils import format_file_size, path_size
 from ..widgets import (
     DragDropFrame,
     HeroIconWidget,
@@ -57,6 +57,11 @@ class TargetListModel(QAbstractListModel):
     def __init__(self, paths=None, parent=None):
         super().__init__(parent)
         self._paths = list(paths) if paths else []
+        # Cache ukuran per-path (folder = jumlah rekursif). Dihitung sekali saat
+        # path ditambahkan, bukan tiap paint — os.walk folder besar bisa lambat.
+        self._size_cache: dict[str, int] = {}
+        for p in self._paths:
+            self._size_cache[p] = path_size(p)
 
     def rowCount(self, parent=QModelIndex()):  # noqa: B008
         return len(self._paths)
@@ -73,12 +78,7 @@ class TargetListModel(QAbstractListModel):
         elif role == Qt.UserRole or role == Qt.ToolTipRole:
             return path
         elif role == TargetListModel.SizeRole:
-            try:
-                if os.path.isfile(path):
-                    return os.path.getsize(path)
-                return -1  # folder marker
-            except Exception:
-                return -1
+            return self.size_for(path)
         elif role == TargetListModel.TypeRole:
             try:
                 return "folder" if os.path.isdir(path) else "file"
@@ -96,10 +96,20 @@ class TargetListModel(QAbstractListModel):
 
         return None
 
+    def size_for(self, path) -> int:
+        """Ukuran cached sebuah path (folder = jumlah rekursif). Hitung lazily
+        bila belum ada di cache (mis. dipanggil dari paint sebelum terisi)."""
+        size = self._size_cache.get(path)
+        if size is None:
+            size = path_size(path)
+            self._size_cache[path] = size
+        return size
+
     def setPaths(self, paths):
         """Ganti seluruh daftar path."""
         self.beginResetModel()
         self._paths = list(paths)
+        self._size_cache = {p: path_size(p) for p in self._paths}
         self.endResetModel()
 
     def addPaths(self, new_paths):
@@ -110,6 +120,8 @@ class TargetListModel(QAbstractListModel):
         start = len(self._paths)
         self.beginInsertRows(QModelIndex(), start, start + len(new_paths) - 1)
         self._paths.extend(new_paths)
+        for p in new_paths:
+            self._size_cache[p] = path_size(p)
         self.endInsertRows()
 
     def removePath(self, path):
@@ -126,6 +138,7 @@ class TargetListModel(QAbstractListModel):
         """Hapus semua path."""
         self.beginResetModel()
         self._paths.clear()
+        self._size_cache.clear()
         self.endResetModel()
 
     def getPaths(self):
@@ -661,13 +674,9 @@ class DropZoneLock(QWidget):
             self.lbl_target_sub.setStyleSheet("")
             self.lbl_target_sub.setText(tr("dzl.list.sub", "Choose the file or folder to lock"))
             return
-        total = 0
-        for p in self._paths:
-            try:
-                if os.path.isfile(p):
-                    total += os.path.getsize(p)
-            except OSError:
-                pass
+        # Jumlah ukuran semua target (folder = ukuran rekursif isinya, lewat cache
+        # model agar tak meng-walk ulang).
+        total = sum(self.target_model.size_for(p) for p in self._paths)
         noun = tr("dzl.file", "file") if n == 1 else tr("dzl.files", "files")
         # Ringkasan diberi warna aksen (mengikuti desain target).
         self.lbl_target_sub.setStyleSheet(f"color: {CLR_ACCENT}; font-weight: 600;")

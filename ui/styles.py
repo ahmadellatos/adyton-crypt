@@ -66,6 +66,9 @@ CLR_LIST_HOVER = "rgba(79, 191, 201, 0.06)"  # baris daftar hover (tint aksen 6%
 CLR_LIST_SELECTED = "rgba(79, 191, 201, 0.10)"  # baris daftar terpilih (tint 10%)
 CLR_BTN_TRANSPARENT = "rgba(19, 36, 42, 0.6)"
 CLR_PRESSED_BG = "#0F2026"  # tekan tombol sekunder
+CLR_TOGGLE_OFF = "#101F25"  # track toggle saat OFF — well recessed, lebih gelap dari
+# semua kartu/panel di belakangnya (card #1B2F36, OptionsPanel ~#24373E) agar pill
+# toggle jelas terbaca sebagai kontrol, bukan menyatu dengan latar.
 
 # --- SCROLLBAR ---
 CLR_SCROLL_HANDLE = "#2C474E"

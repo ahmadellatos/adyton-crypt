@@ -25,6 +25,7 @@ def test_settings_defaults(qtbot, tmp_path):
     assert st.clipboard_seconds() == 30
     assert st.auto_lock_enabled() is False
     assert st.language() == "en"
+    assert st.tray_notif() is True  # toast minimize-ke-tray default nyala
 
 
 @pytest.mark.qt
@@ -38,13 +39,16 @@ def test_settings_roundtrip_and_change_signal(qtbot, tmp_path):
     st.set_clipboard_seconds(0)
     st.set_auto_lock_enabled(True)
     st.set_language("id")
+    st.set_tray_notif(False)
 
     assert st.kdf_level() == KDF_LEVEL_PARANOID
     assert st.delete_original() is True
     assert st.clipboard_seconds() == 0
     assert st.auto_lock_enabled() is True
     assert st.language() == "id"
+    assert st.tray_notif() is False
     assert "security/kdf_level" in seen
+    assert "notifications/tray_minimized" in seen
 
     # Set ke nilai sama tidak memancarkan sinyal lagi.
     seen.clear()
@@ -61,9 +65,11 @@ def test_settings_reset(qtbot, tmp_path):
     st = _isolated_store(tmp_path)
     st.set_kdf_level(KDF_LEVEL_PARANOID)
     st.set_delete_original(True)
+    st.set_tray_notif(False)
     st.reset_to_defaults()
     assert st.kdf_level() == DEFAULT_KDF_LEVEL
     assert st.delete_original() is False
+    assert st.tray_notif() is True
 
 
 @pytest.mark.qt

@@ -9,6 +9,7 @@ from PySide6.QtCore import (
     QEasingCurve,
     QPoint,
     QPropertyAnimation,
+    QRectF,
     QSize,
     Qt,
     QTimer,
@@ -37,12 +38,14 @@ from .styles import (
     CLR_DANGER,
     CLR_DANGER_BG,
     CLR_HOVER_BG,
+    CLR_INPUT_BORDER,
     CLR_INSET,
     CLR_SUCCESS,
     CLR_SUCCESS_BG,
     CLR_TEXT_DIM,
     CLR_TEXT_MAIN,
     CLR_TEXT_MUTED,
+    CLR_TOGGLE_OFF,
     CLR_WARN,
     CLR_WARN_BG,
     CLR_WINDOW,
@@ -1048,8 +1051,10 @@ class ToggleSwitch(QFrame):
         radius = r.height() / 2
         t = self._knob
 
-        # Track — interpolasi warna off → on (abu-abu → aksen)
-        off, on = QColor(CLR_BORDER), QColor(CLR_ACCENT)
+        # Track — interpolasi warna off → on (well recessed gelap → aksen). OFF
+        # dibuat jauh lebih gelap dari kartu/panel di belakangnya agar pill toggle
+        # jelas terbaca sebagai kontrol (tidak menyatu dengan latar).
+        off, on = QColor(CLR_TOGGLE_OFF), QColor(CLR_ACCENT)
         track = QColor(
             int(off.red() + (on.red() - off.red()) * t),
             int(off.green() + (on.green() - off.green()) * t),
@@ -1060,6 +1065,17 @@ class ToggleSwitch(QFrame):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(track)
         painter.drawRoundedRect(r, radius, radius)
+
+        # Rim tipis saat OFF (memudar saat ON) — menegaskan tepi pill di atas latar
+        # gelap; state ON sudah terang (aksen) jadi tak butuh rim.
+        rim = QColor(CLR_INPUT_BORDER)
+        rim.setAlphaF((1.0 - t) * (0.6 if self.isEnabled() else 0.3))
+        if rim.alphaF() > 0.0:
+            painter.setPen(QPen(rim, 1))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(
+                QRectF(r).adjusted(0.5, 0.5, -0.5, -0.5), radius - 0.5, radius - 0.5
+            )
 
         # Knob putih yang menggeser
         margin = 3

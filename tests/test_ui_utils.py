@@ -5,8 +5,34 @@ from ui.utils import (
     ProgressETA,
     format_progress_label,
     format_user_error,
+    path_size,
     progress_stage_label,
 )
+
+
+def test_path_size_file_returns_byte_count(tmp_path):
+    f = tmp_path / "a.bin"
+    f.write_bytes(b"x" * 1500)
+    assert path_size(str(f)) == 1500
+
+
+def test_path_size_folder_sums_contents_recursively(tmp_path):
+    # Regresi: folder dulu memakai os.path.getsize(dir) → 0 B di Windows.
+    (tmp_path / "sub" / "deep").mkdir(parents=True)
+    (tmp_path / "a.bin").write_bytes(b"x" * 1000)
+    (tmp_path / "sub" / "b.bin").write_bytes(b"y" * 2000)
+    (tmp_path / "sub" / "deep" / "c.bin").write_bytes(b"z" * 4000)
+    assert path_size(str(tmp_path)) == 7000
+
+
+def test_path_size_empty_folder_is_zero(tmp_path):
+    d = tmp_path / "empty"
+    d.mkdir()
+    assert path_size(str(d)) == 0
+
+
+def test_path_size_missing_path_is_zero(tmp_path):
+    assert path_size(str(tmp_path / "does-not-exist")) == 0
 
 
 def test_format_user_error_wrong_password_is_actionable():

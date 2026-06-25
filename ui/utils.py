@@ -3,6 +3,7 @@ Utilitas umum untuk UI Adyton Crypt.
 Berisi helper untuk progress bar dan estimasi waktu.
 """
 
+import os
 import sys
 import time
 
@@ -183,6 +184,34 @@ def format_user_error(status, message: str | None, mode: str) -> str:
     # yang memang sudah dibuat aman oleh core.
     raw = raw.removeprefix("Error:").strip()
     return f"{prefix}. {raw}"
+
+
+def path_size(path: str) -> int:
+    """Ukuran total sebuah path dalam byte.
+
+    File → ukuran file. Folder → jumlah rekursif ukuran semua file di dalamnya
+    (ini yang akan dikunci ke vault), bukan ukuran entri direktori (yang 0 di
+    Windows). Symlink dilewati agar tak menghitung ganda / loop. File yang tak
+    terbaca diabaikan; mengembalikan 0 bila path tak ada / tak terbaca.
+    """
+    try:
+        if os.path.isfile(path):
+            return os.path.getsize(path)
+        if os.path.isdir(path):
+            total = 0
+            # followlinks=False (default) → os.walk tak menuruni folder symlink.
+            for root, _dirs, files in os.walk(path):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    try:
+                        if not os.path.islink(fp):
+                            total += os.path.getsize(fp)
+                    except OSError:
+                        pass
+            return total
+    except OSError:
+        pass
+    return 0
 
 
 def format_file_size(n: int) -> str:

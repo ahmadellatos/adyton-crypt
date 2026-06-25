@@ -30,6 +30,7 @@ KEY_THEME = "appearance/theme"
 KEY_LANGUAGE = "appearance/language"
 KEY_RECENT_ENABLED = "privacy/recent_enabled"
 KEY_RECENT_VAULTS = "privacy/recent_vaults"  # JSON list of {"path", "ts"}
+KEY_TRAY_NOTIF = "notifications/tray_minimized"
 
 _DEFAULTS: dict[str, object] = {
     KEY_KDF_LEVEL: DEFAULT_KDF_LEVEL,
@@ -41,6 +42,7 @@ _DEFAULTS: dict[str, object] = {
     KEY_THEME: "dark",
     KEY_LANGUAGE: "en",
     KEY_RECENT_ENABLED: False,  # opt-in: jejak vault default mati (privasi)
+    KEY_TRAY_NOTIF: True,  # toast "masih berjalan" saat minimize ke tray (perilaku lama)
 }
 
 CLIPBOARD_SECOND_CHOICES = (0, 15, 30, 60)
@@ -110,6 +112,13 @@ class SettingsStore(QObject):
 
     def set_auto_lock_minutes(self, value: int) -> None:
         self._set(KEY_AUTO_LOCK_MINUTES, int(value))
+
+    # ── Notifications ───────────────────────────────────────────────────────
+    def tray_notif(self) -> bool:
+        return self._get(KEY_TRAY_NOTIF, bool)
+
+    def set_tray_notif(self, value: bool) -> None:
+        self._set(KEY_TRAY_NOTIF, bool(value))
 
     # ── Recent vaults (akses cepat di Tab Buka/Kelola) ──────────────────────
     @staticmethod
