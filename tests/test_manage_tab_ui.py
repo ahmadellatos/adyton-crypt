@@ -67,9 +67,16 @@ def test_manage_loads_vault_and_enables_actions(qtbot, tmp_path):
     qtbot.addWidget(tab)
 
     tab.drop_zone.load_file(vault)
-    assert tab.btn_change.isEnabled() is True
+    # Gating: memuat vault saja belum cukup — aksi tetap nonaktif sampai
+    # kredensial saat ini + password baru yang valid terisi.
+    assert tab.btn_change.isEnabled() is False
     assert "Adyton Vault" in tab.lbl_info.text()
     assert "Hint: yes" in tab.lbl_info.text()
+
+    tab.entry_current.setText(PASSWORD)
+    tab.form.entry_pw1.setText(PASSWORD)
+    tab.form.entry_pw2.setText(PASSWORD)
+    assert tab.btn_change.isEnabled() is True
 
 
 @pytest.mark.qt
@@ -154,6 +161,12 @@ def test_manage_unsupported_vault_badge_matches_status(qtbot, tmp_path):
 
     tab.drop_zone.load_file(valid)
     assert tab.drop_zone.valid_badge.property("state") == "ok"
+    # Vault valid termuat, tetapi aksi baru aktif setelah precondition
+    # kredensial lengkap (gating yang sama seperti tab lain).
+    assert tab.btn_change.isEnabled() is False
+    tab.entry_current.setText(PASSWORD)
+    tab.form.entry_pw1.setText(PASSWORD)
+    tab.form.entry_pw2.setText(PASSWORD)
     assert tab.btn_change.isEnabled() is True
 
 

@@ -94,7 +94,6 @@ class QRShareDialog(ScrimDialogMixin, QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.parent_widget = parent
-        self._encrypted_text = encrypted_text
         self._qr_image = make_qr_image(encrypted_text)
 
         container = QFrame(self)

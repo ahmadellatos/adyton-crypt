@@ -10,7 +10,7 @@ bahasa live untuk jendela ini).
 from __future__ import annotations
 
 import qtawesome as qta
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -50,8 +50,6 @@ from .widgets import MethodCard, ToggleSwitch, apply_shadow
 
 
 class SettingsWindow(QDialog):
-    settings_applied = Signal()
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.s = get_settings()

@@ -497,18 +497,12 @@ class CustomToolTip(QLabel):
         self._show_delay_ms = 1000  # Nongol setelah mouse diam 1 detik
         self._hide_delay_ms = 5000  # Hilang otomatis setelah 5 detik (jika tidak gerak)
 
-    def request_show(self, text):
-        self._pending_text = text
-        self._last_cursor_pos = QCursor.pos()
-        self._time_hovered = 0
-        self._monitor_timer.start()
-
     def show_now(self, text):
         """Tampilkan SEGERA (dipakai filter tooltip global, setelah delay native Qt).
 
-        Berbeda dari ``request_show`` yang menunggu 1 dtk mouse diam: di sini Qt sudah
-        menerapkan delay hover-nya, jadi langsung tampil. Timer tetap jalan untuk
-        sembunyi-saat-gerak & auto-hide. Idempotent bila teks sama & sudah tampil.
+        Qt sudah menerapkan delay hover-nya, jadi tooltip langsung tampil. Timer
+        tetap jalan untuk sembunyi-saat-gerak & auto-hide. Idempotent bila teks
+        sama & sudah tampil.
         """
         if self.isVisible() and text == self._pending_text:
             return

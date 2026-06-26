@@ -39,8 +39,6 @@ class BigActionBtn(QPushButton):
         self.setFixedHeight(58)  # pill ramping, satu baris (design system CTA)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.icon_name = icon_name
-        self._right_icon_name = "mdi6.chevron-right"
-        self._right_icon_size = 22
         self._progress_visible = False
         self._display_progress = 0.0
         self._progress_anim = QPropertyAnimation(self, b"progressFill", self)
@@ -78,9 +76,6 @@ class BigActionBtn(QPushButton):
         self.lbl_sub.setStyleSheet(
             "font-size: 9pt; font-weight: 600; color: rgba(7, 32, 37, 0.78);"
         )
-
-        # Panah disimpan untuk kompatibilitas API (setVisualIcons) tapi tidak ditampilkan.
-        self.lbl_arrow = QLabel()
 
         # Terpusat saat idle, rata kiri saat progress (leading stretch index 0
         # dikecilkan ke 0 sehingga konten bergeser ke kiri).
@@ -212,22 +207,18 @@ class BigActionBtn(QPushButton):
             }}
         """)
 
-    def setVisualIcons(self, left_icon_name: str | None = None, right_icon_name: str | None = None):
+    def setVisualIcons(self, left_icon_name: str | None = None):
         """Update ikon aksi tanpa membuat ulang tombol.
 
         Dipakai untuk membuat tombol proses lebih jelas sebagai tombol cancel.
         """
         if left_icon_name:
             self.icon_name = left_icon_name
-        if right_icon_name:
-            self._right_icon_name = right_icon_name
         self.setEnabled(self.isEnabled())
 
     def resetVisualIcons(self, left_icon_name: str | None = None):
         if left_icon_name:
             self.icon_name = left_icon_name
-        self._right_icon_name = "mdi6.chevron-right"
-        self._right_icon_size = 27
         self.setEnabled(self.isEnabled())
 
     def keyPressEvent(self, event):

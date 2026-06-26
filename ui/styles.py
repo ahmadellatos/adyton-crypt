@@ -18,20 +18,15 @@ CLR_CANVAS = "#0E1B21"  # Latar paling bawah
 CLR_WINDOW = "#16282E"  # Badan jendela / area konten
 CLR_CARD = "#1B2F36"  # Kartu konten
 CLR_INSET = "#13242A"  # Titlebar, input, inset, bar
-CLR_BORDER_WINDOW = "#243A41"  # Border jendela
 CLR_BORDER = "#253D44"  # Border kartu
 CLR_LINE = "#1E343A"  # Pembatas tipis
 
-# Alias kompatibilitas dengan kode lama (nama token tetap, nilai diremap):
-CLR_BG = CLR_WINDOW  # dulu latar paling bawah; kini = badan jendela
-CLR_INNER = CLR_INSET  # dulu permukaan inner; kini = inset/bar
 CLR_BORDER_SUBTLE = "rgba(30, 52, 58, 0.5)"  # pembatas halus (mis. footer)
 
 # --- AKSEN & SEMANTIK ---
 CLR_ACCENT = "#4FBFC9"  # Aksi utama, fokus, aktif
 CLR_ACCENT_HOVER = "#62CDD6"  # Hover aksi utama
 CLR_ACCENT_DK = "#3CA9B2"  # Aktif/tekan aksi utama
-CLR_ACCENT_DK_HOVER = "#3CA9B2"  # (alias) hover-tekan
 CLR_ACCENT_DISABLED = "rgba(19, 36, 42, 0.85)"
 CLR_ACCENT_TEXT = "#7FD6DF"  # Teal heading/ikon di atas latar gelap (eyebrow, ikon onboarding)
 
@@ -918,48 +913,6 @@ def load_stylesheet() -> str:
 # =============================================================================
 
 
-def body_style(size: str = "10.5pt") -> str:
-    """Standard body text."""
-    return f"font-size: {size}; color: {CLR_TEXT_MAIN};"
-
-
 def muted_label_style(size: str = "9.5pt") -> str:
     """Style untuk teks sekunder / keterangan."""
     return f"font-size: {size}; color: {CLR_TEXT_DIM};"
-
-
-def caption_style(size: str = "9pt") -> str:
-    """Very small / footer text."""
-    return f"font-size: {size}; color: {CLR_TEXT_FAINT};"
-
-
-def small_footer_style() -> str:
-    """Style untuk teks footer kecil. (Deprecated - use caption_style instead)"""
-    return caption_style("9pt")
-
-
-def error_text_style(size: str = "9.5pt") -> str:
-    return f"font-size: {size}; color: {CLR_DANGER}; font-weight: 600;"
-
-
-def success_text_style(size: str = "9.5pt") -> str:
-    return f"font-size: {size}; color: {CLR_SUCCESS}; font-weight: 600;"
-
-
-def warning_text_style(size: str = "9.5pt") -> str:
-    return f"font-size: {size}; color: {CLR_WARN}; font-weight: 600;"
-
-
-def section_title_style() -> str:
-    """Style untuk judul section / card."""
-    return f"font-size: 12pt; font-weight: 800; color: {CLR_TEXT_MAIN}; letter-spacing: 0.2px;"
-
-
-def card_title_style() -> str:
-    """Style untuk judul kartu (uppercase version)."""
-    return f"font-size: 11pt; font-weight: 800; color: {CLR_TEXT_MAIN}; letter-spacing: 0.6px; text-transform: uppercase;"
-
-
-def card_subtitle_style() -> str:
-    """Style untuk sub-judul kartu."""
-    return f"font-size: 9.5pt; color: {CLR_TEXT_DIM};"

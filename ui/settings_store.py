@@ -45,8 +45,6 @@ _DEFAULTS: dict[str, object] = {
     KEY_TRAY_NOTIF: True,  # toast "masih berjalan" saat minimize ke tray (perilaku lama)
 }
 
-CLIPBOARD_SECOND_CHOICES = (0, 15, 30, 60)
-AUTO_LOCK_MINUTE_CHOICES = (1, 5, 15)
 THEME_CHOICES = ("dark", "system")
 LANGUAGE_CHOICES = ("en", "id")
 RECENT_VAULTS_MAX = 4  # jumlah maksimum entri yang disimpan/ditampilkan

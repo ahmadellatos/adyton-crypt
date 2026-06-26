@@ -3,14 +3,16 @@ tests/test_stress.py
 Stress test dan edge case ekstrem untuk core/vault.py.
 """
 
+import contextlib
 import os
-import stat
-import shutil
-import tempfile
 import platform
+import shutil
+import stat
+import tempfile
+
 import pytest
 
-from core.vault import kunci_brankas, buka_brankas, VaultStatus
+from core.vault import VaultStatus, buka_brankas, kunci_brankas
 from tests.conftest import folder_checksum
 
 PASSWORD = "P@ssw0rd!Kuat"
@@ -24,12 +26,10 @@ def _cleanup(path: str):
     if not os.path.exists(path):
         return
     if platform.system() == "Windows":
-        for root, dirs, files in os.walk(path):
+        for root, _dirs, files in os.walk(path):
             for f in files:
-                try:
+                with contextlib.suppress(OSError):
                     os.chmod(os.path.join(root, f), stat.S_IWRITE)
-                except:
-                    pass
     shutil.rmtree(path, ignore_errors=True)
 
 

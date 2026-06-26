@@ -33,7 +33,13 @@ from PySide6.QtWidgets import (
 from qframelesswindow import FramelessWindow
 
 from core.paths import get_asset_path
-from core.vault import VaultStatus, buka_brankas, hapus_permanen, kunci_brankas
+from core.vault import (
+    VaultStatus,
+    buka_brankas,
+    cancel_pending_overwrite,
+    hapus_permanen,
+    kunci_brankas,
+)
 from core.worker import CryptoWorker
 
 from .buttons import BigActionBtn
@@ -373,6 +379,9 @@ class QuickActionWindow(FramelessWindow):
         logger.error(f"Quick action gagal ({self.mode.name}): {msg}")
         self.notif.show_msg("err", user_msg, 8000)
         if self.mode is QuickMode.DECRYPT:
+            # Window mini ini tak punya alur konfirmasi overwrite; jangan biarkan
+            # tar terverifikasi (kalau OVERWRITE_NEEDED) menggantung di disk.
+            cancel_pending_overwrite(self.paths[0])
             self._password_panel.reset_field()
 
     # ── label & konfirmasi ───────────────────────────────────────────────

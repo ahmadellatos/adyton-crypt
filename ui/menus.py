@@ -5,26 +5,13 @@ Deskripsi: Komponen menu kustom (Centered menu dengan icon dan highlight).
 
 import qtawesome as qta
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMenu,
-    QProxyStyle,
-    QStyle,
     QWidget,
     QWidgetAction,
 )
-
-
-class CenteredMenuStyle(QProxyStyle):
-    def drawControl(self, element, option, painter, widget=None):
-        if element == QStyle.ControlElement.CE_MenuItem:
-            option.displayAlignment = Qt.AlignmentFlag.AlignCenter
-            # Gambar background highlight manual saat item selected/fokus
-            if option.state & QStyle.StateFlag.State_Selected:
-                painter.fillRect(option.rect, QColor(79, 191, 201, 30))
-        super().drawControl(element, option, painter, widget)
 
 
 class HoverMenuWidget(QWidget):

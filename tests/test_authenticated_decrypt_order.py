@@ -9,7 +9,6 @@ import shutil
 
 from core.vault import VaultStatus, buka_brankas, kunci_brankas
 
-
 PASSWORD = "P@ssw0rd!Kuat123"
 
 

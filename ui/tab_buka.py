@@ -10,7 +10,7 @@ from loguru import logger
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
-from core.vault import VaultStatus, buka_brankas
+from core.vault import VaultStatus, buka_brankas, cancel_pending_overwrite
 from core.worker import CryptoWorker
 
 from .buttons import BigActionBtn
@@ -281,7 +281,7 @@ class TabBuka(QWidget):
                 tr("open.status.verifying.sub", "Keep the app open"),
                 "busy",
             )
-            self.btn_aksi.setVisualIcons("mdi6.close-circle-outline", "mdi6.close")
+            self.btn_aksi.setVisualIcons("mdi6.close-circle-outline")
             self.btn_aksi.setProgressVisible(True, 0.0)
             self.btn_aksi.setTextLabels(
                 tr("open.busy.title", "Opening vault"),
@@ -390,6 +390,9 @@ class TabBuka(QWidget):
                 self._konfirmasi_timpa = True
                 self._proses()
             else:
+                # User menolak: buang tar terverifikasi yang ditahan untuk resume
+                # agar tidak menumpuk sampai sweep umur membersihkannya.
+                cancel_pending_overwrite(self.drop_zone.get_file())
                 self._cached_pw = None
                 self._reset_timpa()
                 self._validate_state()

@@ -9,7 +9,7 @@ import inspect
 from loguru import logger
 from PySide6.QtCore import QThread, Signal
 
-from core.vault import VaultStatus
+from core.vault import GENERIC_FAILURE_MESSAGE, VaultStatus
 
 
 class CryptoWorker(QThread):
@@ -43,6 +43,8 @@ class CryptoWorker(QThread):
             result = self.func(*self.args, **self.kwargs)
             self.finished.emit(result if isinstance(result, tuple) else (result,))
 
-        except Exception as e:
+        except Exception:
+            # Jaring terakhir: jangan kirim str(exc) mentah ke UI (bisa memuat path
+            # absolut). Detail lengkap sudah masuk log via logger.exception.
             logger.exception("CryptoWorker gagal menjalankan operasi")
-            self.finished.emit((VaultStatus.ERROR, str(e)))
+            self.finished.emit((VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE))

@@ -13,7 +13,7 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QThread
 
-from core.vault import buka_brankas, kunci_brankas, VaultStatus
+from core.vault import VaultStatus, buka_brankas, kunci_brankas
 from core.worker import CryptoWorker
 
 PASSWORD_BENAR = "P@ssw0rd!Kuat123"

@@ -66,10 +66,14 @@ class TextCryptoWorker(QThread):
             result = self._func(*self._args)
             self.finished.emit(result, "")
         except (ValueError, InvalidTag) as exc:
+            # Pesan ini kurasi dari core (path-free, mis. "Wrong password…").
             self.finished.emit("", str(exc))
-        except Exception as exc:
+        except Exception:
+            # Catch-all: jangan kirim str(exc) mentah ke UI; detail ke log saja.
             logger.exception("TextCryptoWorker: error tak terduga")
-            self.finished.emit("", f"Unexpected error: {exc}")
+            self.finished.emit(
+                "", "An unexpected error occurred. Technical details were saved to the log."
+            )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

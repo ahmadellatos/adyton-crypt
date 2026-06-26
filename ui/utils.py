@@ -25,24 +25,6 @@ def _format_eta_seconds(remaining: float) -> str:
     return f"about {hours}h {minutes:02d}m left"
 
 
-def get_eta_string(start_time: float | None, progress: float) -> str:
-    """Hitung estimasi waktu tersisa sederhana.
-
-    Dipertahankan untuk kompatibilitas lama. Untuk UI live gunakan
-    ``ProgressETA`` karena estimator itu menahan progress mundur dan memakai
-    smoothed transfer rate agar ETA tidak meloncat-loncat.
-    """
-    if start_time is None or progress <= 0.01:
-        return "Calculating…"
-
-    elapsed = time.monotonic() - start_time
-    if elapsed < 0.75:
-        return "Calculating…"
-
-    remaining = max((elapsed / max(progress, 1e-6)) - elapsed, 0.0)
-    return _format_eta_seconds(remaining)
-
-
 class ProgressETA:
     """Estimator ETA stateful untuk progress UI.
 

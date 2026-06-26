@@ -131,6 +131,53 @@ def test_oversized_hint_is_truncated(tmp_path):
     assert 0 < len(stored.encode("utf-8")) <= 256
 
 
+def test_tampering_hint_fails_closed(tmp_path):
+    """Hint disimpan plaintext TAPI terautentikasi (diikat ke AAD wrap MK).
+
+    Mengganti teks hint pada file (tanpa mengubah panjangnya) harus membuat vault
+    gagal dibuka — dilaporkan wrong_password — bukan lolos dengan hint palsu.
+    """
+    marker = "kota-kelahiran-ibu"
+    source, vault_path = _lock(tmp_path, hint=marker)
+    shutil.rmtree(source)
+
+    # Utuh: hint terbaca tanpa password dan vault terbuka normal.
+    assert read_vault_hint(str(vault_path)) == marker
+
+    data = bytearray(vault_path.read_bytes())
+    idx = data.find(marker.encode("utf-8"))
+    assert idx != -1
+    data[idx] ^= 0x01  # ubah satu byte teks hint; panjang tetap sama
+    vault_path.write_bytes(data)
+
+    status, _ = buka_brankas(str(vault_path), PASSWORD)
+    assert status == VaultStatus.WRONG_PASSWORD
+
+
+def test_no_hint_vault_opens_with_unchanged_aad(tmp_path):
+    """Vault tanpa hint: byte hint kosong → AAD wrap identik dengan format sebelum
+    hint diautentikasi, jadi tetap bisa dibuka (kompatibilitas mundur)."""
+    source, vault_path = _lock(tmp_path)
+    shutil.rmtree(source)
+    _assert_restores(vault_path, tmp_path, PASSWORD)
+
+
+def test_change_password_preserves_hint_and_binding(tmp_path):
+    """Ganti password vault ber-hint: hint tetap utuh & binding-nya konsisten
+    (kalau byte hint untuk header ≠ byte hint untuk AAD, MK tak akan ter-unwrap)."""
+    marker = "petunjuk-rahasia"
+    source, vault_path = _lock(tmp_path, hint=marker)
+    shutil.rmtree(source)
+
+    status, _ = change_password(str(vault_path), PASSWORD, NEW_PASSWORD)
+    assert status == VaultStatus.SUCCESS
+    assert read_vault_hint(str(vault_path)) == marker
+
+    status, _ = buka_brankas(str(vault_path), PASSWORD)
+    assert status == VaultStatus.WRONG_PASSWORD
+    _assert_restores(vault_path, tmp_path, NEW_PASSWORD)
+
+
 # ── Change password (#2) ─────────────────────────────────────────────────────────
 
 

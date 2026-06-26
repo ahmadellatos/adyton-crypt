@@ -8,6 +8,7 @@ import argparse
 import contextlib
 import ctypes
 import os
+import secrets
 import sys
 import traceback
 
@@ -138,6 +139,45 @@ def global_exception_handler(exc_type, exc_value, exc_traceback) -> None:
 IPC_LENGTH_PREFIX = 4
 IPC_MAX_PAYLOAD = 1 << 20  # 1 MB — jauh di atas kebutuhan; batasi alokasi dari client lokal
 
+_IPC_TOKEN_CACHE: str | None = None
+
+
+def _ipc_token() -> str:
+    """Secret bersama untuk IPC lokal: membuktikan pengirim adalah proses milik
+    user ini yang bisa membaca app-data Adyton.
+
+    Bersama ``UserAccessOption`` pada server (named pipe dibatasi ke user yang
+    sama), ini menaikkan ambang dari "tahu nama pipe + protokol" menjadi "juga
+    bisa membaca app-data user". Token stabil per-instalasi (dipakai ulang antar
+    proses dalam sesi yang sama, termasuk saat upgrade), dan best-effort: bila
+    app-data tak bisa ditulis, mengembalikan "" dan IPC tetap berfungsi tanpa
+    lapisan ini. Dibaca sekali per proses lalu di-cache.
+    """
+    global _IPC_TOKEN_CACHE
+    if _IPC_TOKEN_CACHE is not None:
+        return _IPC_TOKEN_CACHE
+    try:
+        token_path = get_data_dir() / "ipc.token"
+        if token_path.exists():
+            existing = token_path.read_text(encoding="utf-8").strip()
+            if existing:
+                _IPC_TOKEN_CACHE = existing
+                return existing
+        token = secrets.token_hex(32)
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text(token, encoding="utf-8")
+        _IPC_TOKEN_CACHE = token
+        return token
+    except Exception:
+        logger.warning("Gagal menyiapkan token IPC; lanjut tanpa autentikasi token.")
+        _IPC_TOKEN_CACHE = ""  # nosec B105 — fallback kosong, bukan kredensial
+        return ""
+
+
+def _frame_command(command: str) -> str:
+    """Bungkus perintah IPC dengan token: ``<token>\\n<command>``."""
+    return f"{_ipc_token()}\n{command}"
+
 
 def _send_ipc_payload(socket: QLocalSocket, payload: str) -> bool:
     """Tulis payload ber-frame (panjang 4-byte + body UTF-8) ke socket."""
@@ -193,8 +233,18 @@ def handle_wakeup(server: QLocalServer, window: "AppBrankas") -> None:
         payload = _recv_ipc_payload(client)
         if payload is None:
             return
-        if payload.startswith("QUICK|"):
-            parts = payload.split("|")
+
+        # Autentikasi: payload harus berbentuk "<token>\n<command>" dengan token
+        # yang cocok. compare_digest mencegah kebocoran lewat timing. Token kosong
+        # (app-data tak bisa ditulis) tetap dibandingkan secara konsisten dengan
+        # pengirim sehat di mesin yang sama. Pengirim asing tanpa token ditolak.
+        token, _, command = payload.partition("\n")
+        if not secrets.compare_digest(token, _ipc_token()):
+            logger.warning("IPC payload ditolak: token tidak cocok.")
+            return
+
+        if command.startswith("QUICK|"):
+            parts = command.split("|")
             mode = parts[1] if len(parts) > 1 else ""
             paths = [p for p in parts[2:] if p and os.path.exists(p)]
             _bring_to_front(window)
@@ -202,8 +252,8 @@ def handle_wakeup(server: QLocalServer, window: "AppBrankas") -> None:
                 window.kunci_file_dari_luar(paths)
             elif mode == "decrypt" and paths:
                 window.buka_file_dari_luar(paths[0])
-        elif payload.startswith("WAKEUP|"):
-            parts = payload.split("|", 1)
+        elif command.startswith("WAKEUP|"):
+            parts = command.split("|", 1)
             path = parts[1] if len(parts) > 1 else ""
             _bring_to_front(window)
             if path and os.path.exists(path):
@@ -230,7 +280,7 @@ def try_send_to_existing_instance(file_arg: str) -> bool:
         return False
 
     logger.info("Instance lain aktif. Mengirim sinyal WAKEUP + Path File.")
-    _send_ipc_payload(socket, f"WAKEUP|{file_arg}")
+    _send_ipc_payload(socket, _frame_command(f"WAKEUP|{file_arg}"))
     socket.disconnectFromServer()
     return True
 
@@ -247,7 +297,7 @@ def try_forward_quick_action(mode: str, paths: list[str]) -> bool:
         socket.deleteLater()
         return False
 
-    _send_ipc_payload(socket, "QUICK|" + mode + "|" + "|".join(paths))
+    _send_ipc_payload(socket, _frame_command("QUICK|" + mode + "|" + "|".join(paths)))
     socket.flush()
     # Tunggu server selesai membaca lalu menutup koneksi — mencegah race di mana
     # proses ini keluar dan merobohkan pipe sebelum server sempat membaca.
@@ -267,6 +317,9 @@ def create_ipc_server() -> QLocalServer | None:
         logger.debug(f"Gagal menghapus server IPC lama (biasanya aman diabaikan): {e}")
 
     server = QLocalServer()
+    # Batasi named pipe ke user yang sama: proses milik user lain di mesin
+    # multi-user tidak boleh connect & menyuntik perintah encrypt/decrypt.
+    server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
     if not server.listen(APP_AUMID):
         logger.error(f"FATAL: Gagal membuat IPC Server. {server.errorString()}")
         return None

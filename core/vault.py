@@ -74,6 +74,18 @@ class VaultStatus(Enum):
     CANCELLED = "cancelled"
 
 
+# Pesan untuk exception TAK TERDUGA (catch-all `except Exception`). Sengaja TIDAK
+# menyertakan str(exc): teks exception bisa memuat path absolut atau detail internal
+# yang lalu bocor ke UI (mis. "[WinError 5] Access is denied: 'C:\\Users\\...\\rahasia.adtn'").
+# Detail lengkap tetap masuk log (logger.exception) untuk diagnosis. Kalimat ini
+# netral-operasi sehingga rapi baik berdiri sendiri (Tab Manage) maupun setelah
+# awalan "Couldn't open/lock the vault." dari format_user_error.
+GENERIC_FAILURE_MESSAGE = (
+    "Check the file, your permissions, and free disk space, then try again. "
+    "Technical details were saved to the log."
+)
+
+
 # ── File Operations ───────────────────────────────────────────────────────────
 
 
@@ -185,64 +197,6 @@ def hapus_permanen(
                     logger.debug(f"Gagal hapus readonly file saat rmtree: {p}")
 
             shutil.rmtree(path, onerror=_remove_readonly)
-
-
-# ── Custom Stream Classes ─────────────────────────────────────────────────────
-
-
-class EncryptingStream:
-    def __init__(
-        self,
-        target_file,
-        encryptor,
-        progress_cb,
-        total_bytes,
-        is_cancelled: Callable[[], bool] = None,
-    ):
-        self.target_file = target_file
-        self.encryptor = encryptor
-        self.progress_cb = progress_cb
-        self.total_bytes = total_bytes
-        self.bytes_written = 0
-        self.buffer = bytearray()
-        self._last_pct = 0.0
-        self._flushed = False
-        self.is_cancelled = is_cancelled
-
-    def write(self, data: bytes):
-        if self.is_cancelled and self.is_cancelled():
-            raise InterruptedError("Operation cancelled by the user.")
-
-        self.buffer.extend(data)
-        self.bytes_written += len(data)
-
-        if self.total_bytes > 0:
-            # Data phase: 5% → 85%
-            pct = min(0.85, 0.05 + 0.80 * (self.bytes_written / self.total_bytes))
-            if pct - self._last_pct >= 0.005:
-                safe_cb(self.progress_cb, pct)
-                self._last_pct = pct
-
-        if len(self.buffer) >= CHUNK_SIZE:
-            encrypted = self.encryptor.update(bytes(self.buffer))
-            if encrypted:
-                self.target_file.write(encrypted)
-            self.buffer.clear()
-
-        return len(data)
-
-    def flush(self):
-        if self._flushed:
-            return
-        self._flushed = True
-        if self.buffer:
-            encrypted = self.encryptor.update(bytes(self.buffer))
-            if encrypted:
-                self.target_file.write(encrypted)
-            self.buffer.clear()
-
-    def close(self):
-        self.flush()
 
 
 # ── Logic Pembantu ────────────────────────────────────────────────────────────
@@ -596,13 +550,21 @@ def _slot_meta(
     )
 
 
-def _slot_wrap_aad(file_id: bytes, meta: bytes) -> bytes:
-    """AAD untuk membungkus MK: mengikat ke identitas vault + parameter slot.
+def _slot_wrap_aad(file_id: bytes, hint_bytes: bytes, meta: bytes) -> bytes:
+    """AAD untuk membungkus MK: mengikat ke identitas vault + hint + parameter slot.
 
-    Mencegah slot ditukar antar-vault (file_id) dan mencegah parameter slot
-    (kdf, salt, nonce) diutak-atik diam-diam.
+    Mencegah slot ditukar antar-vault (file_id), mencegah parameter slot
+    (kdf, salt, nonce) diutak-atik diam-diam, dan **mengikat password hint** yang
+    disimpan plaintext di header. Tanpa ini hint tidak terautentikasi sama sekali:
+    siapa pun yang bisa menulis ke file vault bisa mengganti teks hint (mis. untuk
+    menyesatkan korban) tanpa terdeteksi. Dengan hint masuk AAD, tamper apa pun
+    pada hint membuat unwrap MK gagal → dilaporkan wrong_password (fail-closed).
+
+    ``hint_bytes`` adalah byte mentah hint persis seperti di header (kosong untuk
+    vault tanpa hint). Vault tanpa hint menghasilkan AAD identik dengan format
+    sebelum hint diautentikasi, jadi vault lama tanpa hint tetap bisa dibuka.
     """
-    return MAGIC_BYTES + VERSION + file_id + meta
+    return MAGIC_BYTES + VERSION + file_id + hint_bytes + meta
 
 
 def _derive_slot_kek(
@@ -624,12 +586,15 @@ def _build_keyslot(
     slot_type: int,
     secret: str,
     kdf_params: dict[str, int] | None = None,
+    hint_bytes: bytes = b"",
 ) -> bytes:
     """Bangun satu keyslot lengkap (meta + wrapped MK) dari sebuah credential.
 
     ``kdf_params`` opsional memilih kekuatan Argon2id (level KDF); bila None dipakai
     default vault. Parameter di-encode lalu di-decode lagi agar nilainya tervalidasi
-    & dibatasi ceiling sebelum dipakai.
+    & dibatasi ceiling sebelum dipakai. ``hint_bytes`` (mentah, byte hint di header)
+    diikat ke AAD wrap agar hint terautentikasi — pemanggil WAJIB memakai byte hint
+    yang sama persis dengan yang ditulis ``_build_header``.
     """
     salt = os.urandom(SALT_SIZE)
     wrap_nonce = os.urandom(WRAP_NONCE_SIZE)
@@ -642,7 +607,7 @@ def _build_keyslot(
     kdf_params = _decode_argon2id_params(kdf_params_raw)
     kek = _derive_slot_kek(slot_type, secret, salt, KDF_ID_ARGON2ID, kdf_params)
     meta = _slot_meta(slot_type, KDF_ID_ARGON2ID, kdf_params_raw, salt, wrap_nonce)
-    wrapped = AESGCM(kek).encrypt(wrap_nonce, master_key, _slot_wrap_aad(file_id, meta))
+    wrapped = AESGCM(kek).encrypt(wrap_nonce, master_key, _slot_wrap_aad(file_id, hint_bytes, meta))
     return meta + wrapped
 
 
@@ -689,11 +654,15 @@ def _parse_header(fk) -> dict:
         raise ValueError("This vault flag isn't supported by this app version.")
 
     hint = None
+    hint_bytes = b""
     if flags & FLAG_HINT:
         hint_len = int.from_bytes(_read_exact(fk, 2), byteorder="big")
         if hint_len > MAX_HINT_LENGTH:
             raise ValueError("Invalid vault hint length; the file may be corrupted.")
-        hint = _read_exact(fk, hint_len).decode("utf-8", "replace")
+        # Simpan byte mentah: dipakai apa adanya untuk AAD wrap (hint terautentikasi)
+        # agar tidak bergantung pada round-trip decode/encode yang bisa lossy.
+        hint_bytes = _read_exact(fk, hint_len)
+        hint = hint_bytes.decode("utf-8", "replace")
 
     slot_count = _read_exact(fk, 1)[0]
     if not 1 <= slot_count <= MAX_KEYSLOTS:
@@ -730,16 +699,20 @@ def _parse_header(fk) -> dict:
         "chunk_size": chunk_size,
         "flags": flags,
         "hint": hint,
+        "hint_bytes": hint_bytes,
         "slots": slots,
         "header_end": fk.tell(),
     }
 
 
-def _recover_master_key(secret: str, file_id: bytes, slots: list[dict]) -> bytes | None:
+def _recover_master_key(
+    secret: str, file_id: bytes, hint_bytes: bytes, slots: list[dict]
+) -> bytes | None:
     """Coba credential terhadap tiap slot; kembalikan MK pada slot pertama yang cocok.
 
     Slot dicoba berurutan, jadi password benar di slot 0 hanya butuh satu derivasi
-    KDF. Hanya secret yang salah yang membayar derivasi semua slot.
+    KDF. Hanya secret yang salah yang membayar derivasi semua slot. ``hint_bytes``
+    (byte hint mentah dari header) ikut diautentikasi via AAD wrap.
     """
     for slot in slots:
         try:
@@ -749,7 +722,7 @@ def _recover_master_key(secret: str, file_id: bytes, slots: list[dict]) -> bytes
             master_key = AESGCM(kek).decrypt(
                 slot["wrap_nonce"],
                 slot["wrapped"],
-                _slot_wrap_aad(file_id, slot["meta"]),
+                _slot_wrap_aad(file_id, hint_bytes, slot["meta"]),
             )
         except (InvalidTag, ValueError):
             continue
@@ -1000,6 +973,116 @@ def _sanitize_virtual_name(name: str) -> str:
         return "Brankas"
 
 
+# ── Resume cache untuk konfirmasi overwrite ──────────────────────────────────────
+#
+# Saat membuka vault dan folder tujuan sudah ada, SELURUH arsip tetap didekripsi &
+# diverifikasi penuh (tag GCM tiap record, termasuk FINAL) SEBELUM user diminta
+# konfirmasi overwrite — invariant keamanan "jangan prompt sebelum terverifikasi
+# penuh" tidak berubah. Tapi alih-alih membuang tar plaintext yang sudah
+# terverifikasi lalu mendekripsi ulang saat user menekan "Replace", tar itu
+# disimpan sementara dan dipakai ulang. Jadi vault besar hanya didekripsi SEKALI.
+#
+# Asumsi konkurensi: hanya SATU operasi crypto berjalan pada satu waktu (dijamin
+# lapisan UI yang mengunci tab lain), jadi akses cache ini efektif single-thread.
+# Entri yatim (mis. user menutup app saat dialog terbuka) dibersihkan oleh sweep
+# ``._dec_*`` di buka_brankas berdasarkan umur (OLD_TEMP_MAX_AGE_SECONDS).
+
+
+class _PendingExtract:
+    """Tar plaintext terverifikasi yang menunggu konfirmasi overwrite."""
+
+    __slots__ = ("temp_ext_dir", "temp_tar_path", "nama_folder", "vault_size", "vault_mtime")
+
+    def __init__(self, temp_ext_dir, temp_tar_path, nama_folder, vault_size, vault_mtime):
+        self.temp_ext_dir = temp_ext_dir
+        self.temp_tar_path = temp_tar_path
+        self.nama_folder = nama_folder
+        self.vault_size = vault_size
+        self.vault_mtime = vault_mtime
+
+
+_pending_extracts: dict[str, _PendingExtract] = {}
+
+
+def _pending_key(locked_path) -> str:
+    return os.path.normcase(os.path.abspath(str(locked_path)))
+
+
+def _stat_signature(path: Path) -> tuple[int, int]:
+    st = path.stat()
+    return st.st_size, st.st_mtime_ns
+
+
+def _discard_pending(key: str) -> None:
+    """Buang entri pending dan bersihkan tar sementaranya (kalau masih ada)."""
+    handle = _pending_extracts.pop(key, None)
+    if handle is not None and handle.temp_ext_dir.exists():
+        _cleanup_temp_decrypt_dir(handle.temp_ext_dir)
+
+
+def cancel_pending_overwrite(locked_path) -> None:
+    """Buang hasil dekripsi terverifikasi yang menunggu konfirmasi overwrite.
+
+    Dipanggil UI saat user MENOLAK mengganti data lama (atau membatalkan), agar tar
+    sementara tidak menumpuk sampai sweep umur membersihkannya. Aman dipanggil walau
+    tidak ada yang tertunda.
+    """
+    _discard_pending(_pending_key(locked_path))
+
+
+def _try_resume_overwrite(
+    pkey: str,
+    target_path: Path,
+    progress_cb,
+    is_cancelled: Callable[[], bool] | None,
+) -> tuple[VaultStatus, str | None] | None:
+    """Lanjutkan ekstraksi dari tar terverifikasi bila ada (skip dekripsi ulang).
+
+    Return tuple hasil bila resume dipakai, atau ``None`` untuk jatuh ke alur
+    dekripsi normal (cache basi, file vault berubah, atau tar sementara hilang).
+    """
+    handle = _pending_extracts.get(pkey)
+    if handle is None:
+        return None
+
+    # Validasi kesegaran: vault tidak berubah & tar sementara masih ada. Kalau
+    # tidak, buang dan biarkan pemanggil mendekripsi ulang dari awal (selalu aman).
+    try:
+        signature = _stat_signature(target_path)
+    except OSError:
+        _discard_pending(pkey)
+        return None
+    if (
+        signature != (handle.vault_size, handle.vault_mtime)
+        or not handle.temp_tar_path.exists()
+        or not handle.temp_ext_dir.exists()
+    ):
+        _discard_pending(pkey)
+        return None
+
+    _pending_extracts.pop(pkey, None)
+    path_tujuan = target_path.parent / handle.nama_folder
+    try:
+        _extract_and_place_vault(
+            handle.temp_tar_path,
+            handle.temp_ext_dir,
+            handle.nama_folder,
+            path_tujuan,
+            progress_cb,
+            is_cancelled,
+        )
+        safe_cb(progress_cb, 1.0)
+        return VaultStatus.SUCCESS, handle.nama_folder
+    except InterruptedError:
+        return VaultStatus.CANCELLED, "Operation cancelled. No existing data was changed."
+    except Exception:
+        logger.exception("Gagal melanjutkan ekstraksi (resume overwrite).")
+        return VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE
+    finally:
+        if handle.temp_ext_dir.exists():
+            _cleanup_temp_decrypt_dir(handle.temp_ext_dir)
+
+
 def _buka_brankas_from_open_file(
     fk,
     target_path: Path,
@@ -1017,10 +1100,13 @@ def _buka_brankas_from_open_file(
 
     Security invariant: plaintext record hanya ditulis setelah tag AEAD record itu
     valid; prompt overwrite hanya setelah seluruh record (termasuk FINAL) valid;
-    data tujuan lama tidak disentuh sebelum tar terverifikasi penuh.
+    data tujuan lama tidak disentuh sebelum tar terverifikasi penuh. Saat overwrite
+    dibutuhkan, tar terverifikasi disimpan (``keep_temp``) untuk dipakai ulang oleh
+    konfirmasi "Replace" lewat _try_resume_overwrite — tidak ada dekripsi ganda.
     """
     base_dir = target_path.parent
     temp_ext_dir: Path | None = None
+    keep_temp = False  # True bila tar disimpan untuk resume konfirmasi overwrite
 
     try:
         try:
@@ -1039,7 +1125,9 @@ def _buka_brankas_from_open_file(
             )
 
         safe_cb(progress_cb, 0.02)
-        master_key = _recover_master_key(password, file_id, hdr["slots"])
+        master_key = _recover_master_key(
+            password, file_id, _hint_bytes_from_header(hdr), hdr["slots"]
+        )
         if master_key is None:
             return VaultStatus.WRONG_PASSWORD, None
 
@@ -1131,6 +1219,19 @@ def _buka_brankas_from_open_file(
 
         path_tujuan = base_dir / nama_folder
         if path_tujuan.exists() and not force:
+            # Arsip sudah terverifikasi PENUH di atas. Simpan tar sementara &
+            # tahan cleanup-nya supaya konfirmasi "Replace" bisa langsung
+            # mengekstrak tanpa mendekripsi ulang vault (lihat _try_resume_overwrite).
+            try:
+                size, mtime = _stat_signature(target_path)
+                pkey = _pending_key(target_path)
+                _discard_pending(pkey)  # buang pending lama untuk vault ini bila ada
+                _pending_extracts[pkey] = _PendingExtract(
+                    temp_ext_dir, temp_tar_path, nama_folder, size, mtime
+                )
+                keep_temp = True
+            except OSError:
+                keep_temp = False  # gagal simpan → biarkan dibersihkan, retry dekripsi ulang
             return VaultStatus.OVERWRITE_NEEDED, nama_folder
 
         _extract_and_place_vault(
@@ -1154,11 +1255,13 @@ def _buka_brankas_from_open_file(
             VaultStatus.CANCELLED,
             "Operation cancelled. No existing data was changed.",
         )
-    except Exception as exc:
+    except Exception:
         logger.exception("Gagal membuka brankas envelope.")
-        return VaultStatus.ERROR, f"An internal error occurred: {str(exc)}"
+        return VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE
     finally:
-        if temp_ext_dir and temp_ext_dir.exists():
+        # keep_temp=True hanya saat tar disimpan untuk resume konfirmasi overwrite;
+        # cleanup-nya jadi tanggung jawab _try_resume_overwrite / cancel_pending_overwrite.
+        if temp_ext_dir and temp_ext_dir.exists() and not keep_temp:
             _cleanup_temp_decrypt_dir(temp_ext_dir)
 
 
@@ -1258,7 +1361,14 @@ def kunci_brankas(
                 flags |= FLAG_HINT
 
         slots = [
-            _build_keyslot(master_key, file_id, SLOT_TYPE_PASSWORD, password, kdf_params=kdf_params)
+            _build_keyslot(
+                master_key,
+                file_id,
+                SLOT_TYPE_PASSWORD,
+                password,
+                kdf_params=kdf_params,
+                hint_bytes=hint_bytes,
+            )
         ]
         if recovery_secret and recovery_secret.strip():
             rtype = (
@@ -1267,7 +1377,14 @@ def kunci_brankas(
                 else SLOT_TYPE_RECOVERY_PASSPHRASE
             )
             slots.append(
-                _build_keyslot(master_key, file_id, rtype, recovery_secret, kdf_params=kdf_params)
+                _build_keyslot(
+                    master_key,
+                    file_id,
+                    rtype,
+                    recovery_secret,
+                    kdf_params=kdf_params,
+                    hint_bytes=hint_bytes,
+                )
             )
 
         header = _build_header(file_id, CHUNK_SIZE, flags, hint_bytes, slots)
@@ -1368,12 +1485,13 @@ def kunci_brankas(
             VaultStatus.CANCELLED,
             "Operation cancelled. No existing data was changed.",
         )
-    except Exception as exc:
+    except Exception:
+        logger.exception("Gagal mengunci brankas karena error tak terduga.")
         if target_path.exists():
             target_path.unlink(missing_ok=True)
         if backup_dibuat and backup_path and backup_path.exists():
             backup_path.replace(target_path)
-        return VaultStatus.ERROR, str(exc)
+        return VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE
 
 
 # ============================================================================
@@ -1399,6 +1517,18 @@ def buka_brankas(
     is_cancelled: Callable[[], bool] = None,
 ) -> tuple[VaultStatus, str | None]:
     target_path = Path(locked_path)
+    pkey = _pending_key(target_path)
+
+    # Konfirmasi "Replace": kalau ada tar terverifikasi yang tertahan untuk vault
+    # ini, ekstrak langsung tanpa mendekripsi ulang. Kalau cache basi/hilang,
+    # _try_resume_overwrite mengembalikan None dan kita lanjut dekripsi normal.
+    if force:
+        resumed = _try_resume_overwrite(pkey, target_path, progress_cb, is_cancelled)
+        if resumed is not None:
+            return resumed
+    else:
+        # Pembukaan baru (non-force) menggantikan konfirmasi yang menggantung.
+        _discard_pending(pkey)
 
     try:
         total_size = target_path.stat().st_size
@@ -1465,11 +1595,11 @@ def buka_brankas(
                 is_cancelled,
             )
 
-    except Exception as exc:
+    except Exception:
         logger.exception(
             "Gagal membuka brankas karena error internal saat proses dekripsi/ekstraksi."
         )
-        return VaultStatus.ERROR, f"An internal error occurred: {str(exc)}"
+        return VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE
 
 
 def _parse_virtual_folder_name(decrypted_first: bytes) -> tuple[str, int]:
@@ -1591,11 +1721,13 @@ def _load_for_management(
         return VaultStatus.ERROR, str(exc), None, None
     except FileNotFoundError:
         return VaultStatus.ERROR, "The vault file could not be found.", None, None
-    except Exception as exc:
+    except Exception:
         logger.exception("Gagal membaca header untuk manajemen.")
-        return VaultStatus.ERROR, str(exc), None, None
+        return VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE, None, None
 
-    master_key = _recover_master_key(secret, hdr["file_id"], hdr["slots"])
+    master_key = _recover_master_key(
+        secret, hdr["file_id"], _hint_bytes_from_header(hdr), hdr["slots"]
+    )
     if master_key is None:
         return VaultStatus.WRONG_PASSWORD, None, None, None
 
@@ -1603,9 +1735,13 @@ def _load_for_management(
 
 
 def _hint_bytes_from_header(hdr: dict) -> bytes:
-    if hdr["flags"] & FLAG_HINT and hdr["hint"] is not None:
-        return hdr["hint"].encode("utf-8")
-    return b""
+    """Byte hint mentah persis seperti tersimpan di header.
+
+    Dipakai untuk DUA hal yang harus konsisten byte-per-byte: menulis ulang header
+    (``_build_header``) dan mengikat hint ke AAD wrap (``_slot_wrap_aad``). Kalau
+    keduanya tidak identik, MK tidak akan bisa di-unwrap setelah header ditulis ulang.
+    """
+    return hdr.get("hint_bytes", b"")
 
 
 def _rewrite_header_full(
@@ -1638,12 +1774,12 @@ def _rewrite_header_full(
         os.replace(tmp, path)
         tmp = None
         return VaultStatus.SUCCESS, "Vault updated successfully."
-    except Exception as exc:
+    except Exception:
         logger.exception("Gagal menulis ulang header (full rewrite).")
         if tmp is not None:
             with contextlib.suppress(Exception):
                 tmp.unlink(missing_ok=True)
-        return VaultStatus.ERROR, str(exc)
+        return VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE
 
 
 def change_password(
@@ -1681,6 +1817,7 @@ def change_password(
         SLOT_TYPE_PASSWORD,
         new_password,
         kdf_params=hdr["slots"][pw_index]["kdf_params"],
+        hint_bytes=_hint_bytes_from_header(hdr),
     )
     new_header = _build_header(
         hdr["file_id"], hdr["chunk_size"], hdr["flags"], _hint_bytes_from_header(hdr), slot_bytes
@@ -1734,7 +1871,12 @@ def add_recovery_key(
     level_params = pw_slot["kdf_params"] if pw_slot else None
     rtype = SLOT_TYPE_RECOVERY_CODE if recovery_type == "code" else SLOT_TYPE_RECOVERY_PASSPHRASE
     new_slot = _build_keyslot(
-        master_key, hdr["file_id"], rtype, recovery_secret, kdf_params=level_params
+        master_key,
+        hdr["file_id"],
+        rtype,
+        recovery_secret,
+        kdf_params=level_params,
+        hint_bytes=_hint_bytes_from_header(hdr),
     )
     slot_bytes = [_slot_bytes(s) for s in hdr["slots"]] + [new_slot]
     new_header = _build_header(
