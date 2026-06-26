@@ -22,6 +22,7 @@ from ..styles import (
     CLR_BORDER,
     CLR_INSET,
     CLR_SUCCESS,
+    CLR_TEXT_MAIN,
     CLR_TEXT_MUTED,
     FONT_MONO,
 )
@@ -73,7 +74,7 @@ class TextResultCard(QFrame):
 
         self.btn_copy = QPushButton()
         register(self.btn_copy, "text.result.copy", " Copy to Clipboard")
-        self.btn_copy.setIcon(qta.icon("mdi6.content-copy", color="white"))
+        self.btn_copy.setIcon(qta.icon("mdi6.content-copy", color=CLR_TEXT_MAIN))
         self.btn_copy.setFixedHeight(36)
         self.btn_copy.setObjectName("BtnGen")
         self.btn_copy.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -87,7 +88,7 @@ class TextResultCard(QFrame):
 
         self.btn_qr = QPushButton()
         register(self.btn_qr, "text.result.qr", " QR")
-        self.btn_qr.setIcon(qta.icon("mdi6.qrcode", color="white"))
+        self.btn_qr.setIcon(qta.icon("mdi6.qrcode", color=CLR_TEXT_MAIN))
         self.btn_qr.setFixedHeight(36)
         self.btn_qr.setObjectName("BtnGen")
         self.btn_qr.setCursor(Qt.CursorShape.PointingHandCursor)

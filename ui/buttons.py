@@ -19,6 +19,7 @@ from .styles import (
     CLR_ACCENT,
     CLR_ACCENT_DK,
     CLR_BORDER,
+    CLR_CTA_TRACK,
     CLR_DANGER,
     CLR_HOVER_BG,
     CLR_INSET,
@@ -27,6 +28,7 @@ from .styles import (
     CLR_TEXT_DIM,
     CLR_TEXT_FAINT,
     CLR_TEXT_MAIN,
+    IS_LIGHT,
 )
 
 
@@ -188,8 +190,8 @@ class BigActionBtn(QPushButton):
                     x1:0, y1:0, x2:1, y2:0,
                     stop:0 {CLR_ACCENT_DK},
                     stop:{p:.4f} {CLR_ACCENT_DK},
-                    stop:{right_stop:.4f} {CLR_INSET},
-                    stop:1 {CLR_INSET}
+                    stop:{right_stop:.4f} {CLR_CTA_TRACK},
+                    stop:1 {CLR_CTA_TRACK}
                 );
                 border: none;
                 border-radius: 29px;
@@ -250,8 +252,9 @@ class BigActionBtn(QPushButton):
             self._original_blur = effect.blurRadius()
             self._original_y_offset = effect.yOffset()
 
-        # Angkat dengan bayangan gelap halus — tanpa glow/halo neon.
-        effect.setColor(QColor(8, 18, 22, 150))
+        # Angkat dengan bayangan gelap halus — tanpa glow/halo neon. Di light pakai
+        # bayangan teal-gelap beralpha rendah agar tak jadi halo pekat di atas putih.
+        effect.setColor(QColor(20, 70, 78, 70) if IS_LIGHT else QColor(8, 18, 22, 150))
         effect.setBlurRadius(34)
         effect.setYOffset(9)
 

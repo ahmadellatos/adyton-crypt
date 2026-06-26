@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 from core.vault import VaultStatus, generate_keyfile
 
 from ..i18n import register, tr
-from ..styles import CLR_ACCENT, CLR_BORDER, CLR_INSET, CLR_WARN
+from ..styles import CLR_ACCENT, CLR_BORDER, CLR_INSET, CLR_PANEL_SOFT, CLR_WARN
 from ..widgets import ElidedLabel, ToggleSwitch
 
 
@@ -49,7 +49,7 @@ class KeyfilePanel(QWidget):
         container.setObjectName("OptionsPanel")
         container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         container.setStyleSheet(
-            "QFrame#OptionsPanel { background: rgba(255, 255, 255, 0.04); border-radius: 12px; }"
+            f"QFrame#OptionsPanel {{ background: {CLR_PANEL_SOFT}; border-radius: 12px; }}"
         )
 
         outer = QVBoxLayout(self)

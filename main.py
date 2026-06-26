@@ -19,14 +19,8 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from core.paths import get_asset_path, get_data_dir
 from ui.app import AppBrankas
-from ui.constants import APP_AUMID, APP_NAME
+from ui.constants import APP_AUMID, APP_NAME, APP_ORG
 from ui.styles import load_stylesheet
-
-# =========================================================================
-# KONSTANTA APLIKASI
-# =========================================================================
-APP_ORG = "Adyton Security"
-
 
 # =========================================================================
 # SETUP FUNCTIONS
@@ -419,6 +413,8 @@ def run_full_app(app: QApplication, args: argparse.Namespace) -> int:
     logger.info(f"=== Memulai {APP_NAME} ===")
 
     window = AppBrankas()
+    # Beri window referensi server agar bisa melepas lock saat restart-untuk-tema.
+    window._ipc_server = ipc_server
 
     if ipc_server is not None:
         ipc_server.newConnection.connect(lambda: handle_wakeup(ipc_server, window))

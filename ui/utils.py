@@ -218,11 +218,18 @@ def apply_shadow(widget, blur_radius=20, y_offset=6, opacity=60):
     from PySide6.QtGui import QColor
     from PySide6.QtWidgets import QGraphicsDropShadowEffect
 
+    from .styles import IS_LIGHT
+
     shadow = QGraphicsDropShadowEffect()
     shadow.setBlurRadius(blur_radius)
     shadow.setXOffset(0)
     shadow.setYOffset(y_offset)
-    shadow.setColor(QColor(0, 0, 0, opacity))
+    # Light: bayangan biru-abu lembut beralpha lebih rendah (hitam pekat terlalu
+    # keras di atas permukaan terang). Dark: hitam halus seperti semula.
+    if IS_LIGHT:
+        shadow.setColor(QColor(45, 70, 80, min(opacity, 38)))
+    else:
+        shadow.setColor(QColor(0, 0, 0, opacity))
     widget.setGraphicsEffect(shadow)
 
 

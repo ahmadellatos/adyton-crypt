@@ -10,7 +10,7 @@ bahasa live untuk jendela ini).
 from __future__ import annotations
 
 import qtawesome as qta
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -50,6 +50,9 @@ from .widgets import MethodCard, ToggleSwitch, apply_shadow
 
 
 class SettingsWindow(QDialog):
+    # Diminta saat user klik "Restart now" (tema baru diterapkan via restart).
+    restart_requested = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.s = get_settings()
@@ -295,11 +298,33 @@ class SettingsWindow(QDialog):
         )
         self.combo_theme = self._combo()
         self.lbl_theme = self._label("settings.theme", "Theme", main=True)
-        self.lbl_theme_desc = self._label("settings.theme.desc", "Dark is recommended.")
-        lay.addLayout(self._row(self.lbl_theme, self.lbl_theme_desc, self.combo_theme))
-        self.combo_theme.currentIndexChanged.connect(
-            lambda *_: self.s.set_theme(str(self.combo_theme.currentData()))
+        self.lbl_theme_desc = self._label(
+            "settings.theme.desc", "Dark, Light, or follow your system."
         )
+        lay.addLayout(self._row(self.lbl_theme, self.lbl_theme_desc, self.combo_theme))
+        # Hint + tombol restart: tema diresolusi saat startup (banyak warna di-bake
+        # saat build widget/ikon), jadi tema baru berlaku setelah app dibuka ulang.
+        # Tombol "Restart now" menjadikannya sekali klik. Kotak ini hanya muncul saat
+        # tema terpilih beda dari yang sedang aktif.
+        self.theme_restart_box = QWidget()
+        rr = QHBoxLayout(self.theme_restart_box)
+        rr.setContentsMargins(0, 4, 0, 0)
+        rr.setSpacing(10)
+        self.lbl_theme_restart = self._label(
+            "settings.theme.restart", "Restart to apply the new theme."
+        )
+        self.lbl_theme_restart.setStyleSheet(
+            f"color: {CLR_WARN}; font-size: 11px; font-weight: 600; border:none;"
+        )
+        rr.addWidget(self.lbl_theme_restart, 1)
+        self.btn_restart = QPushButton(tr("settings.theme.restart_btn", "Restart now"))
+        self.btn_restart.setObjectName("BtnInlinePrimary")
+        self.btn_restart.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_restart.clicked.connect(lambda: self.restart_requested.emit())
+        rr.addWidget(self.btn_restart, 0)
+        self.theme_restart_box.setVisible(False)
+        lay.addWidget(self.theme_restart_box)
+        self.combo_theme.currentIndexChanged.connect(self._on_theme_changed)
 
         self.combo_lang = self._combo()
         self.lbl_lang = self._label("settings.language", "Language", main=True)
@@ -470,6 +495,16 @@ class SettingsWindow(QDialog):
         self.s.set_language(lang)
         i18n().set_language(lang)  # memicu _retranslate lewat sinyal
 
+    def _on_theme_changed(self, *_):
+        pref = str(self.combo_theme.currentData())
+        self.s.set_theme(pref)
+        # Tampilkan hint restart hanya bila tema terpilih beda dari yang sedang aktif
+        # (tema diresolusi sekali saat startup — lihat ui/styles.py).
+        import ui.styles as styles
+
+        needs_restart = styles.resolve_theme(pref) != styles.ACTIVE_THEME
+        self.theme_restart_box.setVisible(needs_restart)
+
     def _on_reset(self):
         self.s.reset_to_defaults()
         self._load_from_settings()
@@ -494,7 +529,11 @@ class SettingsWindow(QDialog):
         self.sw_recent.setChecked(self.s.recent_enabled())
         self.btn_clear_recent.setVisible(self.s.recent_enabled())
         self.sw_tray_notif.setChecked(self.s.tray_notif())
-        self._fill_combo(self.combo_theme, [("dark", "Dark"), ("system", "System")], self.s.theme())
+        self._fill_combo(
+            self.combo_theme,
+            [("dark", "Dark"), ("light", "Light"), ("system", "System")],
+            self.s.theme(),
+        )
         self._fill_combo(
             self.combo_lang, [("en", "English"), ("id", "Indonesia")], self.s.language()
         )
@@ -516,6 +555,7 @@ class SettingsWindow(QDialog):
             meta = getattr(lbl, "_i18n", None)
             if meta:
                 lbl.setText(tr(meta[0], meta[1]))
+        self.btn_restart.setText(tr("settings.theme.restart_btn", "Restart now"))
         self.card_interactive.set_texts(
             tr("settings.kdf.interactive", "Interactive"),
             tr("settings.kdf.interactive.desc", "Fastest unlock. Everyday use."),
@@ -560,6 +600,7 @@ class SettingsWindow(QDialog):
             self.combo_theme,
             [
                 ("dark", tr("settings.theme.dark", "Dark")),
+                ("light", tr("settings.theme.light", "Light")),
                 ("system", tr("settings.theme.system", "System")),
             ],
             self.s.theme(),

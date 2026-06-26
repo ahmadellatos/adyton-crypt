@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
+from .styles import CLR_TEXT_DIM, CLR_TEXT_MAIN
+
 
 class HoverMenuWidget(QWidget):
     def __init__(self, text, icon_name, icon_color, text_color, action_ref, parent=None):
@@ -114,8 +116,12 @@ class AccessibleCenteredMenu(QMenu):
 
 
 class CenteredMenuAction(QWidgetAction):
-    def __init__(self, text, icon_name, icon_color="white", text_color="white", parent=None):
+    def __init__(self, text, icon_name, icon_color=None, text_color=None, parent=None):
         super().__init__(parent)
+        # Default bertema (token diresolusi saat import): ikon muted, teks utama —
+        # putih murni dulu tak terbaca di menu putih (tema light).
+        icon_color = icon_color if icon_color is not None else CLR_TEXT_DIM
+        text_color = text_color if text_color is not None else CLR_TEXT_MAIN
         self.parent_menu = parent
         self.w = HoverMenuWidget(text, icon_name, icon_color, text_color, self, parent)
         self.setDefaultWidget(self.w)

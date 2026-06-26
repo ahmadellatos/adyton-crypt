@@ -39,6 +39,8 @@ from ..styles import (
     CLR_TEXT_DIM,
     CLR_TEXT_MAIN,
     CLR_WARN,
+    accent_color,
+    overlay_color,
 )
 from ..utils import format_file_size, path_size
 from ..widgets import (
@@ -243,19 +245,19 @@ class TargetListDelegate(QStyledItemDelegate):
 
         if is_selected:
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(79, 191, 201, 30))
+            painter.setBrush(accent_color(30))
             painter.drawRoundedRect(row, radius, radius)
 
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.setPen(QPen(QColor(CLR_ACCENT), 1.5))
             painter.drawRoundedRect(row.adjusted(1, 1, -1, -1), radius - 1, radius - 1)
         elif is_hovered:
-            painter.setPen(QPen(QColor(255, 255, 255, 30), 1))
-            painter.setBrush(QColor(255, 255, 255, 20))
+            painter.setPen(QPen(overlay_color(30), 1))
+            painter.setBrush(overlay_color(20))
             painter.drawRoundedRect(row.adjusted(0, 0, -1, -1), radius, radius)
         else:
-            painter.setPen(QPen(QColor(255, 255, 255, 16), 1))
-            painter.setBrush(QColor(255, 255, 255, 10))
+            painter.setPen(QPen(overlay_color(16), 1))
+            painter.setBrush(overlay_color(10))
             painter.drawRoundedRect(row.adjusted(0, 0, -1, -1), radius, radius)
 
         pad_x = 14
@@ -267,7 +269,7 @@ class TargetListDelegate(QStyledItemDelegate):
         badge_x = content.left()
         badge_y = content.top() + (content.height() - badge_size) // 2
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(79, 191, 201, 40) if is_selected else QColor(255, 255, 255, 16))
+        painter.setBrush(accent_color(40) if is_selected else overlay_color(16))
         painter.drawRoundedRect(badge_x, badge_y, badge_size, badge_size, 10, 10)
 
         icon_size = 22
@@ -445,7 +447,7 @@ class DropZoneLock(QWidget):
 
         self.btn_empty_browse = QPushButton()
         register(self.btn_empty_browse, "dzl.empty.browse", " Choose Target")
-        self.btn_empty_browse.setIcon(qta.icon("mdi6.folder-plus-outline", color="white"))
+        self.btn_empty_browse.setIcon(qta.icon("mdi6.folder-plus-outline", color=CLR_TEXT_MAIN))
         self.btn_empty_browse.setObjectName("BtnBrowseLg")
         self.btn_empty_browse.setFixedSize(220, 42)
         self.btn_empty_browse.setCursor(Qt.CursorShape.PointingHandCursor)

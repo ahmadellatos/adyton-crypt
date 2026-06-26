@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from .i18n import register, tr
-from .styles import CLR_ACCENT, CLR_TEXT_MUTED
+from .styles import CLR_ACCENT, CLR_TEXT_MAIN, CLR_TEXT_MUTED
 from .widgets import ScrimDialogMixin, apply_shadow
 
 # ─── Kapasitas ────────────────────────────────────────────────────────────────
@@ -161,7 +161,7 @@ class QRShareDialog(ScrimDialogMixin, QDialog):
 
         self.btn_save = QPushButton()
         register(self.btn_save, "qr.save", " Save PNG")
-        self.btn_save.setIcon(qta.icon("mdi6.download-outline", color="white"))
+        self.btn_save.setIcon(qta.icon("mdi6.download-outline", color=CLR_TEXT_MAIN))
         self.btn_save.setObjectName("BtnDialogCancel")
         self.btn_save.setFixedHeight(42)
         self.btn_save.setCursor(Qt.CursorShape.PointingHandCursor)

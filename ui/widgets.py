@@ -40,6 +40,7 @@ from .styles import (
     CLR_HOVER_BG,
     CLR_INPUT_BORDER,
     CLR_INSET,
+    CLR_PANEL_SOFT,
     CLR_SUCCESS,
     CLR_SUCCESS_BG,
     CLR_TEXT_DIM,
@@ -49,6 +50,8 @@ from .styles import (
     CLR_WARN,
     CLR_WARN_BG,
     CLR_WINDOW,
+    accent_color,
+    overlay_color,
 )
 from .utils import apply_shadow
 
@@ -61,7 +64,7 @@ def make_generator_button() -> QPushButton:
 
     btn = QPushButton()
     register(btn, "generator", " Generator")
-    btn.setIcon(qta.icon("mdi6.creation", color="white"))
+    btn.setIcon(qta.icon("mdi6.creation", color=CLR_TEXT_MAIN))
     btn.setFixedHeight(36)
     btn.setObjectName("BtnGen")
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -193,7 +196,7 @@ class MethodCard(QAbstractButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
-        bg = QColor(79, 191, 201, 26) if checked else QColor(255, 255, 255, 5)
+        bg = accent_color(26) if checked else overlay_color(5)
         painter.setBrush(bg)
         painter.setPen(QPen(QColor(CLR_ACCENT if checked else CLR_BORDER), 1.5))
         painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 11, 11)
@@ -219,7 +222,7 @@ def make_recovery_info_box(
     box.setObjectName("RecoveryInfoBox")
     box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
     box.setStyleSheet(
-        "QFrame#RecoveryInfoBox { background: rgba(255, 255, 255, 0.03);"
+        f"QFrame#RecoveryInfoBox {{ background: {CLR_PANEL_SOFT};"
         f" border: 1px solid {CLR_BORDER}; border-radius: 10px; }}"
     )
     lay = QHBoxLayout(box)
@@ -435,7 +438,7 @@ class HeroIconWidget(QWidget):
         self.setFixedSize(160, 110)
 
         lbl_folder = QLabel(self)
-        lbl_folder.setPixmap(qta.icon("mdi6.folder-outline", color="#2C474E").pixmap(90, 90))
+        lbl_folder.setPixmap(qta.icon("mdi6.folder-outline", color=CLR_INPUT_BORDER).pixmap(90, 90))
         lbl_folder.setGeometry(35, 10, 90, 90)
         lbl_folder.setAlignment(Qt.AlignmentFlag.AlignCenter)
 

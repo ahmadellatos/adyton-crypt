@@ -11,7 +11,14 @@ import pytest
 pytest.importorskip("PySide6")
 
 from core.crypto import generate_recovery_code
-from core.vault import VaultStatus, kunci_brankas
+from core.vault import (
+    VaultStatus,
+    add_keyfile,
+    generate_keyfile,
+    kunci_brankas,
+    remove_keyfile,
+    vault_info,
+)
 from ui.components.drop_zone_open import DropZoneOpen
 from ui.tab_manage import TabManage
 
@@ -26,6 +33,13 @@ def _make_vault(tmp_path, **kwargs) -> str:
     status, message = kunci_brankas([str(src)], str(vault), PASSWORD, **kwargs)
     assert status == VaultStatus.SUCCESS, message
     return str(vault)
+
+
+def _make_keyfile(tmp_path, name: str = "adyton.key") -> str:
+    path = tmp_path / name
+    status, message = generate_keyfile(str(path))
+    assert status == VaultStatus.SUCCESS, message
+    return str(path)
 
 
 def _make_unsupported_vault(tmp_path) -> str:
@@ -218,3 +232,165 @@ def test_manage_rejects_unselected_vault(qtbot):
     qtbot.addWidget(tab)
     tab.entry_current.setText("whatever")
     assert tab._guard() is False  # no vault selected
+
+
+# ── Keyfile / 2FA management (segmen ketiga) ────────────────────────────────
+
+
+@pytest.mark.qt
+def test_manage_keyfile_section_without_keyfile(qtbot, tmp_path):
+    """Vault non-2FA → halaman Keyfile menampilkan kontrol AKTIFKAN; baris keyfile
+    'current' di atas tetap tersembunyi (vault belum membutuhkan keyfile)."""
+    vault = _make_vault(tmp_path)
+    tab = TabManage()
+    qtbot.addWidget(tab)
+    tab.show()
+
+    tab.drop_zone.load_file(vault)
+    tab.stack.setCurrentIndex(2)  # halaman Keyfile
+    assert tab.kf_add_controls.isVisible() is True
+    assert tab.kf_remove_controls.isVisible() is False
+    assert tab.keyfile_row.isVisible() is False
+
+
+@pytest.mark.qt
+def test_manage_keyfile_section_with_keyfile(qtbot, tmp_path):
+    """Vault 2FA → halaman Keyfile menampilkan kontrol MATIKAN; baris keyfile
+    'current' muncul untuk menyuplai keyfile."""
+    keyfile = _make_keyfile(tmp_path)
+    vault = _make_vault(tmp_path, keyfile_path=keyfile)
+    assert vault_info(vault)["requires_keyfile"] is True
+    tab = TabManage()
+    qtbot.addWidget(tab)
+    tab.show()
+
+    tab.drop_zone.load_file(vault)
+    tab.stack.setCurrentIndex(2)
+    assert tab.kf_add_controls.isVisible() is False
+    assert tab.kf_remove_controls.isVisible() is True
+    assert tab.keyfile_row.isVisible() is True
+
+
+@pytest.mark.qt
+def test_manage_enable_keyfile_gating(qtbot, tmp_path):
+    """btn_kf_add aktif hanya setelah password + keyfile baru terpilih."""
+    keyfile = _make_keyfile(tmp_path)
+    vault = _make_vault(tmp_path)
+    tab = TabManage()
+    qtbot.addWidget(tab)
+
+    tab.drop_zone.load_file(vault)
+    tab.stack.setCurrentIndex(2)
+    assert tab.btn_kf_add.isEnabled() is False
+    tab.entry_current.setText(PASSWORD)
+    assert tab.btn_kf_add.isEnabled() is False  # password saja belum cukup
+    tab._add_keyfile_path = keyfile
+    tab._refresh_action_buttons()
+    assert tab.btn_kf_add.isEnabled() is True
+
+
+@pytest.mark.qt
+def test_manage_enable_keyfile_calls_core(qtbot, tmp_path, monkeypatch):
+    """_enable_keyfile menjalankan add_keyfile(vault, password, keyfile)."""
+    keyfile = _make_keyfile(tmp_path)
+    vault = _make_vault(tmp_path)
+    tab = TabManage()
+    qtbot.addWidget(tab)
+
+    tab.drop_zone.load_file(vault)
+    tab.entry_current.setText(PASSWORD)
+    tab._add_keyfile_path = keyfile
+
+    captured = {}
+    monkeypatch.setattr(
+        tab, "_run_action", lambda func, *a, **k: captured.update(func=func, args=a, kwargs=k)
+    )
+    tab._enable_keyfile()
+    assert captured["func"] is add_keyfile
+    assert captured["args"] == (vault, PASSWORD, keyfile)
+    assert captured["kwargs"] == {}
+
+
+@pytest.mark.qt
+def test_manage_enable_keyfile_blocked_without_keyfile(qtbot, tmp_path, monkeypatch):
+    """Tanpa keyfile baru terpilih, _enable_keyfile tidak menjalankan worker."""
+    vault = _make_vault(tmp_path)
+    tab = TabManage()
+    qtbot.addWidget(tab)
+
+    tab.drop_zone.load_file(vault)
+    tab.entry_current.setText(PASSWORD)
+
+    ran = []
+    monkeypatch.setattr(tab, "_run_action", lambda *a, **k: ran.append(True))
+    tab._enable_keyfile()  # _add_keyfile_path kosong
+    assert ran == []
+
+
+@pytest.mark.qt
+def test_manage_disable_keyfile_gating(qtbot, tmp_path):
+    """btn_kf_remove aktif hanya setelah password + keyfile 'current' terpilih."""
+    keyfile = _make_keyfile(tmp_path)
+    vault = _make_vault(tmp_path, keyfile_path=keyfile)
+    tab = TabManage()
+    qtbot.addWidget(tab)
+
+    tab.drop_zone.load_file(vault)
+    tab.stack.setCurrentIndex(2)
+    assert tab.btn_kf_remove.isEnabled() is False
+    tab.entry_current.setText(PASSWORD)
+    assert tab.btn_kf_remove.isEnabled() is False  # password saja belum cukup
+    tab._manage_keyfile_path = keyfile
+    tab._refresh_action_buttons()
+    assert tab.btn_kf_remove.isEnabled() is True
+
+
+@pytest.mark.qt
+def test_manage_disable_keyfile_calls_core(qtbot, tmp_path, monkeypatch):
+    """_disable_keyfile (setelah konfirmasi) menjalankan
+    remove_keyfile(vault, password, keyfile)."""
+    keyfile = _make_keyfile(tmp_path)
+    vault = _make_vault(tmp_path, keyfile_path=keyfile)
+    tab = TabManage()
+    qtbot.addWidget(tab)
+
+    tab.drop_zone.load_file(vault)
+    tab.entry_current.setText(PASSWORD)
+    tab._manage_keyfile_path = keyfile
+
+    # Lewati dialog konfirmasi (anggap Accepted).
+    from PySide6.QtWidgets import QDialog
+
+    import ui.tab_manage as tm
+
+    class _AcceptBox:
+        def __init__(self, *a, **k):
+            self.btn_yes = type("B", (), {"setText": lambda self, t: None})()
+
+        def exec(self):
+            return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(tm, "ModernMessageBox", _AcceptBox)
+    captured = {}
+    monkeypatch.setattr(
+        tab, "_run_action", lambda func, *a, **k: captured.update(func=func, args=a)
+    )
+    tab._disable_keyfile()
+    assert captured["func"] is remove_keyfile
+    assert captured["args"] == (vault, PASSWORD, keyfile)
+
+
+@pytest.mark.qt
+def test_manage_keyfile_roundtrip_core(tmp_path):
+    """Sanity core: aktifkan lalu matikan 2FA mengubah requires_keyfile bolak-balik."""
+    keyfile = _make_keyfile(tmp_path)
+    vault = _make_vault(tmp_path)
+    assert vault_info(vault)["requires_keyfile"] is False
+
+    status, _ = add_keyfile(vault, PASSWORD, keyfile)
+    assert status == VaultStatus.SUCCESS
+    assert vault_info(vault)["requires_keyfile"] is True
+
+    status, _ = remove_keyfile(vault, PASSWORD, keyfile)
+    assert status == VaultStatus.SUCCESS
+    assert vault_info(vault)["requires_keyfile"] is False

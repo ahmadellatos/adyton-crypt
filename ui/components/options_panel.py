@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QVBoxLayout,
 
 from ..dialogs import ModernMessageBox
 from ..i18n import register, tr
-from ..styles import CLR_WARN_DK
+from ..styles import CLR_PANEL_SOFT, CLR_WARN_DK
 from ..widgets import ToggleSwitch
 
 
@@ -66,7 +66,7 @@ class OptionsPanel(QWidget):
         container.setObjectName("OptionsPanel")
         container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         container.setStyleSheet(
-            "QFrame#OptionsPanel { background: rgba(255, 255, 255, 0.04);" " border-radius: 12px; }"
+            f"QFrame#OptionsPanel {{ background: {CLR_PANEL_SOFT}; border-radius: 12px; }}"
         )
 
         lay_opsi_hapus = QVBoxLayout(container)

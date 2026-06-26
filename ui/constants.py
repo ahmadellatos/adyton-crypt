@@ -5,5 +5,6 @@ Import dari sini, jangan didefinisikan ulang di modul lain.
 """
 
 APP_NAME = "Adyton Crypt"
+APP_ORG = "Adyton Security"
 APP_VERSION = "1.0.0"
 APP_AUMID = "AdytonSecurity.AdytonCrypt.App.1"

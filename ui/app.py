@@ -31,7 +31,7 @@ from qframelesswindow import FramelessMainWindow
 
 from core.paths import get_asset_path
 
-from .styles import CLR_ACCENT, CLR_TEXT_DIM, CLR_TEXT_MUTED
+from .styles import CLR_ACCENT, CLR_DANGER, CLR_SUCCESS, CLR_TEXT_DIM, CLR_TEXT_MUTED, CLR_WARN
 
 try:
     from winotify import Notification, audio
@@ -351,8 +351,72 @@ class AppBrankas(FramelessMainWindow):
     def _open_settings(self) -> None:
         from .settings_window import SettingsWindow
 
-        SettingsWindow(self).exec()
+        win = SettingsWindow(self)
+        win.restart_requested.connect(self._restart_app)
+        win.exec()
         self._refresh_autolock_from_settings()
+
+    def _restart_app(self) -> None:
+        """Relaunch aplikasi untuk menerapkan tema baru (sekali klik dari Settings).
+
+        Restart diperlukan karena tema diresolusi saat startup (lihat ui/styles.py).
+        Lepas single-instance lock (QLocalServer) DULU agar instance baru tidak
+        diteruskan ke instance ini, spawn proses baru, lalu keluar.
+        """
+        import sys
+
+        from PySide6.QtCore import QProcess
+
+        if self._is_busy():
+            self._restart_blocked_notice(
+                tr("restart.busy.title", "Operation in Progress"),
+                tr(
+                    "restart.busy.msg",
+                    "Adyton is currently encrypting or decrypting a file.\n\n"
+                    "Wait for it to finish before restarting.",
+                ),
+            )
+            return
+
+        # Lepas IPC lock; tanpa ini instance baru akan mendeteksi instance ini dan
+        # hanya meneruskan argumen lalu keluar (tak ada app yang benar-benar restart).
+        srv = getattr(self, "_ipc_server", None)
+        if srv is not None:
+            with contextlib.suppress(Exception):
+                srv.close()
+
+        frozen = getattr(sys, "frozen", False)
+        arguments = sys.argv[1:] if frozen else sys.argv
+        started = QProcess.startDetached(sys.executable, arguments)
+        if not started:
+            logger.error("Restart gagal: tidak bisa menjalankan instance baru.")
+            self._restart_blocked_notice(
+                tr("restart.failed.title", "Couldn't restart"),
+                tr(
+                    "restart.failed.msg",
+                    "Adyton couldn't relaunch itself. Please close and reopen the app "
+                    "to apply the new theme.",
+                ),
+            )
+            return
+
+        logger.info("Restart: instance baru dijalankan, menutup instance ini.")
+        self._quitting = True
+        QApplication.instance().quit()
+
+    def _restart_blocked_notice(self, title: str, message: str) -> None:
+        self.showNormal()
+        self.activateWindow()
+        dialog = ModernMessageBox(
+            title=title,
+            message=message,
+            icon_name="mdi6.alert-octagon-outline",
+            icon_color=CLR_DANGER,
+            parent=self,
+        )
+        dialog.btn_yes.setText(tr("common.gotit", "Got it"))
+        dialog.btn_cancel.hide()
+        dialog.exec()
 
     def _on_settings_changed(self, key: str) -> None:
         if key == "*" or key.startswith("privacy/auto_lock"):
@@ -454,7 +518,10 @@ class AppBrankas(FramelessMainWindow):
         tray_menu.addAction(act_intro)
 
         act_quit = CenteredMenuAction(
-            tr("tray.quit", "Quit Completely"), "mdi6.power", icon_color="#E89089", parent=tray_menu
+            tr("tray.quit", "Quit Completely"),
+            "mdi6.power",
+            icon_color=CLR_DANGER,
+            parent=tray_menu,
         )
         act_quit.triggered.connect(self._quit_sepenuhnya)
         tray_menu.addAction(act_quit)
@@ -532,10 +599,10 @@ class AppBrankas(FramelessMainWindow):
         colors = {
             "idle": CLR_ACCENT,
             "ready": CLR_ACCENT,
-            "busy": "#E8A855",
-            "success": "#86CBA3",
-            "warn": "#E8A855",
-            "error": "#E89089",
+            "busy": CLR_WARN,
+            "success": CLR_SUCCESS,
+            "warn": CLR_WARN,
+            "error": CLR_DANGER,
         }
         icons = {
             "idle": "mdi6.shield-check-outline",
@@ -608,7 +675,7 @@ class AppBrankas(FramelessMainWindow):
                     "Please wait for it to finish, or cancel the operation first.",
                 ),
                 icon_name="mdi6.alert-octagon-outline",
-                icon_color="#E89089",
+                icon_color=CLR_DANGER,
                 parent=self,
             )
             dialog.btn_yes.setText(tr("common.gotit", "Got it"))

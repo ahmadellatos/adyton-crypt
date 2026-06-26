@@ -112,7 +112,7 @@ class DropZoneOpen(QWidget):
 
         self.btn_browse_center = QPushButton()
         register(self.btn_browse_center, "dz.empty.browse", " Choose Vault File")
-        self.btn_browse_center.setIcon(qta.icon("mdi6.folder-open-outline", color="white"))
+        self.btn_browse_center.setIcon(qta.icon("mdi6.folder-open-outline", color=CLR_TEXT_MAIN))
         self.btn_browse_center.setFixedSize(220, 42)
         self.btn_browse_center.setObjectName("BtnBrowseLg")
         self.btn_browse_center.setCursor(Qt.CursorShape.PointingHandCursor)

@@ -23,6 +23,7 @@ from ..i18n import register, tr
 from ..styles import (
     CLR_ACCENT,
     CLR_BORDER,
+    CLR_CANVAS,
     CLR_DANGER,
     CLR_INSET,
     CLR_TEXT_MAIN,
@@ -55,7 +56,7 @@ class TextInputCard(QFrame):
         # ── Header ────────────────────────────────────────────────────────────
         self.btn_paste = QPushButton()
         register(self.btn_paste, "text.input.paste", " Paste")
-        self.btn_paste.setIcon(qta.icon("mdi6.clipboard-arrow-down-outline", color="white"))
+        self.btn_paste.setIcon(qta.icon("mdi6.clipboard-arrow-down-outline", color=CLR_TEXT_MAIN))
         self.btn_paste.setFixedHeight(36)
         self.btn_paste.setObjectName("BtnGen")
         self.btn_paste.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -100,7 +101,7 @@ class TextInputCard(QFrame):
             }}
             QTextEdit:focus {{
                 border: 1.5px solid {CLR_ACCENT};
-                background-color: #0E1B21;
+                background-color: {CLR_CANVAS};
             }}
         """)
 

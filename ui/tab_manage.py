@@ -27,8 +27,11 @@ from PySide6.QtWidgets import (
 from core.crypto import generate_recovery_code
 from core.vault import (
     VaultStatus,
+    add_keyfile,
     add_recovery_key,
     change_password,
+    generate_keyfile,
+    remove_keyfile,
     remove_recovery_key,
     vault_info,
 )
@@ -64,6 +67,8 @@ class TabManage(QWidget):
         self._vault_path: str | None = None
         self._info: dict = {}
         self._manage_keyfile_path = ""
+        # Keyfile baru yang akan dipasang saat mengaktifkan 2FA (halaman Keyfile).
+        self._add_keyfile_path = ""
         # Sibuk (operasi berjalan) — precondition vault dihitung langsung dari
         # _vault_path + _info di _refresh_action_buttons.
         self._busy = False
@@ -197,16 +202,21 @@ class TabManage(QWidget):
         seg.setContentsMargins(3, 3, 3, 3)
         seg.setSpacing(3)
         self.btn_seg_pw = QPushButton()
-        register(self.btn_seg_pw, "manage.seg.pw", " Change password")
+        register(self.btn_seg_pw, "manage.seg.pw", " Password")
         self.btn_seg_pw.setIcon(
             qta.icon("mdi6.lock-outline", color=CLR_TEXT_DIM, color_on=CLR_ACCENT)
         )
         self.btn_seg_rec = QPushButton()
-        register(self.btn_seg_rec, "manage.seg.rec", " Recovery key")
+        register(self.btn_seg_rec, "manage.seg.rec", " Recovery")
         self.btn_seg_rec.setIcon(
             qta.icon("mdi6.key-outline", color=CLR_TEXT_DIM, color_on=CLR_ACCENT)
         )
-        for b in (self.btn_seg_pw, self.btn_seg_rec):
+        self.btn_seg_kf = QPushButton()
+        register(self.btn_seg_kf, "manage.seg.kf", " Keyfile")
+        self.btn_seg_kf.setIcon(
+            qta.icon("mdi6.key-chain-variant", color=CLR_TEXT_DIM, color_on=CLR_ACCENT)
+        )
+        for b in (self.btn_seg_pw, self.btn_seg_rec, self.btn_seg_kf):
             b.setCheckable(True)
             b.setObjectName("TabBtn")
             b.setIconSize(QSize(16, 16))
@@ -217,6 +227,7 @@ class TabManage(QWidget):
         self._seg_group.setExclusive(True)
         self._seg_group.addButton(self.btn_seg_pw, 0)
         self._seg_group.addButton(self.btn_seg_rec, 1)
+        self._seg_group.addButton(self.btn_seg_kf, 2)
         self.btn_seg_pw.setChecked(True)
         lay.addSpacing(2)
         lay.addWidget(seg_container)
@@ -224,6 +235,7 @@ class TabManage(QWidget):
         self.stack = QStackedWidget()
         self.stack.addWidget(self._build_page_password())
         self.stack.addWidget(self._build_page_recovery())
+        self.stack.addWidget(self._build_page_keyfile())
         # Stack mengikuti tinggi halaman AKTIF (bukan halaman tertinggi) supaya
         # card menyusut saat aksi "Recovery key" yang pendek dipilih.
         self.stack.currentChanged.connect(self._sync_stack_height)
@@ -389,6 +401,182 @@ class TabManage(QWidget):
         self.card_pass.clicked.connect(lambda: self._select_method(_MODE_PASSPHRASE))
         return page
 
+    def _build_page_keyfile(self) -> QWidget:
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 8, 0, 0)
+        lay.setSpacing(10)
+
+        # === Kasus AKTIFKAN 2FA (vault belum dilindungi keyfile) ===
+        self.kf_add_controls = QWidget()
+        add_lay = QVBoxLayout(self.kf_add_controls)
+        add_lay.setContentsMargins(0, 0, 0, 0)
+        add_lay.setSpacing(12)
+
+        add_lay.addWidget(
+            self._build_keyfile_warn_box(
+                "manage.keyfile.add.warn",
+                "You'll need this exact file plus your password every time you open this "
+                "vault. Keep a backup — lose the keyfile and only your recovery key can "
+                "get you in.",
+            )
+        )
+
+        # Pemilih keyfile baru (label + Choose / Generate) — gaya inset sama dengan
+        # baris keyfile "current" di atas.
+        sel = QFrame()
+        sel.setObjectName("ManageKeyfileBox")
+        sel.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        sel.setStyleSheet(
+            f"QFrame#ManageKeyfileBox {{ background-color: {CLR_INSET};"
+            f" border: 1px solid {CLR_BORDER}; border-radius: 10px; }}"
+        )
+        sel_lay = QVBoxLayout(sel)
+        sel_lay.setContentsMargins(14, 10, 14, 10)
+        sel_lay.setSpacing(8)
+        file_row = QHBoxLayout()
+        file_row.setSpacing(10)
+        icon = QLabel()
+        icon.setPixmap(qta.icon("mdi6.key-chain-variant", color=CLR_ACCENT).pixmap(16, 16))
+        file_row.addWidget(icon, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.lbl_add_keyfile = ElidedLabel(tr("manage.keyfile.add.none", "No keyfile selected"))
+        self.lbl_add_keyfile.setObjectName("MutedText")
+        file_row.addWidget(self.lbl_add_keyfile, 1)
+        sel_lay.addLayout(file_row)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
+        self.btn_kf_choose = QPushButton()
+        register(self.btn_kf_choose, "manage.keyfile.add.choose", "Choose file…")
+        self.btn_kf_choose.setObjectName("BtnInlineSecondary")
+        self.btn_kf_choose.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_kf_choose.clicked.connect(self._choose_add_keyfile)
+        btn_row.addWidget(self.btn_kf_choose)
+        self.btn_kf_generate = QPushButton()
+        register(self.btn_kf_generate, "manage.keyfile.add.generate", "Generate…")
+        self.btn_kf_generate.setObjectName("BtnInlineSecondary")
+        self.btn_kf_generate.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_kf_generate.clicked.connect(self._generate_add_keyfile)
+        btn_row.addWidget(self.btn_kf_generate)
+        btn_row.addStretch(1)
+        sel_lay.addLayout(btn_row)
+        add_lay.addWidget(sel)
+
+        kf_note = QLabel()
+        kf_note.setObjectName("MutedText")
+        kf_note.setWordWrap(True)
+        register(
+            kf_note,
+            "manage.keyfile.add.note",
+            "Enabling 2FA needs your password (a recovery key won't work here).",
+        )
+        add_lay.addWidget(kf_note)
+
+        self.btn_kf_add = QPushButton()
+        register(self.btn_kf_add, "manage.keyfile.add.btn", "Enable Keyfile (2FA)")
+        self.btn_kf_add.setObjectName("BtnInlinePrimary")
+        self.btn_kf_add.setFixedHeight(40)
+        self.btn_kf_add.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_lay.addWidget(self.btn_kf_add)
+        lay.addWidget(self.kf_add_controls)
+
+        # === Kasus MATIKAN 2FA (vault sudah dilindungi keyfile) ===
+        self.kf_remove_controls = QWidget()
+        rem_lay = QVBoxLayout(self.kf_remove_controls)
+        rem_lay.setContentsMargins(0, 0, 0, 0)
+        rem_lay.setSpacing(10)
+        self.lbl_kf_state = QLabel()
+        self.lbl_kf_state.setObjectName("OptionDesc")
+        self.lbl_kf_state.setWordWrap(True)
+        register(
+            self.lbl_kf_state,
+            "manage.keyfile.remove.state",
+            "This vault is protected by a keyfile (2FA).",
+        )
+        rem_lay.addWidget(self.lbl_kf_state)
+        kf_rem_note = QLabel()
+        kf_rem_note.setObjectName("MutedText")
+        kf_rem_note.setWordWrap(True)
+        register(
+            kf_rem_note,
+            "manage.keyfile.remove.note",
+            "Removing it needs your password and the current keyfile selected above.",
+        )
+        rem_lay.addWidget(kf_rem_note)
+        self.btn_kf_remove = QPushButton()
+        register(self.btn_kf_remove, "manage.keyfile.remove.btn", "Remove Keyfile (2FA)")
+        self.btn_kf_remove.setObjectName("BtnInlineSecondary")
+        self.btn_kf_remove.setFixedHeight(40)
+        self.btn_kf_remove.setCursor(Qt.CursorShape.PointingHandCursor)
+        rem_lay.addWidget(self.btn_kf_remove)
+        lay.addWidget(self.kf_remove_controls)
+
+        # Default: tampilkan kontrol "aktifkan" (analog halaman recovery), hapus
+        # disembunyikan sampai vault 2FA termuat (_update_keyfile_section).
+        self.kf_remove_controls.hide()
+        return page
+
+    def _build_keyfile_warn_box(self, key: str, default: str) -> QFrame:
+        box = QFrame()
+        box.setObjectName("KeyfileInfoBox")
+        box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        box.setStyleSheet(
+            f"QFrame#KeyfileInfoBox {{ background-color: {CLR_INSET};"
+            f" border: 1px solid {CLR_BORDER}; border-radius: 10px; }}"
+        )
+        lay = QHBoxLayout(box)
+        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setSpacing(10)
+        icon = QLabel()
+        icon.setPixmap(qta.icon("mdi6.alert-outline", color=CLR_WARN).pixmap(16, 16))
+        lay.addWidget(icon, 0, Qt.AlignmentFlag.AlignTop)
+        txt = QLabel()
+        txt.setObjectName("OptionDesc")
+        txt.setWordWrap(True)
+        register(txt, key, default)
+        lay.addWidget(txt, 1)
+        return box
+
+    def _choose_add_keyfile(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("manage.keyfile.add.dialog", "Choose keyfile"), "", ""
+        )
+        if path:
+            self._add_keyfile_path = path
+            self.lbl_add_keyfile.setText(os.path.basename(path))
+            self._refresh_action_buttons()
+
+    def _generate_add_keyfile(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            tr("keyfile.generate.dialog", "Create keyfile"),
+            "adyton.key",
+            tr("keyfile.generate.filter", "Keyfile (*.key)"),
+        )
+        if not path:
+            return
+        status, message = generate_keyfile(path)
+        if status == VaultStatus.SUCCESS:
+            self._add_keyfile_path = path
+            self.lbl_add_keyfile.setText(os.path.basename(path))
+            self._refresh_action_buttons()
+            self.notif.show_msg("ok", f" {message}", 6000)
+        else:
+            self.notif.show_msg(
+                "err", message or tr("manage.fail", "Couldn't update the vault."), 6000
+            )
+
+    def _reset_add_keyfile(self):
+        self._add_keyfile_path = ""
+        if hasattr(self, "lbl_add_keyfile"):
+            self.lbl_add_keyfile.setText(tr("manage.keyfile.add.none", "No keyfile selected"))
+
+    def _update_keyfile_section(self, requires_keyfile: bool):
+        # Sudah 2FA → tawarkan matikan. Belum → tampilkan pilihan aktifkan.
+        self.kf_add_controls.setVisible(not requires_keyfile)
+        self.kf_remove_controls.setVisible(requires_keyfile)
+        self._sync_stack_height(self.stack.currentIndex())
+
     def _select_method(self, method: str):
         self._rec_method = method
         self.card_gen.set_selected(method == _MODE_CODE)
@@ -421,6 +609,8 @@ class TabManage(QWidget):
         self.btn_change.clicked.connect(self._change_password)
         self.btn_add.clicked.connect(self._add_recovery)
         self.btn_remove.clicked.connect(self._remove_recovery)
+        self.btn_kf_add.clicked.connect(self._enable_keyfile)
+        self.btn_kf_remove.clicked.connect(self._disable_keyfile)
         # Gate tombol aksi: aktif hanya saat precondition + validitas terpenuhi
         # (analog Lock Now / Open Vault / Encrypt Text).
         self.form.valid_state_changed.connect(lambda *_: self._refresh_action_buttons())
@@ -434,6 +624,7 @@ class TabManage(QWidget):
         self.form.reset()
         self.entry_rec_pass.clear()
         self._reset_manage_keyfile()
+        self._reset_add_keyfile()
         if not path or not self.drop_zone.can_open_file():
             self.lbl_info.setText(tr("manage.select", "Select a vault file to manage."))
             # Biarkan kontrol tetap interaktif (input bisa diklik) walau belum ada
@@ -490,6 +681,7 @@ class TabManage(QWidget):
         self.keyfile_row.setVisible(self._info.get("requires_keyfile", False))
         self.drop_zone.set_verification_state("pending", tr("manage.ready", "Ready to manage"))
         self._update_recovery_section(has_recovery)
+        self._update_keyfile_section(self._info.get("requires_keyfile", False))
         self.status_changed.emit(
             tr("manage.ready", "Ready to manage"),
             tr("manage.ready.sub", "Enter the current password"),
@@ -512,10 +704,13 @@ class TabManage(QWidget):
             self.btn_manage_keyfile,
             self.btn_seg_pw,
             self.btn_seg_rec,
+            self.btn_seg_kf,
             self.form,
             self.card_gen,
             self.card_pass,
             self.entry_rec_pass,
+            self.btn_kf_choose,
+            self.btn_kf_generate,
         ):
             w.setEnabled(enabled)
         self._refresh_action_buttons()
@@ -533,6 +728,10 @@ class TabManage(QWidget):
         rec_ok = self._rec_method == _MODE_CODE or bool(self.entry_rec_pass.text().strip())
         self.btn_add.setEnabled(ready and rec_ok)
         self.btn_remove.setEnabled(ready)
+        # Keyfile: aktifkan butuh keyfile baru terpilih; matikan butuh keyfile
+        # "current" (baris di atas) terpilih. Keduanya tetap butuh password (ready).
+        self.btn_kf_add.setEnabled(ready and bool(self._add_keyfile_path))
+        self.btn_kf_remove.setEnabled(ready and bool(self._manage_keyfile_path))
 
     # ── Validation helpers ────────────────────────────────────────────────────
     def _guard(self) -> bool:
@@ -626,6 +825,56 @@ class TabManage(QWidget):
             keyfile_path=self._keyfile_arg(),
         )
 
+    def _enable_keyfile(self):
+        if not self._guard():
+            return
+        if not self._add_keyfile_path:
+            self.notif.show_msg(
+                "warn",
+                tr("manage.keyfile.add.missing", "Choose or generate a keyfile first."),
+                4000,
+            )
+            return
+        # add_keyfile WAJIB password asli (bukan recovery key): slot password
+        # dibangun ulang menjadi slot keyfile dari password itu.
+        self._run_action(
+            add_keyfile,
+            self._vault_path,
+            self.entry_current.text(),
+            self._add_keyfile_path,
+        )
+
+    def _disable_keyfile(self):
+        if not self._guard():
+            return
+        if not self._manage_keyfile_path:
+            self.notif.show_msg(
+                "warn",
+                tr("manage.keyfile.remove.missing", "Select the current keyfile above first."),
+                4000,
+            )
+            return
+        dialog = ModernMessageBox(
+            title=tr("manage.keyfile.remove.title", "Remove Keyfile"),
+            message=tr(
+                "manage.keyfile.remove.msg",
+                "Keyfile protection (2FA) will be removed. After this, your password "
+                "alone will open this vault.\n\nRemove the keyfile?",
+            ),
+            icon_name="mdi6.key-remove",
+            icon_color=CLR_WARN,
+            parent=self,
+        )
+        dialog.btn_yes.setText(tr("common.remove", "Remove"))
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._run_action(
+            remove_keyfile,
+            self._vault_path,
+            self.entry_current.text(),
+            self._manage_keyfile_path,
+        )
+
     # ── Worker plumbing ───────────────────────────────────────────────────────
     def _run_action(self, func, *args, **kwargs):
         self._set_busy(True)
@@ -653,10 +902,17 @@ class TabManage(QWidget):
         status, message = result
 
         if status == VaultStatus.SUCCESS:
+            # Keyfile baru (jika aksi tadi mengaktifkan 2FA) — dibawa ke pemilih
+            # "current" setelah refresh agar operasi berikutnya tak perlu pilih ulang.
+            carry_keyfile = self._add_keyfile_path
             self.entry_current.clear()
             self.form.reset()
             self.entry_rec_pass.clear()
+            self._reset_add_keyfile()
             self._refresh_info()  # juga re-enable kontrol
+            if carry_keyfile and self._info.get("requires_keyfile"):
+                self._manage_keyfile_path = carry_keyfile
+                self.lbl_manage_keyfile.setText(os.path.basename(carry_keyfile))
             self.notif.show_msg(
                 "ok", f" {message or tr('manage.done', 'Vault updated successfully.')}", 6000
             )

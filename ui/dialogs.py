@@ -24,6 +24,7 @@ from .styles import (
     CLR_BORDER,
     CLR_INSET,
     CLR_SUCCESS,
+    CLR_TEXT_MAIN,
     CLR_WARN,
     FONT_MONO,
 )
@@ -211,7 +212,7 @@ class RecoveryCodeDialog(ScrimDialogMixin, QDialog):
 
         self.btn_copy = QPushButton()
         register(self.btn_copy, "recovery.dialog.copy", " Copy recovery key")
-        self.btn_copy.setIcon(qta.icon("mdi6.content-copy", color="white"))
+        self.btn_copy.setIcon(qta.icon("mdi6.content-copy", color=CLR_TEXT_MAIN))
         self.btn_copy.setObjectName("BtnGen")
         self.btn_copy.setFixedHeight(38)
         self.btn_copy.setCursor(Qt.CursorShape.PointingHandCursor)

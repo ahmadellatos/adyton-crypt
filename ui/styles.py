@@ -7,7 +7,15 @@ Deskripsi: Token warna + stylesheet (QSS) utama aplikasi, mengikuti
            Mono untuk payload), aksen teal kalem (#4FBFC9) yang hemat, sudut
            lembut berskala (input 15 → kartu 22), elevasi hanya dari bayangan
            gelap halus — tanpa glow/halo neon.
+
+           DUA TEMA: token di bawah adalah default **dark**; ``set_active_theme``
+           menimpanya dengan palet **light** saat tema light/system-terang aktif.
+           Tema diresolusi sekali saat modul ini di-import (lihat bagian bawah),
+           sehingga semua ``from .styles import CLR_*`` di komponen lain otomatis
+           menerima nilai bertema. Ganti tema lewat Settings butuh restart.
 """
+
+from PySide6.QtGui import QColor
 
 # =============================================================================
 # TOKEN WARNA (COLOR PALETTE) — sesuai Design System §2
@@ -64,6 +72,10 @@ CLR_PRESSED_BG = "#0F2026"  # tekan tombol sekunder
 CLR_TOGGLE_OFF = "#101F25"  # track toggle saat OFF — well recessed, lebih gelap dari
 # semua kartu/panel di belakangnya (card #1B2F36, OptionsPanel ~#24373E) agar pill
 # toggle jelas terbaca sebagai kontrol, bukan menyatu dengan latar.
+CLR_PANEL_SOFT = "rgba(255, 255, 255, 0.04)"  # latar panel halus (OptionsPanel /
+# RecoveryInfoBox): wash putih tipis di dark, wash gelap tipis di light (lihat _LIGHT).
+CLR_CTA_TRACK = "#13242A"  # track (porsi belum terisi) progress di CTA — sengaja gelap
+# di KEDUA tema agar teks putih progress tetap terbaca (di light, inset nyaris putih).
 
 # --- SCROLLBAR ---
 CLR_SCROLL_HANDLE = "#2C474E"
@@ -924,3 +936,161 @@ def load_stylesheet() -> str:
 def muted_label_style(size: str = "9.5pt") -> str:
     """Style untuk teks sekunder / keterangan."""
     return f"font-size: {size}; color: {CLR_TEXT_DIM};"
+
+
+# =============================================================================
+# TEMA (dark / light) — palet ganda + resolusi
+# =============================================================================
+#
+# Token di atas adalah palet DARK (juga default + nama yang dilihat ruff/IDE).
+# ``set_active_theme("light")`` menimpa global CLR_* dengan palet LIGHT. Karena
+# komponen mengambil token via ``from .styles import CLR_*`` saat import mereka —
+# yang terjadi SETELAH modul ini selesai di-import — semua menerima nilai bertema
+# tanpa perubahan di sisi komponen.
+
+# Palet LIGHT — teal lebih dalam (#149AA6) demi kontras di atas putih; permukaan
+# dibalik (kartu putih di atas kanvas abu-teal lembut); status digelapkan agar
+# terbaca di atas tint terang. Key di dict ini menjadi DAFTAR token yang ditema-kan.
+_LIGHT = {
+    "CLR_CANVAS": "#E4EDEE",
+    "CLR_WINDOW": "#F2F7F7",
+    "CLR_CARD": "#FFFFFF",
+    "CLR_INSET": "#EDF3F4",
+    "CLR_BORDER": "#D2DFE1",
+    "CLR_LINE": "#E4ECED",
+    "CLR_BORDER_SUBTLE": "rgba(70, 100, 106, 0.16)",
+    "CLR_ACCENT": "#149AA6",
+    "CLR_ACCENT_HOVER": "#11909C",
+    "CLR_ACCENT_DK": "#0E7C87",
+    "CLR_ACCENT_DISABLED": "#DCE6E7",
+    "CLR_ACCENT_TEXT": "#0C7681",
+    "CLR_DANGER": "#CF4436",
+    "CLR_DANGER_HOVER": "#DA5648",
+    "CLR_DANGER_BG": "#FBE9E7",
+    "CLR_WARN": "#B27A14",
+    "CLR_WARN_DK": "#C98A1E",
+    "CLR_WARN_BG": "#FBF1DD",
+    "CLR_WARN_TEXT": "#8A6210",
+    "CLR_SUCCESS": "#2C9A64",
+    "CLR_SUCCESS_BG": "#E6F4EC",
+    "CLR_YELLOW": "#BE9412",
+    "CLR_TEXT_MAIN": "#10262C",
+    "CLR_TEXT_MUTED": "#3D575E",
+    "CLR_TEXT_DIM": "#5F787E",
+    "CLR_TEXT_FAINT": "#90A3A8",
+    "CLR_MONO_META": "#7A8E93",
+    "CLR_HOVER_BG": "#E8F0F1",
+    "CLR_HOVER_BORDER": "#BBCDD0",
+    "CLR_BTN_BORDER": "#C7D5D7",
+    "CLR_INPUT_BORDER": "#CBD9DB",
+    "CLR_LIST_HOVER": "rgba(20, 154, 166, 0.07)",
+    "CLR_LIST_SELECTED": "rgba(20, 154, 166, 0.12)",
+    "CLR_BTN_TRANSPARENT": "rgba(15, 60, 66, 0.05)",
+    "CLR_PRESSED_BG": "#DCE7E8",
+    "CLR_TOGGLE_OFF": "#C3D0D2",
+    "CLR_PANEL_SOFT": "rgba(15, 50, 56, 0.045)",
+    "CLR_CTA_TRACK": "#3C5A60",
+    "CLR_SCROLL_HANDLE": "#C2D0D2",
+    "CLR_SCROLL_HOVER": "#AABDC0",
+    "CLR_SCROLL_PRESSED": "#95ABAF",
+    "CLR_TIPS_BG": "#EDF3F4",
+    "CLR_TIPS_BORDER": "#E4ECED",
+    "CLR_ON_ACCENT": "#FFFFFF",
+    "ACCENT_RGB": "20, 154, 166",
+    "SUCCESS_RGB": "44, 154, 100",
+    "WARN_RGB": "210, 149, 47",
+    "DANGER_RGB": "207, 68, 54",
+}
+
+# Daftar token bertema diturunkan dari key _LIGHT → menjamin paritas key (tiap key
+# light WAJIB punya konstanta dark senama; globals()[k] akan KeyError bila tidak,
+# menangkap typo lebih awal). Palet DARK = nilai literal yang dideklarasikan di atas.
+_THEMED_KEYS = tuple(_LIGHT)
+_DARK = {k: globals()[k] for k in _THEMED_KEYS}
+
+# True saat tema light aktif — dibaca helper paint (overlay_color/accent_color).
+IS_LIGHT = False
+ACTIVE_THEME = "dark"
+
+
+def set_active_theme(name: str) -> None:
+    """Terapkan palet ``name`` ("light"/"dark") ke token global modul ini.
+
+    Dipanggil sekali saat import (dengan tema teresolusi dari Settings). Karena
+    token diambil komponen lewat ``from .styles import CLR_*`` saat import mereka,
+    cukup ini berjalan sebelum komponen di-import — yang dijamin oleh urutan
+    import Python (body modul ini selesai dulu).
+    """
+    global IS_LIGHT, ACTIVE_THEME
+    palette = _LIGHT if name == "light" else _DARK
+    globals().update(palette)
+    IS_LIGHT = name == "light"
+    ACTIVE_THEME = "light" if name == "light" else "dark"
+
+
+def overlay_color(alpha: int) -> QColor:
+    """Wash permukaan-terangkat halus untuk paintEvent: putih di dark, gelap di
+    light — sehingga panel/tile tetap terlihat di kedua tema (overlay putih murni
+    akan hilang di atas latar terang)."""
+    return QColor(15, 45, 51, alpha) if IS_LIGHT else QColor(255, 255, 255, alpha)
+
+
+def accent_color(alpha: int = 255) -> QColor:
+    """Aksen aktif sebagai QColor dengan alpha — mengikuti tema (deeper di light)."""
+    c = QColor(CLR_ACCENT)
+    c.setAlpha(alpha)
+    return c
+
+
+def _detect_system_theme() -> str:
+    """Deteksi tema OS (light/dark). Qt 6.5+ colorScheme → registry Windows → dark."""
+    import contextlib
+
+    with contextlib.suppress(Exception):
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            scheme = app.styleHints().colorScheme()
+            if scheme == Qt.ColorScheme.Light:
+                return "light"
+            if scheme == Qt.ColorScheme.Dark:
+                return "dark"
+    try:
+        import winreg
+
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+        )
+        value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        return "light" if value == 1 else "dark"
+    except Exception:
+        return "dark"
+
+
+def resolve_theme(pref: str) -> str:
+    """Petakan preferensi tersimpan ("dark"/"light"/"system") → "dark"/"light"."""
+    if pref == "light":
+        return "light"
+    if pref == "system":
+        return _detect_system_theme()
+    return "dark"
+
+
+def _read_theme_pref() -> str:
+    """Baca preferensi tema dari QSettings tanpa bergantung pada scope app-level."""
+    try:
+        from PySide6.QtCore import QSettings
+
+        from ui.constants import APP_NAME, APP_ORG
+
+        # Key sama dengan settings_store.KEY_THEME ("appearance/theme").
+        return QSettings(APP_ORG, APP_NAME).value("appearance/theme", "dark", type=str)
+    except Exception:
+        return "dark"
+
+
+# Resolusi sekali saat import. Aman gagal → tetap dark.
+set_active_theme(resolve_theme(_read_theme_pref()))
