@@ -48,6 +48,7 @@ class TabBuka(QWidget):
         self.worker: CryptoWorker | None = None
         self._konfirmasi_timpa = False
         self._cached_pw = None
+        self._cached_keyfile = None
         self._has_file = False
         self._has_password = False
         self._progress_eta = ProgressETA()
@@ -136,8 +137,8 @@ class TabBuka(QWidget):
             if self._has_file:
                 # Reuse meta yang sudah ditangkap drop zone dari satu pembacaan header;
                 # jangan baca header lagi (hindari I/O ganda di main thread).
-                hint, has_recovery = self.drop_zone.get_vault_meta()
-                self.password_panel.show_vault_meta(hint, has_recovery)
+                hint, has_recovery, requires_keyfile = self.drop_zone.get_vault_meta()
+                self.password_panel.show_vault_meta(hint, has_recovery, requires_keyfile)
                 self.status_changed.emit(
                     tr("open.status.ready", "Vault ready to open"),
                     tr("open.status.ready.sub", "Valid format • Not yet verified"),
@@ -231,9 +232,12 @@ class TabBuka(QWidget):
 
         if force and self._cached_pw:
             pw = self._cached_pw
+            keyfile = self._cached_keyfile
         else:
             pw = self.password_panel.get_password()
+            keyfile = self.password_panel.keyfile_path() or None
             self._cached_pw = pw
+            self._cached_keyfile = keyfile
 
         if force:
             self._reset_timpa()
@@ -243,7 +247,9 @@ class TabBuka(QWidget):
 
         self._progress_eta.reset()
         self._set_busy(True)
-        self.worker = CryptoWorker(buka_brankas, path_file, pw, force, parent=self)
+        self.worker = CryptoWorker(
+            buka_brankas, path_file, pw, force, keyfile_path=keyfile, parent=self
+        )
         self.password_panel.reset_field()
 
         start_crypto_worker(self.worker, self._update_progress, self._on_selesai)
@@ -322,6 +328,7 @@ class TabBuka(QWidget):
 
         if status != VaultStatus.OVERWRITE_NEEDED:
             self._cached_pw = None
+            self._cached_keyfile = None
 
         if status == VaultStatus.SUCCESS:
             # Catat ke Recent SEBELUM reset_zone() membersihkan path terpilih.
@@ -394,6 +401,7 @@ class TabBuka(QWidget):
                 # agar tidak menumpuk sampai sweep umur membersihkannya.
                 cancel_pending_overwrite(self.drop_zone.get_file())
                 self._cached_pw = None
+                self._cached_keyfile = None
                 self._reset_timpa()
                 self._validate_state()
                 logger.info("Dekripsi dibatalkan: User menolak overwrite file asli.")

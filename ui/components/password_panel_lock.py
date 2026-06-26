@@ -15,6 +15,7 @@ from ..i18n import register
 from ..styles import CLR_WARN
 from ..widgets import apply_shadow, build_card_header, make_generator_button
 from .create_password_form import CreatePasswordForm
+from .keyfile_panel import KeyfilePanel
 from .recovery_hint_panel import RecoveryHintPanel
 
 
@@ -59,6 +60,12 @@ class PasswordPanelLock(QFrame):
         self.form.requirements_met_changed.connect(self.recovery_hint.set_password_ready)
         lay.addWidget(self.recovery_hint)
 
+        lay.addSpacing(8)
+        self.keyfile_panel = KeyfilePanel()
+        # Toggle keyfile (2FA) juga aktif hanya setelah password memenuhi syarat.
+        self.form.requirements_met_changed.connect(self.keyfile_panel.set_password_ready)
+        lay.addWidget(self.keyfile_panel)
+
         lay.addStretch()
 
     def _setup_accessibility(self):
@@ -82,6 +89,7 @@ class PasswordPanelLock(QFrame):
     def reset_fields(self):
         self.form.reset()
         self.recovery_hint.reset()
+        self.keyfile_panel.reset()
 
     def attach_return_event(self, slot_func):
         self.form.attach_return_event(slot_func)
@@ -101,3 +109,13 @@ class PasswordPanelLock(QFrame):
 
     def get_hint(self) -> str:
         return self.recovery_hint.get_hint()
+
+    # --- Keyfile (2FA) passthrough ---
+    def keyfile_enabled(self) -> bool:
+        return self.keyfile_panel.keyfile_enabled()
+
+    def keyfile_path(self) -> str:
+        return self.keyfile_panel.keyfile_path()
+
+    def has_pending_keyfile_error(self) -> bool:
+        return self.keyfile_panel.has_pending_keyfile_error()

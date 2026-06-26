@@ -527,7 +527,7 @@ def load_stylesheet() -> str:
     }}
 
     QPushButton#BtnGantiFile[kbFocus="true"] {{
-        border: 1px solid {CLR_ACCENT};
+        border: 2px solid {CLR_ACCENT};
         background-color: {CLR_INSET};
     }}
 
@@ -820,9 +820,11 @@ def load_stylesheet() -> str:
     QPushButton#BtnInlinePrimary {{
         background-color: {CLR_ACCENT};
         color: {CLR_ON_ACCENT};
-        border: none;
+        /* Border transparan 2px agar ring fokus tak menggeser layout (idiom sama
+           seperti BtnAlertConfirm). */
+        border: 2px solid transparent;
         border-radius: 11px;
-        padding: 7px 14px;
+        padding: 6px 13px;
         font-weight: 800;
     }}
     QPushButton#BtnInlinePrimary:hover {{
@@ -834,6 +836,9 @@ def load_stylesheet() -> str:
     QPushButton#BtnInlinePrimary:disabled {{
         background-color: {CLR_ACCENT_DISABLED};
         color: {CLR_TEXT_FAINT};
+    }}
+    QPushButton#BtnInlinePrimary[kbFocus="true"] {{
+        border: 2px solid {CLR_TEXT_MAIN};
     }}
 
     QPushButton#BtnInlineSecondary {{
@@ -851,6 +856,9 @@ def load_stylesheet() -> str:
     QPushButton#BtnInlineSecondary:disabled {{
         color: {CLR_TEXT_FAINT};
         border-color: {CLR_LINE};
+    }}
+    QPushButton#BtnInlineSecondary[kbFocus="true"] {{
+        border: 2px solid {CLR_ACCENT};
     }}
 
     /* --- TOOLTIPS & TITLE BAR --- */

@@ -6,11 +6,14 @@ Primitif kriptografi: key derivation dan helper enkripsi/dekripsi AES-256-GCM.
 from __future__ import annotations
 
 import base64
+import hashlib
 import secrets
 
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from loguru import logger
 
 from .constants import (
@@ -21,6 +24,8 @@ from .constants import (
     ARGON2ID_MAX_MEMORY_COST_KIB,
     ARGON2ID_MEMORY_COST_KIB,
     KDF_ID_ARGON2ID,
+    KEYFILE_GENERATED_SIZE,
+    MASTER_KEY_SIZE,
 )
 
 
@@ -57,6 +62,43 @@ def normalize_recovery_code(code: str) -> str:
     berbeda dari saat ditampilkan, tanpa mengubah entropi efektif.
     """
     return "".join(ch for ch in code.upper() if ch in _B32_ALPHABET)
+
+
+# ── Keyfile (faktor kedua / 2FA) ────────────────────────────────────────────────
+
+# Domain separation untuk HKDF agar material keyfile tak bertabrakan penggunaan lain.
+_KEYFILE_HKDF_INFO = b"adyton-crypt/keyfile-2fa/v1"
+
+
+def generate_keyfile_bytes() -> bytes:
+    """Buat isi keyfile acak entropi tinggi untuk disimpan user (mis. di USB)."""
+    return secrets.token_bytes(KEYFILE_GENERATED_SIZE)
+
+
+def derive_keyfile_material(keyfile_bytes: bytes) -> bytes:
+    """Material 32-byte stabil dari isi keyfile (independen dari vault mana pun).
+
+    SHA-256 atas byte mentah file: keyfile yang sama selalu menghasilkan material
+    yang sama, sehingga satu keyfile bisa melindungi banyak vault. Pengikatan ke
+    vault tertentu dilakukan oleh AAD wrap (file_id), bukan oleh material ini.
+    """
+    return hashlib.sha256(keyfile_bytes).digest()
+
+
+def combine_kek_with_keyfile(base_kek: bytes, keyfile_material: bytes) -> bytes:
+    """Campur material keyfile ke KEK turunan-password sehingga KEDUANYA wajib.
+
+    HKDF-SHA256 atas keluaran Argon2id (``base_kek``) dengan material keyfile sebagai
+    salt. Tanpa keyfile yang persis sama, KEK yang benar tak bisa direkonstruksi —
+    jadi password saja (atau keyfile saja) tidak cukup membuka slot. Argon2id tetap
+    menanggung beban brute-force pada faktor password yang berentropi rendah.
+    """
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=MASTER_KEY_SIZE,
+        salt=keyfile_material,
+        info=_KEYFILE_HKDF_INFO,
+    ).derive(base_kek)
 
 
 def derive_key_argon2id(
@@ -140,4 +182,4 @@ def safe_cb(progress_cb, val: float):
         try:
             progress_cb(max(0.0, min(1.0, val)))
         except Exception:
-            logger.debug("Progress callback gagal (diabaikan)", exc_info=True)
+            logger.opt(exception=True).debug("Progress callback gagal (diabaikan)")

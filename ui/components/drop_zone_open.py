@@ -26,6 +26,7 @@ from core.constants import (
     MAX_KEYSLOTS,
     RECOVERY_SLOT_TYPES,
     SALT_SIZE,
+    SLOT_TYPE_PASSWORD_KEYFILE,
     SUPPORTED_FLAGS,
     VERSION,
     WRAP_NONCE_SIZE,
@@ -61,10 +62,12 @@ class DropZoneOpen(QWidget):
         self._file_format_openable = False
         self._format_status_text = "—"
         self._format_badge_state = "idle"
-        # Hint + ada/tidaknya recovery key, ditangkap dari SATU pembacaan header saat
-        # file dipilih, agar TabBuka tidak perlu membaca header lagi (vault_info).
+        # Hint + ada/tidaknya recovery key + butuh-keyfile, ditangkap dari SATU
+        # pembacaan header saat file dipilih, agar TabBuka tidak perlu membaca header
+        # lagi (vault_info).
         self._vault_hint: str | None = None
         self._vault_has_recovery = False
+        self._vault_requires_keyfile = False
         self._build_ui()
         self._setup_accessibility()
 
@@ -449,6 +452,7 @@ class DropZoneOpen(QWidget):
         # Reset meta; hanya terisi bila header valid sampai region keyslot terbaca.
         self._vault_hint = None
         self._vault_has_recovery = False
+        self._vault_requires_keyfile = False
         info = {
             "badge": "FORMAT  ✓",
             "badge_state": "ok",
@@ -573,6 +577,8 @@ class DropZoneOpen(QWidget):
             f.read(params_len + SALT_SIZE + WRAP_NONCE_SIZE + WRAPPED_KEY_SIZE)
             if slot_head[0] in RECOVERY_SLOT_TYPES:
                 self._vault_has_recovery = True
+            elif slot_head[0] == SLOT_TYPE_PASSWORD_KEYFILE:
+                self._vault_requires_keyfile = True
 
         info.update(
             {
@@ -605,13 +611,13 @@ class DropZoneOpen(QWidget):
         """True jika file lolos validasi format ringan dan boleh dicoba dibuka."""
         return bool(self._path_file and self._file_format_openable)
 
-    def get_vault_meta(self) -> tuple[str | None, bool]:
-        """(hint, has_recovery) dari pembacaan header tunggal saat file dipilih.
+    def get_vault_meta(self) -> tuple[str | None, bool, bool]:
+        """(hint, has_recovery, requires_keyfile) dari pembacaan header tunggal.
 
         Dipakai TabBuka agar header tidak dibaca dua kali (drop zone + vault_info).
         Hanya bermakna saat ``can_open_file()`` True.
         """
-        return self._vault_hint, self._vault_has_recovery
+        return self._vault_hint, self._vault_has_recovery, self._vault_requires_keyfile
 
     def get_format_status(self) -> str:
         return self._format_status_text
@@ -727,6 +733,7 @@ class DropZoneOpen(QWidget):
         self._format_badge_state = "idle"
         self._vault_hint = None
         self._vault_has_recovery = False
+        self._vault_requires_keyfile = False
         self.stack_file.setCurrentIndex(0)
         self._update_card_style(True)
 

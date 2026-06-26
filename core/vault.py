@@ -6,6 +6,7 @@ Telah ditambal dari celah keamanan Path Traversal (TarSlip) dan rapuhnya deteksi
 """
 
 import contextlib
+import hashlib
 import os
 import shutil
 import stat
@@ -37,6 +38,7 @@ from .constants import (
     FLAG_HINT,
     FLAG_NONE,
     KDF_ID_ARGON2ID,
+    KEYFILE_MAX_SIZE,
     MAGIC_BYTES,
     MASTER_KEY_SIZE,
     MAX_HEADER_SIZE,
@@ -44,12 +46,14 @@ from .constants import (
     MAX_KEYSLOTS,
     MAX_VIRTUAL_NAME_LENGTH,
     OLD_TEMP_MAX_AGE_SECONDS,
+    PASSWORD_SLOT_TYPES,
     RECORD_TYPE_DATA,
     RECORD_TYPE_FINAL,
     RECORD_TYPE_METADATA,
     RECOVERY_SLOT_TYPES,
     SALT_SIZE,
     SLOT_TYPE_PASSWORD,
+    SLOT_TYPE_PASSWORD_KEYFILE,
     SLOT_TYPE_RECOVERY_CODE,
     SLOT_TYPE_RECOVERY_PASSPHRASE,
     SUPPORTED_FLAGS,
@@ -60,7 +64,9 @@ from .constants import (
     WRAPPED_KEY_SIZE,
 )
 from .crypto import (
+    combine_kek_with_keyfile,
     derive_key_for_kdf,
+    generate_keyfile_bytes,
     normalize_recovery_code,
     safe_cb,
 )
@@ -573,11 +579,23 @@ def _derive_slot_kek(
     salt: bytes,
     kdf_id: int,
     kdf_params: dict[str, int],
-) -> bytes:
-    """Turunkan Key Encryption Key untuk satu slot dari credential-nya."""
+    keyfile_material: bytes | None = None,
+) -> bytes | None:
+    """Turunkan Key Encryption Key untuk satu slot dari credential-nya.
+
+    Untuk slot 2FA (``SLOT_TYPE_PASSWORD_KEYFILE``) KEK = gabung(Argon2id(password),
+    keyfile); bila keyfile tak tersedia, kembalikan ``None`` agar pemanggil melewati
+    slot ini TANPA menjalankan Argon2id yang mahal (mis. saat user memakai recovery
+    key di vault 2FA — keyfile tidak diperlukan untuk slot recovery).
+    """
+    if slot_type == SLOT_TYPE_PASSWORD_KEYFILE and keyfile_material is None:
+        return None
     if slot_type == SLOT_TYPE_RECOVERY_CODE:
         secret = normalize_recovery_code(secret)
-    return derive_key_for_kdf(secret, salt, kdf_id, kdf_params)
+    kek = derive_key_for_kdf(secret, salt, kdf_id, kdf_params)
+    if slot_type == SLOT_TYPE_PASSWORD_KEYFILE:
+        kek = combine_kek_with_keyfile(kek, keyfile_material)
+    return kek
 
 
 def _build_keyslot(
@@ -587,6 +605,7 @@ def _build_keyslot(
     secret: str,
     kdf_params: dict[str, int] | None = None,
     hint_bytes: bytes = b"",
+    keyfile_material: bytes | None = None,
 ) -> bytes:
     """Bangun satu keyslot lengkap (meta + wrapped MK) dari sebuah credential.
 
@@ -594,7 +613,8 @@ def _build_keyslot(
     default vault. Parameter di-encode lalu di-decode lagi agar nilainya tervalidasi
     & dibatasi ceiling sebelum dipakai. ``hint_bytes`` (mentah, byte hint di header)
     diikat ke AAD wrap agar hint terautentikasi — pemanggil WAJIB memakai byte hint
-    yang sama persis dengan yang ditulis ``_build_header``.
+    yang sama persis dengan yang ditulis ``_build_header``. ``keyfile_material`` WAJIB
+    untuk slot ``SLOT_TYPE_PASSWORD_KEYFILE`` (2FA) dan diabaikan untuk slot lain.
     """
     salt = os.urandom(SALT_SIZE)
     wrap_nonce = os.urandom(WRAP_NONCE_SIZE)
@@ -605,10 +625,64 @@ def _build_keyslot(
     else:
         kdf_params_raw = _encode_argon2id_params()
     kdf_params = _decode_argon2id_params(kdf_params_raw)
-    kek = _derive_slot_kek(slot_type, secret, salt, KDF_ID_ARGON2ID, kdf_params)
+    kek = _derive_slot_kek(slot_type, secret, salt, KDF_ID_ARGON2ID, kdf_params, keyfile_material)
+    if kek is None:
+        # Hanya terjadi bila slot keyfile dibangun tanpa keyfile — bug pemanggil.
+        raise ValueError("A keyfile is required to build this keyslot.")
     meta = _slot_meta(slot_type, KDF_ID_ARGON2ID, kdf_params_raw, salt, wrap_nonce)
     wrapped = AESGCM(kek).encrypt(wrap_nonce, master_key, _slot_wrap_aad(file_id, hint_bytes, meta))
     return meta + wrapped
+
+
+def _load_keyfile_material(keyfile_path: str) -> bytes:
+    """Baca keyfile dari disk (stream, dibatasi ukuran) → material 32-byte.
+
+    Melempar ``ValueError`` dengan pesan path-free yang aman ditampilkan ke user bila
+    file kosong, terlalu besar, atau tak terbaca. Hashing streaming agar keyfile besar
+    tak dimuat seluruhnya ke memori; di atas ``KEYFILE_MAX_SIZE`` ditolak.
+    """
+    path = Path(keyfile_path)
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise ValueError("The keyfile could not be read. Check that it still exists.") from exc
+    if size == 0:
+        raise ValueError("The keyfile is empty. Choose a non-empty file or generate one.")
+    if size > KEYFILE_MAX_SIZE:
+        raise ValueError("The keyfile is too large. Choose a file under 64 MB.")
+    hasher = hashlib.sha256()
+    try:
+        with path.open("rb") as fk:
+            for block in iter(lambda: fk.read(1024 * 1024), b""):
+                hasher.update(block)
+    except OSError as exc:
+        raise ValueError("The keyfile could not be read. Check that it still exists.") from exc
+    return hasher.digest()
+
+
+def generate_keyfile(keyfile_path: str) -> tuple[VaultStatus, str]:
+    """Tulis keyfile acak entropi tinggi ke ``keyfile_path``.
+
+    Menolak menimpa file yang sudah ada (mencegah merusak keyfile/dokumen lain).
+    """
+    path = Path(keyfile_path)
+    try:
+        if path.exists():
+            return VaultStatus.ERROR, "A file with that name already exists. Choose another name."
+        # x = exclusive create: gagal bila file muncul di antara cek dan tulis (race).
+        with path.open("xb") as fk:
+            fk.write(generate_keyfile_bytes())
+            fk.flush()
+            os.fsync(fk.fileno())
+        return (
+            VaultStatus.SUCCESS,
+            "Keyfile created. Keep it safe — you'll need it to open the vault.",
+        )
+    except FileExistsError:
+        return VaultStatus.ERROR, "A file with that name already exists. Choose another name."
+    except Exception:
+        logger.exception("Gagal membuat keyfile.")
+        return VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE
 
 
 def _slot_bytes(slot: dict) -> bytes:
@@ -706,19 +780,34 @@ def _parse_header(fk) -> dict:
 
 
 def _recover_master_key(
-    secret: str, file_id: bytes, hint_bytes: bytes, slots: list[dict]
+    secret: str,
+    file_id: bytes,
+    hint_bytes: bytes,
+    slots: list[dict],
+    keyfile_material: bytes | None = None,
 ) -> bytes | None:
     """Coba credential terhadap tiap slot; kembalikan MK pada slot pertama yang cocok.
 
     Slot dicoba berurutan, jadi password benar di slot 0 hanya butuh satu derivasi
     KDF. Hanya secret yang salah yang membayar derivasi semua slot. ``hint_bytes``
     (byte hint mentah dari header) ikut diautentikasi via AAD wrap.
+
+    ``keyfile_material`` (bila ada) dipakai untuk slot 2FA. Slot keyfile dilewati
+    tanpa biaya KDF saat keyfile tak tersedia, sehingga recovery key tetap membuka
+    vault 2FA tanpa keyfile (jalur break-glass).
     """
     for slot in slots:
+        kek = _derive_slot_kek(
+            slot["slot_type"],
+            secret,
+            slot["salt"],
+            slot["kdf_id"],
+            slot["kdf_params"],
+            keyfile_material,
+        )
+        if kek is None:
+            continue
         try:
-            kek = _derive_slot_kek(
-                slot["slot_type"], secret, slot["salt"], slot["kdf_id"], slot["kdf_params"]
-            )
             master_key = AESGCM(kek).decrypt(
                 slot["wrap_nonce"],
                 slot["wrapped"],
@@ -1091,6 +1180,7 @@ def _buka_brankas_from_open_file(
     force: bool,
     progress_cb,
     is_cancelled: Callable[[], bool] | None,
+    keyfile_material: bytes | None = None,
 ) -> tuple[VaultStatus, str | None]:
     """Buka vault format envelope.
 
@@ -1126,7 +1216,7 @@ def _buka_brankas_from_open_file(
 
         safe_cb(progress_cb, 0.02)
         master_key = _recover_master_key(
-            password, file_id, _hint_bytes_from_header(hdr), hdr["slots"]
+            password, file_id, _hint_bytes_from_header(hdr), hdr["slots"], keyfile_material
         )
         if master_key is None:
             return VaultStatus.WRONG_PASSWORD, None
@@ -1293,6 +1383,7 @@ def kunci_brankas(
     recovery_type: str = "code",
     hint: str | None = None,
     kdf_params: dict[str, int] | None = None,
+    keyfile_path: str | None = None,
 ) -> tuple[VaultStatus, str]:
     """Buat vault envelope dari ``paths``.
 
@@ -1300,6 +1391,10 @@ def kunci_brankas(
     untuk kode app-generated (di-normalisasi saat unlock) atau ``"passphrase"``
     untuk frasa pilihan user. ``hint`` opsional disimpan TANPA enkripsi di header
     (harus terbaca sebelum unlock) dan dibatasi ``MAX_HINT_LENGTH`` byte.
+
+    ``keyfile_path`` opsional mengaktifkan 2FA: slot password digabung dengan isi
+    keyfile sehingga membuka vault WAJIB punya password DAN keyfile. Recovery key
+    (bila ada) tetap membuka vault sendiri sebagai jalur break-glass.
     """
     valid_paths = [p for p in paths if Path(p).exists()]
     if not valid_paths:
@@ -1307,6 +1402,13 @@ def kunci_brankas(
 
     if not password or not password.strip():
         return VaultStatus.ERROR, "Password cannot be empty."
+
+    keyfile_material: bytes | None = None
+    if keyfile_path:
+        try:
+            keyfile_material = _load_keyfile_material(keyfile_path)
+        except ValueError as exc:
+            return VaultStatus.ERROR, str(exc)
 
     target_path = Path(path_simpan)
 
@@ -1360,14 +1462,16 @@ def kunci_brankas(
             if hint_bytes:
                 flags |= FLAG_HINT
 
+        pw_slot_type = SLOT_TYPE_PASSWORD_KEYFILE if keyfile_material else SLOT_TYPE_PASSWORD
         slots = [
             _build_keyslot(
                 master_key,
                 file_id,
-                SLOT_TYPE_PASSWORD,
+                pw_slot_type,
                 password,
                 kdf_params=kdf_params,
                 hint_bytes=hint_bytes,
+                keyfile_material=keyfile_material,
             )
         ]
         if recovery_secret and recovery_secret.strip():
@@ -1515,6 +1619,7 @@ def buka_brankas(
     force: bool = False,
     progress_cb=None,
     is_cancelled: Callable[[], bool] = None,
+    keyfile_path: str | None = None,
 ) -> tuple[VaultStatus, str | None]:
     target_path = Path(locked_path)
     pkey = _pending_key(target_path)
@@ -1583,6 +1688,15 @@ def buka_brankas(
                     except Exception:
                         logger.debug("Gagal bersihkan old temp decrypt dir (diabaikan)")
 
+            # Keyfile (2FA) di-load di sini agar jalur resume overwrite (force, di
+            # atas) tak terpengaruh — resume memakai tar yang sudah terverifikasi.
+            keyfile_material: bytes | None = None
+            if keyfile_path:
+                try:
+                    keyfile_material = _load_keyfile_material(keyfile_path)
+                except ValueError as exc:
+                    return VaultStatus.ERROR, str(exc)
+
             safe_cb(progress_cb, 0.01)  # Mulai proses buka
 
             return _buka_brankas_from_open_file(
@@ -1593,6 +1707,7 @@ def buka_brankas(
                 force,
                 progress_cb,
                 is_cancelled,
+                keyfile_material,
             )
 
     except Exception:
@@ -1671,6 +1786,7 @@ def vault_info(vault_path: str) -> dict:
         "has_hint": False,
         "hint": None,
         "has_recovery": False,
+        "requires_keyfile": False,
         "slot_count": 0,
     }
     path = Path(vault_path)
@@ -1690,22 +1806,27 @@ def vault_info(vault_path: str) -> dict:
                 "has_hint": hdr["hint"] is not None,
                 "hint": hdr["hint"],
                 "has_recovery": any(s["slot_type"] in RECOVERY_SLOT_TYPES for s in hdr["slots"]),
+                "requires_keyfile": any(
+                    s["slot_type"] == SLOT_TYPE_PASSWORD_KEYFILE for s in hdr["slots"]
+                ),
                 "slot_count": len(hdr["slots"]),
             }
         )
     except Exception:
-        logger.debug("vault_info gagal membaca header (non-fatal)", exc_info=True)
+        logger.opt(exception=True).debug("vault_info gagal membaca header (non-fatal)")
     return info
 
 
 def _load_for_management(
     path: Path,
     secret: str,
+    keyfile_material: bytes | None = None,
 ) -> tuple[VaultStatus, str | None, dict | None, bytes | None]:
     """Buka header + recover Master Key untuk operasi manajemen credential.
 
     Return ``(status, message_or_None, header_or_None, master_key_or_None)``.
-    Status SUCCESS berarti ``header`` dan ``master_key`` terisi.
+    Status SUCCESS berarti ``header`` dan ``master_key`` terisi. ``keyfile_material``
+    dipakai untuk membuka slot 2FA (lihat ``_recover_master_key``).
     """
     try:
         hdr = _read_header_from_path(path)
@@ -1726,12 +1847,51 @@ def _load_for_management(
         return VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE, None, None
 
     master_key = _recover_master_key(
-        secret, hdr["file_id"], _hint_bytes_from_header(hdr), hdr["slots"]
+        secret, hdr["file_id"], _hint_bytes_from_header(hdr), hdr["slots"], keyfile_material
     )
     if master_key is None:
         return VaultStatus.WRONG_PASSWORD, None, None, None
 
     return VaultStatus.SUCCESS, None, hdr, master_key
+
+
+def _load_keyfile_material_optional(keyfile_path: str | None) -> tuple[bytes | None, str | None]:
+    """Load keyfile bila path diberikan. Return ``(material, error_message)``.
+
+    ``material`` None bila tak ada keyfile; ``error_message`` non-None bila path
+    diberikan tapi gagal dibaca (pesan path-free aman ditampilkan).
+    """
+    if not keyfile_path:
+        return None, None
+    try:
+        return _load_keyfile_material(keyfile_path), None
+    except ValueError as exc:
+        return None, str(exc)
+
+
+def _read_header_for_management(path: Path) -> tuple[VaultStatus, str | None, dict | None]:
+    """Baca header vault untuk operasi manajemen TANPA membukanya (tanpa credential).
+
+    Memetakan error baca header ke pesan path-free yang aman ditampilkan. Dipakai
+    operasi yang perlu inspeksi slot sebelum unlock (mis. tambah/hapus keyfile yang
+    membuka slot password secara spesifik, bukan slot apa pun).
+    """
+    try:
+        return VaultStatus.SUCCESS, None, _read_header_from_path(path)
+    except ValueError as exc:
+        if str(exc) == "wrong_format":
+            return (
+                VaultStatus.ERROR,
+                "This vault was made by a different version of Adyton Crypt and "
+                "can't be managed here. Please update the app.",
+                None,
+            )
+        return VaultStatus.ERROR, str(exc), None
+    except FileNotFoundError:
+        return VaultStatus.ERROR, "The vault file could not be found.", None
+    except Exception:
+        logger.exception("Gagal membaca header untuk manajemen.")
+        return VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE, None
 
 
 def _hint_bytes_from_header(hdr: dict) -> bytes:
@@ -1782,31 +1942,88 @@ def _rewrite_header_full(
         return VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE
 
 
+def _unlock_password_slot(
+    hdr: dict, password: str, keyfile_material: bytes | None = None
+) -> bytes | None:
+    """Unwrap MK lewat slot PASSWORD vault secara spesifik (bukan slot recovery).
+
+    Dipakai operasi yang mengubah faktor password (tambah/hapus keyfile) sehingga
+    yakin secret yang diberikan benar-benar password — bukan recovery key yang
+    kebetulan membuka slot lain — sebelum slot password ditulis ulang.
+    """
+    pw_slot = next((s for s in hdr["slots"] if s["slot_type"] in PASSWORD_SLOT_TYPES), None)
+    if pw_slot is None:
+        return None
+    kek = _derive_slot_kek(
+        pw_slot["slot_type"],
+        password,
+        pw_slot["salt"],
+        pw_slot["kdf_id"],
+        pw_slot["kdf_params"],
+        keyfile_material,
+    )
+    if kek is None:
+        return None
+    try:
+        master_key = AESGCM(kek).decrypt(
+            pw_slot["wrap_nonce"],
+            pw_slot["wrapped"],
+            _slot_wrap_aad(hdr["file_id"], _hint_bytes_from_header(hdr), pw_slot["meta"]),
+        )
+    except (InvalidTag, ValueError):
+        return None
+    return master_key if len(master_key) == MASTER_KEY_SIZE else None
+
+
 def change_password(
     vault_path: str,
     old_password: str,
     new_password: str,
+    keyfile_path: str | None = None,
 ) -> tuple[VaultStatus, str | None]:
     """Ganti password vault tanpa mengenkripsi ulang data.
 
     Hanya keyslot password yang ditulis ulang (panjang identik), jadi operasi ini
     O(ukuran header), bukan O(ukuran vault). ``old_password`` boleh berupa password
     lama ATAU recovery key — apa pun yang berhasil membuka salah satu slot.
+
+    Untuk vault 2FA (slot password dilindungi keyfile), ``keyfile_path`` WAJIB
+    diberikan: slot password baru tetap dilindungi keyfile yang sama, jadi 2FA tidak
+    diam-diam dilepas. (Melepas keyfile adalah aksi terpisah ``remove_keyfile``.)
     """
     if not new_password or not new_password.strip():
         return VaultStatus.ERROR, "New password cannot be empty."
 
+    keyfile_material, kf_error = _load_keyfile_material_optional(keyfile_path)
+    if kf_error:
+        return VaultStatus.ERROR, kf_error
+
     path = Path(vault_path)
-    status, message, hdr, master_key = _load_for_management(path, old_password)
+    status, message, hdr = _read_header_for_management(path)
     if status != VaultStatus.SUCCESS:
         return status, message
 
     pw_index = next(
-        (i for i, s in enumerate(hdr["slots"]) if s["slot_type"] == SLOT_TYPE_PASSWORD),
+        (i for i, s in enumerate(hdr["slots"]) if s["slot_type"] in PASSWORD_SLOT_TYPES),
         None,
     )
     if pw_index is None:
         return VaultStatus.ERROR, "This vault has no password slot to change."
+
+    pw_slot_type = hdr["slots"][pw_index]["slot_type"]
+    # Cek kebutuhan keyfile SEBELUM unlock agar pesan membantu (bukan WRONG_PASSWORD):
+    # slot password baru tetap dilindungi keyfile, jadi keyfile wajib untuk membangunnya.
+    if pw_slot_type == SLOT_TYPE_PASSWORD_KEYFILE and keyfile_material is None:
+        return (
+            VaultStatus.ERROR,
+            "This vault uses a keyfile. Select the keyfile to change its password.",
+        )
+
+    master_key = _recover_master_key(
+        old_password, hdr["file_id"], _hint_bytes_from_header(hdr), hdr["slots"], keyfile_material
+    )
+    if master_key is None:
+        return VaultStatus.WRONG_PASSWORD, None
 
     # Pertahankan level KDF slot lama agar header tetap sepanjang semula (invariant
     # re-key in-place) dan kekuatan yang dipilih user tidak diam-diam diturunkan.
@@ -1814,10 +2031,11 @@ def change_password(
     slot_bytes[pw_index] = _build_keyslot(
         master_key,
         hdr["file_id"],
-        SLOT_TYPE_PASSWORD,
+        pw_slot_type,
         new_password,
         kdf_params=hdr["slots"][pw_index]["kdf_params"],
         hint_bytes=_hint_bytes_from_header(hdr),
+        keyfile_material=keyfile_material,
     )
     new_header = _build_header(
         hdr["file_id"], hdr["chunk_size"], hdr["flags"], _hint_bytes_from_header(hdr), slot_bytes
@@ -1844,17 +2062,23 @@ def add_recovery_key(
     password: str,
     recovery_secret: str,
     recovery_type: str = "code",
+    keyfile_path: str | None = None,
 ) -> tuple[VaultStatus, str | None]:
     """Tambahkan keyslot recovery ke vault yang sudah ada.
 
     Header bertambah panjang, jadi vault ditulis ulang (temp + atomic replace).
-    Menolak bila sudah ada recovery key.
+    Menolak bila sudah ada recovery key. Untuk vault 2FA, ``keyfile_path`` dipakai
+    bersama ``password`` untuk membukanya.
     """
     if not recovery_secret or not recovery_secret.strip():
         return VaultStatus.ERROR, "Recovery secret cannot be empty."
 
+    keyfile_material, kf_error = _load_keyfile_material_optional(keyfile_path)
+    if kf_error:
+        return VaultStatus.ERROR, kf_error
+
     path = Path(vault_path)
-    status, message, hdr, master_key = _load_for_management(path, password)
+    status, message, hdr, master_key = _load_for_management(path, password, keyfile_material)
     if status != VaultStatus.SUCCESS:
         return status, message
 
@@ -1867,7 +2091,7 @@ def add_recovery_key(
         return VaultStatus.ERROR, "This vault already has the maximum number of keyslots."
 
     # Samakan level KDF recovery dengan slot password vault agar konsisten.
-    pw_slot = next((s for s in hdr["slots"] if s["slot_type"] == SLOT_TYPE_PASSWORD), None)
+    pw_slot = next((s for s in hdr["slots"] if s["slot_type"] in PASSWORD_SLOT_TYPES), None)
     level_params = pw_slot["kdf_params"] if pw_slot else None
     rtype = SLOT_TYPE_RECOVERY_CODE if recovery_type == "code" else SLOT_TYPE_RECOVERY_PASSPHRASE
     new_slot = _build_keyslot(
@@ -1888,10 +2112,18 @@ def add_recovery_key(
 def remove_recovery_key(
     vault_path: str,
     password: str,
+    keyfile_path: str | None = None,
 ) -> tuple[VaultStatus, str | None]:
-    """Hapus keyslot recovery dari vault. ``password`` harus membuka slot mana pun."""
+    """Hapus keyslot recovery dari vault. ``password`` harus membuka slot mana pun.
+
+    Untuk vault 2FA, ``keyfile_path`` dipakai bersama ``password`` untuk membukanya.
+    """
+    keyfile_material, kf_error = _load_keyfile_material_optional(keyfile_path)
+    if kf_error:
+        return VaultStatus.ERROR, kf_error
+
     path = Path(vault_path)
-    status, message, hdr, master_key = _load_for_management(path, password)
+    status, message, hdr, master_key = _load_for_management(path, password, keyfile_material)
     if status != VaultStatus.SUCCESS:
         return status, message
 
@@ -1906,3 +2138,121 @@ def remove_recovery_key(
         hdr["file_id"], hdr["chunk_size"], hdr["flags"], _hint_bytes_from_header(hdr), slot_bytes
     )
     return _rewrite_header_full(path, hdr["header_end"], new_header)
+
+
+def add_keyfile(
+    vault_path: str,
+    password: str,
+    keyfile_path: str,
+) -> tuple[VaultStatus, str | None]:
+    """Aktifkan 2FA pada vault yang sudah ada: lindungi slot password dengan keyfile.
+
+    Hanya region keyslot yang ditulis ulang (panjang identik — slot password &
+    slot keyfile berukuran sama), jadi O(ukuran header). ``password`` HARUS membuka
+    slot password (bukan recovery key), karena slot itu dibangun ulang menjadi
+    slot keyfile dari password yang sama.
+    """
+    keyfile_material, kf_error = _load_keyfile_material_optional(keyfile_path)
+    if kf_error:
+        return VaultStatus.ERROR, kf_error
+    if keyfile_material is None:
+        return VaultStatus.ERROR, "Select a keyfile to protect this vault."
+
+    path = Path(vault_path)
+    status, message, hdr = _read_header_for_management(path)
+    if status != VaultStatus.SUCCESS:
+        return status, message
+
+    pw_index = next(
+        (i for i, s in enumerate(hdr["slots"]) if s["slot_type"] in PASSWORD_SLOT_TYPES),
+        None,
+    )
+    if pw_index is None:
+        return VaultStatus.ERROR, "This vault has no password slot."
+    if hdr["slots"][pw_index]["slot_type"] == SLOT_TYPE_PASSWORD_KEYFILE:
+        return VaultStatus.ERROR, "This vault is already protected by a keyfile."
+
+    # Buktikan secret adalah password (membuka slot password), lalu bangun ulang slot
+    # itu sebagai slot keyfile dari password yang sama.
+    master_key = _unlock_password_slot(hdr, password)
+    if master_key is None:
+        return VaultStatus.WRONG_PASSWORD, None
+
+    slot_bytes = [_slot_bytes(s) for s in hdr["slots"]]
+    slot_bytes[pw_index] = _build_keyslot(
+        master_key,
+        hdr["file_id"],
+        SLOT_TYPE_PASSWORD_KEYFILE,
+        password,
+        kdf_params=hdr["slots"][pw_index]["kdf_params"],
+        hint_bytes=_hint_bytes_from_header(hdr),
+        keyfile_material=keyfile_material,
+    )
+    new_header = _build_header(
+        hdr["file_id"], hdr["chunk_size"], hdr["flags"], _hint_bytes_from_header(hdr), slot_bytes
+    )
+    if len(new_header) != hdr["header_end"]:
+        return VaultStatus.ERROR, "Internal error: header length changed while adding keyfile."
+
+    status, message = _rewrite_header_full(path, hdr["header_end"], new_header)
+    if status == VaultStatus.SUCCESS:
+        return (
+            VaultStatus.SUCCESS,
+            "Keyfile added. You'll now need it plus your password to open this vault.",
+        )
+    return status, message
+
+
+def remove_keyfile(
+    vault_path: str,
+    password: str,
+    keyfile_path: str,
+) -> tuple[VaultStatus, str | None]:
+    """Matikan 2FA: lepas perlindungan keyfile dari slot password.
+
+    Membutuhkan ``password`` DAN ``keyfile_path`` (keduanya membuka slot password),
+    lalu membangun ulang slot itu sebagai slot password biasa. Panjang header tetap.
+    """
+    keyfile_material, kf_error = _load_keyfile_material_optional(keyfile_path)
+    if kf_error:
+        return VaultStatus.ERROR, kf_error
+    if keyfile_material is None:
+        return VaultStatus.ERROR, "Select the keyfile to remove keyfile protection."
+
+    path = Path(vault_path)
+    status, message, hdr = _read_header_for_management(path)
+    if status != VaultStatus.SUCCESS:
+        return status, message
+
+    pw_index = next(
+        (i for i, s in enumerate(hdr["slots"]) if s["slot_type"] in PASSWORD_SLOT_TYPES),
+        None,
+    )
+    if pw_index is None:
+        return VaultStatus.ERROR, "This vault has no password slot."
+    if hdr["slots"][pw_index]["slot_type"] != SLOT_TYPE_PASSWORD_KEYFILE:
+        return VaultStatus.ERROR, "This vault isn't protected by a keyfile."
+
+    master_key = _unlock_password_slot(hdr, password, keyfile_material)
+    if master_key is None:
+        return VaultStatus.WRONG_PASSWORD, None
+
+    slot_bytes = [_slot_bytes(s) for s in hdr["slots"]]
+    slot_bytes[pw_index] = _build_keyslot(
+        master_key,
+        hdr["file_id"],
+        SLOT_TYPE_PASSWORD,
+        password,
+        kdf_params=hdr["slots"][pw_index]["kdf_params"],
+        hint_bytes=_hint_bytes_from_header(hdr),
+    )
+    new_header = _build_header(
+        hdr["file_id"], hdr["chunk_size"], hdr["flags"], _hint_bytes_from_header(hdr), slot_bytes
+    )
+    if len(new_header) != hdr["header_end"]:
+        return VaultStatus.ERROR, "Internal error: header length changed while removing keyfile."
+
+    status, message = _rewrite_header_full(path, hdr["header_end"], new_header)
+    if status == VaultStatus.SUCCESS:
+        return VaultStatus.SUCCESS, "Keyfile removed. Your password alone now opens this vault."
+    return status, message

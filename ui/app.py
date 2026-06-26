@@ -13,6 +13,7 @@ from loguru import logger
 from PySide6.QtCore import QEvent, QObject, QPropertyAnimation, QSettings, QSize, Qt, QTimer
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QApplication,
     QButtonGroup,
     QFrame,
@@ -106,6 +107,34 @@ class _FocusRingFilter(QObject):
             widget.style().unpolish(widget)
             widget.style().polish(widget)
             widget.update()  # repaint untuk ring berbasis paintEvent
+
+
+class _EnterActivatesButtonFilter(QObject):
+    """Buat Return/Enter mengaktifkan tombol yang sedang fokus (seperti Space).
+
+    Default Qt: pada ``QAbstractButton`` yang fokus hanya **Space** yang men-trigger
+    klik; **Return/Enter** hanya mengaktifkan tombol *default* (mis. di dialog),
+    sehingga tombol biasa terasa "tak bisa di-Enter, cuma spasi". Filter app-wide
+    ini meng-``animateClick`` tombol yang fokus saat Return/Enter ditekan lalu
+    mengonsumsi event, agar keyboard konsisten di seluruh app. Field teks tak
+    terpengaruh (fokusnya bukan tombol → returnPressed tetap berjalan normal).
+    """
+
+    _PLAIN = (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.KeypadModifier)
+
+    def eventFilter(self, obj, event):
+        if (
+            event.type() == QEvent.Type.KeyPress
+            and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+            and not event.isAutoRepeat()
+            and event.modifiers() in self._PLAIN
+        ):
+            app = QApplication.instance()
+            w = app.focusWidget() if app is not None else None
+            if isinstance(w, QAbstractButton) and w.isEnabled():
+                w.animateClick()
+                return True
+        return False
 
 
 class _GlobalToolTipFilter(QObject):
@@ -299,10 +328,13 @@ class AppBrankas(FramelessMainWindow):
         self._activity_filter = _ActivityFilter(self._on_user_activity)
         # Ring fokus keyboard-only untuk SEMUA komponen (lihat _FocusRingFilter).
         self._focus_ring_filter = _FocusRingFilter()
+        # Return/Enter mengaktifkan tombol yang fokus (konsisten dgn Space).
+        self._enter_filter = _EnterActivatesButtonFilter()
         _app = QApplication.instance()
         if _app is not None:
             _app.installEventFilter(self._activity_filter)
             _app.installEventFilter(self._focus_ring_filter)
+            _app.installEventFilter(self._enter_filter)
 
         # Tooltip global: semua tooltip (widget & item view) lewat satu CustomToolTip
         # agar gaya + perilakunya identik dengan tooltip path di Open/Lock.

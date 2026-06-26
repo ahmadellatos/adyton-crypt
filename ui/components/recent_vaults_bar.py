@@ -69,16 +69,23 @@ class _RecentCard(QFrame):
         self.setObjectName("RecentCard")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedHeight(58)
+        # Bisa difokus keyboard (Tab) + diaktifkan Enter/Space (lihat keyPressEvent);
+        # tanpa ini kartu sama sekali tak bisa dijangkau tanpa mouse.
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         # Lebar tetap & rata-kiri: 1 kartu pun tampak seperti tile normal, bukan
         # melar memenuhi panel. Min/maks supaya 4 kartu tetap muat di lebar minimum.
         self.setMinimumWidth(248)
         self.setMaximumWidth(300)
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        # Aturan kbFocus DITARUH TERAKHIR agar menang atas :hover (spesifisitas sama →
+        # urutan sumber menentukan) saat fokus keyboard sekaligus hover.
         self.setStyleSheet(
             f"QFrame#RecentCard {{ background: {CLR_INSET}; border: 1px solid {CLR_BORDER};"
             " border-radius: 12px; }"
             f" QFrame#RecentCard:hover {{ background: {CLR_HOVER_BG}; border: 1px solid {CLR_HOVER_BORDER}; }}"
+            f' QFrame#RecentCard[kbFocus="true"] {{ border: 2px solid {CLR_ACCENT}; }}'
         )
+        self.setAccessibleName(os.path.basename(path) or path)
         h = QHBoxLayout(self)
         h.setContentsMargins(11, 9, 7, 9)
         h.setSpacing(11)
@@ -118,6 +125,7 @@ class _RecentCard(QFrame):
         btn_x.setStyleSheet(
             "QPushButton#RecentCardX { border: none; background: transparent; border-radius: 6px; }"
             f" QPushButton#RecentCardX:hover {{ background: {CLR_CARD}; }}"
+            f' QPushButton#RecentCardX[kbFocus="true"] {{ border: 2px solid {CLR_ACCENT}; }}'
         )
         btn_x.clicked.connect(lambda: self.remove_requested.emit(self._path))
         h.addWidget(btn_x, 0, Qt.AlignmentFlag.AlignTop)
@@ -138,6 +146,15 @@ class _RecentCard(QFrame):
         ):
             self.open_requested.emit(self._path)
         super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        # Kartu = QFrame (bukan QAbstractButton), jadi filter Enter global tak
+        # menjangkaunya — tangani Enter/Return/Space di sini agar bisa dibuka
+        # tanpa mouse (mirror mouseReleaseEvent; _on_open menangani file hilang).
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+            self.open_requested.emit(self._path)
+            return
+        super().keyPressEvent(event)
 
 
 class RecentVaultsBar(QWidget):
@@ -196,9 +213,10 @@ class RecentVaultsBar(QWidget):
         self.btn_clear.setObjectName("RecentBarClear")
         self.btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_clear.setStyleSheet(
-            "QPushButton#RecentBarClear { border: none; background: transparent;"
-            f" color: {CLR_TEXT_DIM}; font-size: 9pt; }}"
+            "QPushButton#RecentBarClear { border: 1px solid transparent; background: transparent;"
+            f" color: {CLR_TEXT_DIM}; font-size: 9pt; border-radius: 6px; padding: 2px 8px; }}"
             f" QPushButton#RecentBarClear:hover {{ color: {CLR_ACCENT}; }}"
+            f' QPushButton#RecentBarClear[kbFocus="true"] {{ border-color: {CLR_ACCENT}; }}'
         )
         self.btn_clear.clicked.connect(self._settings.clear_recent_vaults)
         head.addWidget(self.btn_clear)

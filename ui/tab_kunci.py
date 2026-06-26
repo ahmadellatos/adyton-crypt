@@ -130,6 +130,10 @@ class TabKunci(QWidget):
         self.drop_zone.warning_emitted.connect(lambda msg: self.notif.show_msg("warn", msg, 4000))
         self.password_panel.valid_state_changed.connect(self._on_password_valid_changed)
         self.options_panel.hapus_asli_changed.connect(self._update_btn_label)
+        # Hasil "Generate keyfile" (sukses/gagal) ditampilkan di notif bar.
+        self.password_panel.keyfile_panel.notify.connect(
+            lambda level, msg: self.notif.show_msg("ok" if level == "ok" else "err", msg, 5000)
+        )
 
     def _on_paths_changed(self, paths: list):
         self._has_files = len(paths) > 0
@@ -266,6 +270,18 @@ class TabKunci(QWidget):
             )
             return
 
+        # Keyfile (2FA) diaktifkan tapi belum dipilih: cegah lebih awal.
+        if self.password_panel.has_pending_keyfile_error():
+            self.notif.show_msg(
+                "warn",
+                tr(
+                    "lock.keyfile.empty",
+                    "Choose a keyfile, or turn off keyfile protection.",
+                ),
+                4000,
+            )
+            return
+
         if hapus_asli:
             dialog = ModernMessageBox(
                 title=tr("lock.dialog.delete.title", "Confirm Delete"),
@@ -308,6 +324,7 @@ class TabKunci(QWidget):
                 recovery_type = "code"
 
         hint = self.password_panel.get_hint() or None
+        keyfile_path = self.password_panel.keyfile_path() or None
 
         self._progress_eta.reset()
         self._set_busy(True)
@@ -322,6 +339,7 @@ class TabKunci(QWidget):
             recovery_type=recovery_type,
             hint=hint,
             kdf_params=kdf_params_for_level(get_settings().kdf_level()),
+            keyfile_path=keyfile_path,
             parent=self,
         )
 

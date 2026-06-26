@@ -59,12 +59,26 @@ MAX_KEYSLOTS = 8
 SLOT_TYPE_PASSWORD = 0
 SLOT_TYPE_RECOVERY_CODE = 1  # kode acak app-generated; di-normalisasi sebelum KDF
 SLOT_TYPE_RECOVERY_PASSPHRASE = 2  # frasa pilihan user; dipakai apa adanya
+SLOT_TYPE_PASSWORD_KEYFILE = 3  # 2FA: KEK = gabung(Argon2id(password), keyfile)
 VALID_SLOT_TYPES = (
     SLOT_TYPE_PASSWORD,
     SLOT_TYPE_RECOVERY_CODE,
     SLOT_TYPE_RECOVERY_PASSPHRASE,
+    SLOT_TYPE_PASSWORD_KEYFILE,
 )
 RECOVERY_SLOT_TYPES = (SLOT_TYPE_RECOVERY_CODE, SLOT_TYPE_RECOVERY_PASSPHRASE)
+# Slot yang menyimpan faktor "password" vault (boleh dilindungi keyfile / tidak).
+PASSWORD_SLOT_TYPES = (SLOT_TYPE_PASSWORD, SLOT_TYPE_PASSWORD_KEYFILE)
+
+# ── Keyfile (faktor "sesuatu yang kamu punya") ──────────────────────────────────
+# Keyfile dipakai sebagai faktor kedua: isinya di-hash jadi material 32-byte yang
+# dicampur ke KEK slot password (lihat core/crypto.combine_kek_with_keyfile). Tanpa
+# keyfile yang persis sama, KEK tak bisa direkonstruksi → vault 2FA tak terbuka.
+# Keyfile TIDAK terikat ke vault tertentu (file_id mengikat di AAD wrap), jadi satu
+# keyfile boleh dipakai untuk banyak vault.
+KEYFILE_MIN_SIZE = 1  # 0 byte ditolak (tak ada rahasia)
+KEYFILE_MAX_SIZE = 64 * 1024 * 1024  # batas baca agar tak meng-hash file raksasa
+KEYFILE_GENERATED_SIZE = 128  # byte acak saat app membuatkan keyfile (1024-bit)
 
 # Flags header.
 FLAG_NONE = 0

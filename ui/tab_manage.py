@@ -4,12 +4,15 @@ Deskripsi: Tab "Manage Vault" — ganti password dan kelola recovery key untuk
            vault yang sudah ada, tanpa mengenkripsi ulang data.
 """
 
+import os
+
 import qtawesome as qta
 from loguru import logger
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDialog,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -36,9 +39,10 @@ from .components.drop_zone_open import DropZoneOpen
 from .components.recent_vaults_bar import RecentVaultsBar
 from .dialogs import ModernMessageBox, RecoveryCodeDialog
 from .i18n import register, tr
-from .styles import CLR_ACCENT, CLR_TEXT_DIM, CLR_WARN
+from .styles import CLR_ACCENT, CLR_BORDER, CLR_INSET, CLR_TEXT_DIM, CLR_WARN
 from .widgets import (
     AnimatedNotifBar,
+    ElidedLabel,
     MethodCard,
     PasswordLineEdit,
     apply_shadow,
@@ -59,6 +63,7 @@ class TabManage(QWidget):
         self.worker: CryptoWorker | None = None
         self._vault_path: str | None = None
         self._info: dict = {}
+        self._manage_keyfile_path = ""
         # Sibuk (operasi berjalan) — precondition vault dihitung langsung dari
         # _vault_path + _info di _refresh_action_buttons.
         self._busy = False
@@ -179,6 +184,11 @@ class TabManage(QWidget):
         )
         lay.addWidget(self.entry_current)
 
+        # Baris keyfile (2FA) — hanya tampil bila vault terpilih membutuhkan keyfile.
+        self.keyfile_row = self._build_keyfile_row()
+        self.keyfile_row.hide()
+        lay.addWidget(self.keyfile_row)
+
         # Segmented: pilih aksi (gaya konsisten dgn toggle Enkripsi/Dekripsi).
         seg_container = QFrame()
         seg_container.setObjectName("TabContainer")
@@ -219,6 +229,53 @@ class TabManage(QWidget):
         self.stack.currentChanged.connect(self._sync_stack_height)
         lay.addWidget(self.stack)
         return card
+
+    def _build_keyfile_row(self) -> QFrame:
+        """Pemilih keyfile untuk mengelola vault 2FA (current credential)."""
+        box = QFrame()
+        box.setObjectName("ManageKeyfileBox")
+        box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        box.setStyleSheet(
+            f"QFrame#ManageKeyfileBox {{ background-color: {CLR_INSET};"
+            f" border: 1px solid {CLR_BORDER}; border-radius: 10px; }}"
+        )
+        lay = QHBoxLayout(box)
+        lay.setContentsMargins(14, 8, 14, 8)
+        lay.setSpacing(10)
+        icon = QLabel()
+        icon.setPixmap(qta.icon("mdi6.key-chain-variant", color=CLR_ACCENT).pixmap(16, 16))
+        lay.addWidget(icon, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.lbl_manage_keyfile = ElidedLabel(tr("manage.keyfile.none", "No keyfile selected"))
+        self.lbl_manage_keyfile.setObjectName("MutedText")
+        lay.addWidget(self.lbl_manage_keyfile, 1)
+        self.btn_manage_keyfile = QPushButton()
+        register(self.btn_manage_keyfile, "manage.keyfile.choose", "Select keyfile")
+        self.btn_manage_keyfile.setObjectName("BtnInlineSecondary")
+        self.btn_manage_keyfile.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_manage_keyfile.clicked.connect(self._choose_manage_keyfile)
+        lay.addWidget(self.btn_manage_keyfile, 0)
+        return box
+
+    def _choose_manage_keyfile(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("manage.keyfile.dialog", "Select keyfile"), "", ""
+        )
+        if path:
+            self._manage_keyfile_path = path
+            self.lbl_manage_keyfile.setText(os.path.basename(path))
+
+    def _keyfile_arg(self) -> str | None:
+        """Path keyfile bila vault butuh keyfile & user memilihnya, jika tidak None."""
+        if self._info.get("requires_keyfile") and self._manage_keyfile_path:
+            return self._manage_keyfile_path
+        return None
+
+    def _reset_manage_keyfile(self):
+        self._manage_keyfile_path = ""
+        if hasattr(self, "lbl_manage_keyfile"):
+            self.lbl_manage_keyfile.setText(tr("manage.keyfile.none", "No keyfile selected"))
+        if hasattr(self, "keyfile_row"):
+            self.keyfile_row.hide()
 
     def _build_page_password(self) -> QWidget:
         page = QWidget()
@@ -376,6 +433,7 @@ class TabManage(QWidget):
         self.entry_current.clear()
         self.form.reset()
         self.entry_rec_pass.clear()
+        self._reset_manage_keyfile()
         if not path or not self.drop_zone.can_open_file():
             self.lbl_info.setText(tr("manage.select", "Select a vault file to manage."))
             # Biarkan kontrol tetap interaktif (input bisa diklik) walau belum ada
@@ -429,6 +487,7 @@ class TabManage(QWidget):
             )
         )
         self._set_actions_enabled(True)
+        self.keyfile_row.setVisible(self._info.get("requires_keyfile", False))
         self.drop_zone.set_verification_state("pending", tr("manage.ready", "Ready to manage"))
         self._update_recovery_section(has_recovery)
         self.status_changed.emit(
@@ -450,6 +509,7 @@ class TabManage(QWidget):
         # _refresh_action_buttons (disable sampai precondition + valid).
         for w in (
             self.entry_current,
+            self.btn_manage_keyfile,
             self.btn_seg_pw,
             self.btn_seg_rec,
             self.form,
@@ -504,7 +564,11 @@ class TabManage(QWidget):
             )
             return
         self._run_action(
-            change_password, self._vault_path, self.entry_current.text(), self.form.get_password()
+            change_password,
+            self._vault_path,
+            self.entry_current.text(),
+            self.form.get_password(),
+            keyfile_path=self._keyfile_arg(),
         )
 
     def _add_recovery(self):
@@ -523,13 +587,19 @@ class TabManage(QWidget):
                 self.entry_current.text(),
                 passphrase,
                 _MODE_PASSPHRASE,
+                keyfile_path=self._keyfile_arg(),
             )
         else:
             code = generate_recovery_code()
             if RecoveryCodeDialog(code, parent=self).exec() != QDialog.DialogCode.Accepted:
                 return
             self._run_action(
-                add_recovery_key, self._vault_path, self.entry_current.text(), code, _MODE_CODE
+                add_recovery_key,
+                self._vault_path,
+                self.entry_current.text(),
+                code,
+                _MODE_CODE,
+                keyfile_path=self._keyfile_arg(),
             )
 
     def _remove_recovery(self):
@@ -542,19 +612,24 @@ class TabManage(QWidget):
                 "The recovery key for this vault will be removed. After this, only the "
                 "password can open it.\n\nRemove the recovery key?",
             ),
-            icon_name="mdi6.key-remove-outline",
+            icon_name="mdi6.key-remove",
             icon_color=CLR_WARN,
             parent=self,
         )
         dialog.btn_yes.setText(tr("common.remove", "Remove"))
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        self._run_action(remove_recovery_key, self._vault_path, self.entry_current.text())
+        self._run_action(
+            remove_recovery_key,
+            self._vault_path,
+            self.entry_current.text(),
+            keyfile_path=self._keyfile_arg(),
+        )
 
     # ── Worker plumbing ───────────────────────────────────────────────────────
-    def _run_action(self, func, *args):
+    def _run_action(self, func, *args, **kwargs):
         self._set_busy(True)
-        self.worker = CryptoWorker(func, *args, parent=self)
+        self.worker = CryptoWorker(func, *args, parent=self, **kwargs)
         self.worker.finished.connect(self._on_worker_done)
         self.worker.finished.connect(self.worker.deleteLater)
         self.worker.start()

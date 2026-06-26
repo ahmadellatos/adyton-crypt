@@ -1,6 +1,9 @@
+import os
+
 import qtawesome as qta
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -16,7 +19,7 @@ from ..styles import (
     CLR_TEXT_MUTED,
     CLR_WARN,
 )
-from ..widgets import PasswordLineEdit, apply_shadow, build_tips_box
+from ..widgets import ElidedLabel, PasswordLineEdit, apply_shadow, build_tips_box
 
 _PLACEHOLDER_PW = "Type your password here…"
 _PLACEHOLDER_PW_RECOVERY = "Password or recovery key…"
@@ -62,6 +65,8 @@ class PasswordPanelOpen(QFrame):
 
         self._vault_hint: str | None = None
         self._vault_has_recovery = False
+        self._vault_requires_keyfile = False
+        self._keyfile_path = ""
         self.hint_box = self._build_hint_box()
         self.hint_box.hide()
         self.v_pw.addWidget(self.hint_box)
@@ -72,6 +77,10 @@ class PasswordPanelOpen(QFrame):
         )
         self.entry_pw.textChanged.connect(self._on_pw_change)
         self.v_pw.addWidget(self.entry_pw)
+
+        self.keyfile_box = self._build_keyfile_box()
+        self.keyfile_box.hide()
+        self.v_pw.addWidget(self.keyfile_box)
 
         self.status_box = self._build_status_box()
         self.status_box.hide()
@@ -107,6 +116,62 @@ class PasswordPanelOpen(QFrame):
             ),
         ]
         return build_tips_box(tips, content_margins=(14, 12, 14, 12), spacing=10, icon_px=15)
+
+    def _build_keyfile_box(self) -> QFrame:
+        """Pemilih keyfile (2FA), hanya tampil bila vault membutuhkan keyfile.
+
+        Keyfile bersifat opsional di UI: user boleh memakai recovery key (yang tak
+        butuh keyfile) sebagai gantinya. Jadi tidak ada pemaksaan keras di sini —
+        cukup affordance + penyimpanan path; pemeriksaan benar/salah terjadi saat
+        dekripsi.
+        """
+        box = QFrame()
+        box.setObjectName("KeyfileOpenBox")
+        box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        box.setStyleSheet(
+            f"QFrame#KeyfileOpenBox {{ background-color: {CLR_INSET};"
+            f" border: 1px solid {CLR_BORDER}; border-radius: 10px; }}"
+        )
+        outer = QVBoxLayout(box)
+        outer.setContentsMargins(14, 10, 14, 10)
+        outer.setSpacing(8)
+
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        icon = QLabel()
+        icon.setPixmap(qta.icon("mdi6.key-chain-variant", color=CLR_ACCENT).pixmap(16, 16))
+        row.addWidget(icon, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self.lbl_keyfile = ElidedLabel(tr("open.keyfile.none", "No keyfile selected"))
+        self.lbl_keyfile.setObjectName("MutedText")
+        row.addWidget(self.lbl_keyfile, 1)
+
+        self.btn_choose_keyfile = QPushButton()
+        register(self.btn_choose_keyfile, "open.keyfile.choose", "Select keyfile")
+        self.btn_choose_keyfile.setObjectName("BtnInlineSecondary")
+        self.btn_choose_keyfile.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_choose_keyfile.clicked.connect(self._choose_keyfile)
+        row.addWidget(self.btn_choose_keyfile, 0)
+        outer.addLayout(row)
+
+        note = QLabel()
+        register(
+            note,
+            "open.keyfile.note",
+            "This vault needs its keyfile. Select it, or use your recovery key instead.",
+        )
+        note.setObjectName("OptionDesc")
+        note.setWordWrap(True)
+        outer.addWidget(note)
+        return box
+
+    def _choose_keyfile(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("open.keyfile.dialog", "Select keyfile"), "", ""
+        )
+        if path:
+            self._keyfile_path = path
+            self.lbl_keyfile.setText(os.path.basename(path))
 
     def _build_hint_box(self) -> QFrame:
         box = QFrame()
@@ -233,17 +298,28 @@ class PasswordPanelOpen(QFrame):
         self.valid_state_changed.emit(bool(pw))
 
     # --- PUBLIC API ---
-    def show_vault_meta(self, hint: str | None, has_recovery: bool) -> None:
-        """Tampilkan hint (jika ada) & sesuaikan affordance untuk recovery key."""
+    def show_vault_meta(
+        self, hint: str | None, has_recovery: bool, requires_keyfile: bool = False
+    ) -> None:
+        """Tampilkan hint (jika ada) & sesuaikan affordance recovery key / keyfile."""
         self._vault_hint = (hint or "").strip() or None
         self._vault_has_recovery = bool(has_recovery)
+        self._vault_requires_keyfile = bool(requires_keyfile)
         self._apply_meta()
 
     def clear_vault_meta(self) -> None:
         self._vault_hint = None
         self._vault_has_recovery = False
+        self._vault_requires_keyfile = False
+        self._clear_keyfile()
         self.hint_box.hide()
+        self.keyfile_box.hide()
         self.entry_pw.setPlaceholderText(_placeholder_pw())
+
+    def _clear_keyfile(self) -> None:
+        self._keyfile_path = ""
+        if hasattr(self, "lbl_keyfile"):
+            self.lbl_keyfile.setText(tr("open.keyfile.none", "No keyfile selected"))
 
     def _apply_meta(self) -> None:
         if self._vault_hint:
@@ -251,9 +327,14 @@ class PasswordPanelOpen(QFrame):
             self.hint_box.show()
         else:
             self.hint_box.hide()
+        self.keyfile_box.setVisible(self._vault_requires_keyfile)
         self.entry_pw.setPlaceholderText(
             _placeholder_pw_recovery() if self._vault_has_recovery else _placeholder_pw()
         )
+
+    def keyfile_path(self) -> str:
+        """Path keyfile terpilih (atau '' bila tak ada). Hanya relevan untuk 2FA."""
+        return self._keyfile_path
 
     def get_password(self) -> str:
         return self.entry_pw.text()
@@ -287,6 +368,7 @@ class PasswordPanelOpen(QFrame):
         self.info_box.hide()
         self.error_box.hide()
         self.hint_box.hide()
+        self.keyfile_box.hide()
         self.status_box.show()
         self.lbl_status_file.setText(file_name or "—")
         self.lbl_status_size.setText(size_text or "—")

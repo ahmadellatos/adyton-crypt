@@ -115,7 +115,11 @@ def global_exception_handler(exc_type, exc_value, exc_traceback) -> None:
         sys.__excepthook__(exc_type, exc_value, exc_traceback)
         return
 
-    logger.critical("Uncaught exception:\n", exc_info=(exc_type, exc_value, exc_traceback))
+    # Pakai opt(exception=...) — idiom loguru — BUKAN exc_info= (gaya stdlib logging).
+    # Dengan exc_info=, loguru menaruh tuple traceback mentah di `extra`, yang lalu
+    # gagal di-pickle oleh sink enqueue=True ("cannot pickle 'traceback' object") →
+    # exception apa pun tak terekam. opt(exception=) memformat traceback (pickle-safe).
+    logger.opt(exception=(exc_type, exc_value, exc_traceback)).critical("Uncaught exception")
 
     app = QApplication.instance()
     if app:
