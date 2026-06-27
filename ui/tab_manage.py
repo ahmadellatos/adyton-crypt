@@ -547,11 +547,15 @@ class TabManage(QWidget):
             self._refresh_action_buttons()
 
     def _generate_add_keyfile(self):
+        # DontConfirmOverwrite: generate_keyfile sengaja menolak menimpa file yang ada
+        # (open "xb"); tanpa opsi ini dialog native menanyakan "Replace?" lalu app
+        # menolak — prompt yang saling bertentangan (sama seperti panel Lock).
         path, _ = QFileDialog.getSaveFileName(
             self,
             tr("keyfile.generate.dialog", "Create keyfile"),
             "adyton.key",
             tr("keyfile.generate.filter", "Keyfile (*.key)"),
+            options=QFileDialog.Option.DontConfirmOverwrite,
         )
         if not path:
             return
@@ -926,11 +930,17 @@ class TabManage(QWidget):
             )
             logger.info(f"Manage vault sukses: {message}")
         elif status == VaultStatus.WRONG_PASSWORD:
-            self.notif.show_msg(
-                "err",
-                tr("manage.wrong", "The current password or recovery key is incorrect."),
-                7000,
-            )
+            # Vault 2FA tanpa keyfile terpilih → password gagal membuka slot keyfile.
+            # Recovery key tetap valid tanpa keyfile, jadi nadanya kondisional.
+            if self._info.get("requires_keyfile") and not self._manage_keyfile_path:
+                wrong_msg = tr(
+                    "manage.wrong.keyfile",
+                    "Wrong password or recovery key. If you're using your password, "
+                    "also select the keyfile above.",
+                )
+            else:
+                wrong_msg = tr("manage.wrong", "The current password or recovery key is incorrect.")
+            self.notif.show_msg("err", wrong_msg, 7000)
             self.status_changed.emit(
                 tr("manage.status.wrong.title", "Incorrect credential"),
                 tr("manage.status.wrong.sub", "Try again"),

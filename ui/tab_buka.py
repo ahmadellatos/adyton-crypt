@@ -128,6 +128,7 @@ class TabBuka(QWidget):
         self.password_panel.valid_state_changed.connect(self._on_password_valid_changed)
         self.password_panel.retry_requested.connect(self._retry_after_error)
         self.password_panel.pick_file_requested.connect(self.drop_zone.choose_file)
+        self.password_panel.keyfile_changed.connect(self._validate_state)
 
     def _on_file_changed(self, path: str):
         self._has_file = bool(path) and self.drop_zone.can_open_file()
@@ -174,6 +175,17 @@ class TabBuka(QWidget):
             return
         if not self._konfirmasi_timpa:
             enabled = self._has_file and self._has_password
+            # Bila vault butuh keyfile DAN tak punya recovery key, keyfile adalah
+            # satu-satunya faktor kedua → wajib dipilih sebelum tombol aktif (tanpa ini
+            # user mengetuk Open lalu kena WRONG_PASSWORD). Vault 2FA yang punya recovery
+            # tidak digate: user boleh memakai recovery key tanpa keyfile.
+            if (
+                enabled
+                and self.password_panel.requires_keyfile()
+                and not self.password_panel.has_recovery()
+                and not self.password_panel.keyfile_path()
+            ):
+                enabled = False
             self.btn_aksi.setEnabled(enabled)
             self.btn_aksi.setFocusPolicy(
                 Qt.FocusPolicy.StrongFocus if enabled else Qt.FocusPolicy.NoFocus
@@ -366,6 +378,15 @@ class TabBuka(QWidget):
         elif status == VaultStatus.WRONG_PASSWORD:
             logger.warning("Dekripsi gagal: Password salah.")
             user_msg = format_user_error(status, msg, "buka")
+            # Vault 2FA dibuka tanpa keyfile → slot keyfile dilewati, hasilnya
+            # WRONG_PASSWORD yang menyesatkan. Beri petunjuk yang benar (recovery key
+            # tetap valid tanpa keyfile, jadi nadanya kondisional).
+            if self.password_panel.requires_keyfile() and not self.password_panel.keyfile_path():
+                user_msg = tr(
+                    "open.wrongpw.keyfile",
+                    "Wrong password or recovery key. If you're using your password, "
+                    "also select the keyfile this vault needs.",
+                )
             self.drop_zone.set_verification_state("failed")
             self.status_changed.emit(
                 tr("open.status.failed", "Verification failed"),

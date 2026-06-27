@@ -75,3 +75,52 @@ def test_clear_meta_resets_placeholder(qtbot):
 
     assert panel.hint_box.isVisible() is False
     assert _placeholder(panel) == _PLACEHOLDER_PW
+
+
+@pytest.mark.qt
+def test_keyfile_box_and_getters_follow_meta(qtbot):
+    """Bug F: getter requires_keyfile/has_recovery mengikuti meta vault."""
+    panel = PasswordPanelOpen()
+    qtbot.addWidget(panel)
+    panel.show()
+
+    panel.show_vault_meta(None, has_recovery=False, requires_keyfile=True)
+    assert panel.requires_keyfile() is True
+    assert panel.has_recovery() is False
+    assert panel.keyfile_box.isVisible() is True
+
+    panel.show_vault_meta(None, has_recovery=False, requires_keyfile=False)
+    assert panel.requires_keyfile() is False
+    assert panel.keyfile_box.isVisible() is False
+
+
+@pytest.mark.qt
+def test_keyfile_cleared_when_switching_vaults(qtbot):
+    """Bug B: pilihan keyfile vault lama tak boleh terbawa ke vault berikutnya."""
+    panel = PasswordPanelOpen()
+    qtbot.addWidget(panel)
+    panel.show()
+
+    panel.show_vault_meta(None, has_recovery=False, requires_keyfile=True)
+    # Simulasikan user memilih keyfile untuk vault A.
+    panel._keyfile_path = "C:/secret/key.bin"
+    panel.lbl_keyfile.setText("key.bin")
+    assert panel.keyfile_path() == "C:/secret/key.bin"
+
+    # Pindah ke vault B → keyfile harus ter-reset.
+    panel.show_vault_meta(None, has_recovery=False, requires_keyfile=True)
+    assert panel.keyfile_path() == ""
+
+
+@pytest.mark.qt
+def test_keyfile_note_mentions_recovery_only_when_present(qtbot):
+    """Bug E: note menyebut recovery key hanya bila vault memang punya."""
+    panel = PasswordPanelOpen()
+    qtbot.addWidget(panel)
+    panel.show()
+
+    panel.show_vault_meta(None, has_recovery=True, requires_keyfile=True)
+    assert "recovery" in panel.lbl_keyfile_note.text().lower()
+
+    panel.show_vault_meta(None, has_recovery=False, requires_keyfile=True)
+    assert "recovery" not in panel.lbl_keyfile_note.text().lower()

@@ -38,6 +38,9 @@ class PasswordPanelOpen(QFrame):
     valid_state_changed = Signal(bool)
     retry_requested = Signal()
     pick_file_requested = Signal()
+    # Dipancarkan saat pilihan keyfile berubah → TabBuka me-revalidasi tombol Open
+    # (untuk vault 2FA tanpa recovery, keyfile wajib agar tombol aktif).
+    keyfile_changed = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -154,15 +157,17 @@ class PasswordPanelOpen(QFrame):
         row.addWidget(self.btn_choose_keyfile, 0)
         outer.addLayout(row)
 
-        note = QLabel()
+        # Teks note di-set di _apply_meta (tergantung ada/tidaknya recovery key); di
+        # sini cukup registrasi varian "ada recovery" sebagai default bilingual.
+        self.lbl_keyfile_note = QLabel()
         register(
-            note,
+            self.lbl_keyfile_note,
             "open.keyfile.note",
             "This vault needs its keyfile. Select it, or use your recovery key instead.",
         )
-        note.setObjectName("OptionDesc")
-        note.setWordWrap(True)
-        outer.addWidget(note)
+        self.lbl_keyfile_note.setObjectName("OptionDesc")
+        self.lbl_keyfile_note.setWordWrap(True)
+        outer.addWidget(self.lbl_keyfile_note)
         return box
 
     def _choose_keyfile(self) -> None:
@@ -172,6 +177,7 @@ class PasswordPanelOpen(QFrame):
         if path:
             self._keyfile_path = path
             self.lbl_keyfile.setText(os.path.basename(path))
+            self.keyfile_changed.emit()
 
     def _build_hint_box(self) -> QFrame:
         box = QFrame()
@@ -302,6 +308,10 @@ class PasswordPanelOpen(QFrame):
         self, hint: str | None, has_recovery: bool, requires_keyfile: bool = False
     ) -> None:
         """Tampilkan hint (jika ada) & sesuaikan affordance recovery key / keyfile."""
+        # Vault baru → mulai tanpa keyfile carry-over dari vault sebelumnya. Keyfile
+        # bersifat vault-independent, tapi memakai pilihan vault lama bisa menampilkan
+        # label basi atau diam-diam mengoper keyfile yang salah; user memilih ulang.
+        self._clear_keyfile()
         self._vault_hint = (hint or "").strip() or None
         self._vault_has_recovery = bool(has_recovery)
         self._vault_requires_keyfile = bool(requires_keyfile)
@@ -328,6 +338,20 @@ class PasswordPanelOpen(QFrame):
         else:
             self.hint_box.hide()
         self.keyfile_box.setVisible(self._vault_requires_keyfile)
+        if self._vault_requires_keyfile:
+            # Jangan menyarankan recovery key bila vault memang tak punya — menyesatkan.
+            if self._vault_has_recovery:
+                self.lbl_keyfile_note.setText(
+                    tr(
+                        "open.keyfile.note",
+                        "This vault needs its keyfile. Select it, or use your recovery "
+                        "key instead.",
+                    )
+                )
+            else:
+                self.lbl_keyfile_note.setText(
+                    tr("open.keyfile.note.norecovery", "This vault needs its keyfile to open.")
+                )
         self.entry_pw.setPlaceholderText(
             _placeholder_pw_recovery() if self._vault_has_recovery else _placeholder_pw()
         )
@@ -335,6 +359,14 @@ class PasswordPanelOpen(QFrame):
     def keyfile_path(self) -> str:
         """Path keyfile terpilih (atau '' bila tak ada). Hanya relevan untuk 2FA."""
         return self._keyfile_path
+
+    def requires_keyfile(self) -> bool:
+        """True bila vault terpilih butuh keyfile (slot password dilindungi 2FA)."""
+        return self._vault_requires_keyfile
+
+    def has_recovery(self) -> bool:
+        """True bila vault terpilih punya recovery key (jalur break-glass tanpa keyfile)."""
+        return self._vault_has_recovery
 
     def get_password(self) -> str:
         return self.entry_pw.text()

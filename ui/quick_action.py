@@ -39,6 +39,7 @@ from core.vault import (
     cancel_pending_overwrite,
     hapus_permanen,
     kunci_brankas,
+    vault_info,
 )
 from core.worker import CryptoWorker
 
@@ -322,6 +323,24 @@ class QuickActionWindow(FramelessWindow):
             )
 
         if self.mode is QuickMode.DECRYPT:
+            # Vault 2FA butuh keyfile yang tak bisa dipilih di dialog mini ini. Tanpa
+            # cek ini, buka_brankas(password tanpa keyfile) melewati slot keyfile dan
+            # gagal sebagai WRONG_PASSWORD yang menyesatkan. Arahkan ke app utama.
+            if vault_info(self.paths[0]).get("requires_keyfile"):
+                dlg = ModernMessageBox(
+                    title="Keyfile required",
+                    message=(
+                        "This vault is protected by a keyfile (2FA). Open it from the "
+                        "main Adyton Crypt app, where you can select the keyfile."
+                    ),
+                    icon_name="mdi6.key-chain-variant",
+                    icon_color=CLR_ACCENT,
+                    parent=self,
+                )
+                dlg.btn_cancel.hide()
+                dlg.btn_yes.setText("OK")
+                dlg.exec()
+                return None
             return CryptoWorker(
                 buka_brankas,
                 self.paths[0],

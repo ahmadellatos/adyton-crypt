@@ -651,9 +651,17 @@ def _load_keyfile_material(keyfile_path: str) -> bytes:
     if size > KEYFILE_MAX_SIZE:
         raise ValueError("The keyfile is too large. Choose a file under 64 MB.")
     hasher = hashlib.sha256()
+    read_total = 0
     try:
         with path.open("rb") as fk:
             for block in iter(lambda: fk.read(1024 * 1024), b""):
+                # Cap di dalam loop, jangan hanya andalkan stat() di atas: file bisa
+                # tumbuh antara stat dan baca (TOCTOU), atau menunjuk file spesial/
+                # virtual yang stat-nya kecil tapi mengalir tanpa henti. Tolak alih-alih
+                # mem-hash tanpa batas (mencegah hang / baca raksasa saat membuka vault).
+                read_total += len(block)
+                if read_total > KEYFILE_MAX_SIZE:
+                    raise ValueError("The keyfile is too large. Choose a file under 64 MB.")
                 hasher.update(block)
     except OSError as exc:
         raise ValueError("The keyfile could not be read. Check that it still exists.") from exc
@@ -1422,6 +1430,22 @@ def kunci_brankas(
                 "deleted along with it or pulled into the archive.",
             )
 
+    # Keyfile (2FA) tidak boleh berada di dalam / sama dengan sumber yang dikunci:
+    # ia akan ikut diarsipkan ke dalam vault DAN — bila "hapus asli" aktif — ikut
+    # terhapus/di-wipe bersama sumber, sehingga vault butuh keyfile yang sudah lenyap
+    # → terkunci permanen (kecuali ada recovery key). Tolak lebih awal.
+    if keyfile_path:
+        keyfile_obj = Path(keyfile_path)
+        for source in valid_paths:
+            if _target_conflicts_with_source(keyfile_obj, Path(source)):
+                return (
+                    VaultStatus.ERROR,
+                    "The keyfile can't be the same as, or inside, the file or folder "
+                    'being locked. It would be archived into the vault and — with "delete '
+                    'original" on — wiped along with it, locking you out. Store the keyfile '
+                    "somewhere else.",
+                )
+
     if len(valid_paths) == 1:
         nama_virtual = _sanitize_virtual_name(Path(valid_paths[0]).name)
         target_dir = ""
@@ -2147,10 +2171,13 @@ def add_keyfile(
 ) -> tuple[VaultStatus, str | None]:
     """Aktifkan 2FA pada vault yang sudah ada: lindungi slot password dengan keyfile.
 
-    Hanya region keyslot yang ditulis ulang (panjang identik — slot password &
-    slot keyfile berukuran sama), jadi O(ukuran header). ``password`` HARUS membuka
-    slot password (bukan recovery key), karena slot itu dibangun ulang menjadi
-    slot keyfile dari password yang sama.
+    Yang BERUBAH hanya region keyslot (panjang header identik — slot password & slot
+    keyfile berukuran sama), tapi penulisannya tetap lewat ``_rewrite_header_full``
+    (temp + atomic replace) yang **menyalin seluruh isi vault**, jadi secara I/O ini
+    **O(ukuran vault)** dan butuh ruang disk kosong ≈ sebesar vault (bisa memunculkan
+    "Not enough storage space to update the vault" untuk vault besar). ``password``
+    HARUS membuka slot password (bukan recovery key), karena slot itu dibangun ulang
+    menjadi slot keyfile dari password yang sama.
     """
     keyfile_material, kf_error = _load_keyfile_material_optional(keyfile_path)
     if kf_error:
@@ -2211,7 +2238,10 @@ def remove_keyfile(
     """Matikan 2FA: lepas perlindungan keyfile dari slot password.
 
     Membutuhkan ``password`` DAN ``keyfile_path`` (keduanya membuka slot password),
-    lalu membangun ulang slot itu sebagai slot password biasa. Panjang header tetap.
+    lalu membangun ulang slot itu sebagai slot password biasa. Panjang header tetap,
+    tetapi seperti ``add_keyfile`` penulisannya lewat ``_rewrite_header_full`` yang
+    menyalin seluruh isi vault → secara I/O **O(ukuran vault)** + butuh ruang disk
+    kosong ≈ sebesar vault.
     """
     keyfile_material, kf_error = _load_keyfile_material_optional(keyfile_path)
     if kf_error:

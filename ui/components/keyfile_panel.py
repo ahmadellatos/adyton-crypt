@@ -178,11 +178,16 @@ class KeyfilePanel(QWidget):
             self._set_keyfile(path)
 
     def _generate_keyfile(self):
+        # DontConfirmOverwrite: generate_keyfile sengaja MENOLAK menimpa file yang
+        # ada (open "xb") demi melindungi keyfile/dokumen lain. Tanpa opsi ini, dialog
+        # native lebih dulu bertanya "Replace existing file?", user klik Yes, lalu app
+        # malah menolak ("already exists") — prompt yang saling bertentangan.
         path, _ = QFileDialog.getSaveFileName(
             self,
             tr("keyfile.generate.dialog", "Create keyfile"),
             "adyton.key",
             tr("keyfile.generate.filter", "Keyfile (*.key)"),
+            options=QFileDialog.Option.DontConfirmOverwrite,
         )
         if not path:
             return
@@ -198,7 +203,11 @@ class KeyfilePanel(QWidget):
         return self.switch_keyfile.isChecked()
 
     def keyfile_path(self) -> str:
-        return self._keyfile_path
+        # Hanya laporkan keyfile saat 2FA benar-benar aktif. Bila user memilih
+        # keyfile lalu MEMATIKAN toggle, path lama tak boleh ikut terpakai — kalau
+        # tidak, vault diam-diam dibuat 2FA padahal user sudah menonaktifkannya
+        # (risiko lockout: ia mengira vault hanya butuh password).
+        return self._keyfile_path if self.keyfile_enabled() else ""
 
     def has_pending_keyfile_error(self) -> bool:
         """True jika keyfile diaktifkan tapi belum ada file dipilih."""

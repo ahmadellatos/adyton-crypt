@@ -288,6 +288,43 @@ def test_remove_keyfile_on_plain_vault_errors(tmp_path):
     assert "isn't protected by a keyfile" in message.lower() or "keyfile" in message.lower()
 
 
+def test_keyfile_inside_or_equal_source_is_rejected(tmp_path):
+    """Bug A/H: keyfile di dalam / sama dengan sumber ditolak.
+
+    Tanpa guard ini, keyfile ikut ter-arsip ke vault dan — bila "hapus asli" aktif —
+    ikut terhapus, sehingga vault butuh keyfile yang sudah lenyap (lockout permanen).
+    """
+    # 1) Keyfile DI DALAM folder sumber.
+    source = _make_source(tmp_path)
+    kf_inside = source / "my.key"
+    kf_inside.write_bytes(b"keyfile-material-inside" * 4)
+    vault_path = tmp_path / "vault.adtn"
+    status, message = kunci_brankas(
+        [str(source)], str(vault_path), PASSWORD, keyfile_path=str(kf_inside)
+    )
+    assert status == VaultStatus.ERROR
+    assert "keyfile" in message.lower()
+    assert not vault_path.exists()  # tak ada vault parsial yang ditulis
+
+    # 2) Keyfile SAMA DENGAN file sumber tunggal.
+    single = tmp_path / "single.bin"
+    single.write_bytes(b"data-and-keyfile" * 8)
+    status, message = kunci_brankas(
+        [str(single)], str(tmp_path / "v2.adtn"), PASSWORD, keyfile_path=str(single)
+    )
+    assert status == VaultStatus.ERROR
+    assert "keyfile" in message.lower()
+
+    # 3) Keyfile DI LUAR sumber tetap boleh (sanity — guard tidak over-reject).
+    kf_outside = tmp_path / "outside.key"
+    kf_outside.write_bytes(b"outside-keyfile-material" * 4)
+    status, message = kunci_brankas(
+        [str(source)], str(tmp_path / "ok.adtn"), PASSWORD, keyfile_path=str(kf_outside)
+    )
+    assert status == VaultStatus.SUCCESS, message
+    assert vault_info(str(tmp_path / "ok.adtn"))["requires_keyfile"] is True
+
+
 def test_add_recovery_to_2fa_vault_uses_keyfile(tmp_path):
     """add_recovery_key pada vault 2FA membutuhkan password + keyfile."""
     kf = _make_keyfile(tmp_path)

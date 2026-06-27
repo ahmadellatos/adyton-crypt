@@ -47,8 +47,10 @@ RECORD_TYPE_FINAL = 2
 # AAD record  = MAGIC+VERSION+FILE_ID+CHUNK_SIZE+FLAGS  (TANPA keyslot, agar
 #               ganti password cukup menulis ulang region keyslot — record tetap
 #               valid karena key record = Master Key acak yang tidak berubah).
-# AAD wrap    = MAGIC+VERSION+FILE_ID+slot_meta  (mengikat wrapped MK ke
-#               identitas vault + parameter slot; cegah slot-swap & tamper).
+# AAD wrap    = MAGIC+VERSION+FILE_ID+HINT_BYTES+slot_meta  (mengikat wrapped MK
+#               ke identitas vault + hint plaintext + parameter slot; cegah
+#               slot-swap, tamper hint, & tamper parameter. HINT_BYTES kosong untuk
+#               vault tanpa hint → AAD identik dengan format sebelum hint diikat).
 
 MASTER_KEY_SIZE = 32
 WRAP_NONCE_SIZE = 12

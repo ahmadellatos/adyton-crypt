@@ -224,9 +224,14 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "open.pw.retry": "Coba Lagi",
         "open.pw.pickfile": "Pilih File Lain",
         "open.keyfile.none": "Belum ada keyfile dipilih",
+        "open.wrongpw.keyfile": (
+            "Password atau recovery key salah. Kalau kamu memakai password, "
+            "pilih juga keyfile yang dibutuhkan vault ini."
+        ),
         "open.keyfile.choose": "Pilih keyfile",
         "open.keyfile.dialog": "Pilih keyfile",
         "open.keyfile.note": "Vault ini membutuhkan keyfile-nya. Pilih file-nya, atau pakai recovery key sebagai gantinya.",
+        "open.keyfile.note.norecovery": "Vault ini membutuhkan keyfile-nya untuk dibuka.",
         "open.tip.1": "Password kamu tidak bisa dipulihkan. Simpan di tempat aman.",
         "open.tip.2": "Pakai password yang sama persis seperti saat mengunci vault ini.",
         "open.tip.3": "Hanya file .adtn buatan Adyton Crypt yang bisa dibuka.",
@@ -340,6 +345,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "manage.status.failed.sub": "Tidak bisa memperbarui vault",
         "manage.done": "Vault berhasil diperbarui.",
         "manage.wrong": "Password atau recovery key saat ini salah.",
+        "manage.wrong.keyfile": (
+            "Password atau recovery key salah. Kalau kamu memakai password, "
+            "pilih juga keyfile di atas."
+        ),
         "manage.fail": "Tidak bisa memperbarui vault.",
         "manage.notif.updated": "Kredensial vault diperbarui.",
         # ── Recovery + hint (Tab Kunci) ─────────────────────────────────────
