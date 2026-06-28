@@ -26,7 +26,7 @@ from .styles import (
     CLR_LINE,
     CLR_ON_ACCENT,
     CLR_TEXT_DIM,
-    CLR_TEXT_FAINT,
+    CLR_TEXT_DISABLED,
     CLR_TEXT_MAIN,
     IS_LIGHT,
 )
@@ -97,7 +97,7 @@ class BigActionBtn(QPushButton):
 
     def setEnabled(self, val):
         super().setEnabled(val)
-        color_val = CLR_ON_ACCENT if val else CLR_TEXT_FAINT
+        color_val = CLR_ON_ACCENT if val else CLR_TEXT_DISABLED
 
         self.lbl_icon.setPixmap(qta.icon(self.icon_name, color=color_val).pixmap(22, 22))
 
@@ -112,9 +112,9 @@ class BigActionBtn(QPushButton):
         else:
             # Nonaktif — teks redup di atas latar disabled
             self.lbl_title.setStyleSheet(
-                f"font-size: 13.5pt; font-weight: 700; color: {CLR_TEXT_FAINT};"
+                f"font-size: 13.5pt; font-weight: 700; color: {CLR_TEXT_DISABLED};"
             )
-            self.lbl_sub.setStyleSheet(f"font-size: 9pt; color: {CLR_TEXT_FAINT};")
+            self.lbl_sub.setStyleSheet(f"font-size: 9pt; color: {CLR_TEXT_DISABLED};")
 
         self._apply_progress_style()
 

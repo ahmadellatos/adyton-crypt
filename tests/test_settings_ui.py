@@ -88,6 +88,34 @@ def test_i18n_switch_language(qtbot):
 
 
 @pytest.mark.qt
+def test_theme_restart_box_reflects_pending_change(qtbot, tmp_path):
+    """Regresi: kotak "Restart now" harus muncul saat tema TERSIMPAN beda dari aktif,
+    bukan hanya pada saat combo diubah — sehingga membuka ulang Settings dengan
+    perubahan tema yang belum di-restart tetap menampilkan tombol Restart."""
+    import ui.styles as styles
+    from ui.settings_window import SettingsWindow
+
+    win = SettingsWindow()
+    qtbot.addWidget(win)
+    # Store terisolasi agar tak menyentuh QSettings user nyata.
+    win.s = _isolated_store(tmp_path)
+    try:
+        styles.set_active_theme("dark")
+
+        # Tersimpan=light, aktif=dark → kotak restart tampil meski combo tak diubah.
+        win.s.set_theme("light")
+        win._update_theme_restart_box()
+        assert win.theme_restart_box.isHidden() is False
+
+        # Tersimpan=dark=aktif → kotak tersembunyi.
+        win.s.set_theme("dark")
+        win._update_theme_restart_box()
+        assert win.theme_restart_box.isHidden() is True
+    finally:
+        styles.set_active_theme("dark")
+
+
+@pytest.mark.qt
 def test_settings_window_builds_and_retranslates(qtbot):
     from ui.settings_window import SettingsWindow
 

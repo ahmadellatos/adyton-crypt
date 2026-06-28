@@ -471,9 +471,23 @@ class SettingsWindow(QDialog):
             f"QComboBox {{ background:{CLR_INSET}; border:1px solid {CLR_INPUT_BORDER};"
             f" border-radius:10px; padding:7px 12px; color:{CLR_TEXT_MAIN}; min-width:{min_w}px; }}"
             " QComboBox::drop-down { border:none; width:22px; }"
+            # Popup: padding di dalam frame + tiap item dipadatkan (padding & sudut
+            # membulat). Highlight yang mengikuti mouse (hover) di popup QComboBox pakai
+            # mekanisme *selection* → selection-background-color WAJIB diisi (jangan
+            # transparent, atau hover hilang); ::item:hover ditambah utk berjaga-jaga.
+            # selection-color WAJIB diset juga: default Qt = putih (HighlightedText) →
+            # di light theme teks item terpilih jadi putih nyaris tak terbaca di atas
+            # highlight terang. Samakan dgn teks normal agar tetap terbaca.
             f" QComboBox QAbstractItemView {{ background:{CLR_CARD}; border:1px solid {CLR_BORDER};"
-            f" selection-background-color:{CLR_LIST_SELECTED}; color:{CLR_TEXT_MAIN}; outline:none; }}"
+            f" border-radius:10px; padding:4px; selection-background-color:{CLR_LIST_SELECTED};"
+            f" selection-color:{CLR_TEXT_MAIN}; color:{CLR_TEXT_MAIN}; outline:none; }}"
+            " QComboBox QAbstractItemView::item { padding:7px 10px; border-radius:7px;"
+            " min-height:18px; }"
+            f" QComboBox QAbstractItemView::item:hover {{ background:{CLR_LIST_SELECTED}; }}"
         )
+        # Jarak nyata antar-item (gap) — andal di semua platform; QSS ::item margin
+        # sering diabaikan oleh view popup QComboBox.
+        cb.view().setSpacing(2)
         return cb
 
     # ── State <-> settings ─────────────────────────────────────────────────
@@ -498,11 +512,19 @@ class SettingsWindow(QDialog):
     def _on_theme_changed(self, *_):
         pref = str(self.combo_theme.currentData())
         self.s.set_theme(pref)
-        # Tampilkan hint restart hanya bila tema terpilih beda dari yang sedang aktif
-        # (tema diresolusi sekali saat startup — lihat ui/styles.py).
+        self._update_theme_restart_box()
+
+    def _update_theme_restart_box(self) -> None:
+        """Tampilkan kotak "Restart now" bila tema TERSIMPAN beda dari yang aktif.
+
+        Dihitung dari preferensi tersimpan (bukan hanya saat combo berubah) agar saat
+        Settings dibuka ulang dengan perubahan tema yang belum di-restart, user tetap
+        melihat — dan bisa memakai — tombol Restart. Tema diresolusi sekali saat startup
+        (lihat ui/styles.py), jadi perubahannya baru berlaku setelah app dibuka ulang.
+        """
         import ui.styles as styles
 
-        needs_restart = styles.resolve_theme(pref) != styles.ACTIVE_THEME
+        needs_restart = styles.resolve_theme(self.s.theme()) != styles.ACTIVE_THEME
         self.theme_restart_box.setVisible(needs_restart)
 
     def _on_reset(self):
@@ -537,6 +559,9 @@ class SettingsWindow(QDialog):
         self._fill_combo(
             self.combo_lang, [("en", "English"), ("id", "Indonesia")], self.s.language()
         )
+        # Pending theme change (dipilih tapi belum restart) harus tetap menampilkan
+        # kotak Restart saat Settings dibuka ulang — lihat _update_theme_restart_box.
+        self._update_theme_restart_box()
 
     def _fill_combo(self, cb: QComboBox, items, current):
         cb.blockSignals(True)

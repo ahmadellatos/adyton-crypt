@@ -130,6 +130,12 @@ class _EnterActivatesButtonFilter(QObject):
             and event.modifiers() in self._PLAIN
         ):
             app = QApplication.instance()
+            # Saat popup (menu/dropdown) terbuka, Enter MILIK popup itu. Jangan dibajak
+            # untuk meng-klik ulang tombol yang fokusnya tertinggal di belakang popup
+            # (mis. tombol pembuka menu) — tanpa guard ini, menu yang dibuka dari tombol
+            # "tak bisa di-Enter, cuma spasi" karena Enter dikonsumsi sebelum sampai menu.
+            if app is not None and app.activePopupWidget() is not None:
+                return False
             w = app.focusWidget() if app is not None else None
             if isinstance(w, QAbstractButton) and w.isEnabled():
                 w.animateClick()
@@ -178,6 +184,26 @@ class _GlobalToolTipFilter(QObject):
                         return str(data)
             w = w.parentWidget()
         return ""
+
+
+class _RoundedMenuFilter(QObject):
+    """Beri SEMUA ``QMenu`` native (mis. menu klik-kanan ``QTextEdit``/``QLineEdit``)
+    sudut membulat. Di Windows 10 popup QMenu adalah window persegi opaque, sehingga
+    ``border-radius`` dari QSS "bocor" → sudut terlihat lancip. ``WA_TranslucentBackground``
+    + frameless (diset saat ``Polish``, SEBELUM window native dibuat) menjadikan area di
+    luar radius transparan, sama seperti ``AccessibleCenteredMenu`` yang sudah mengatur
+    sendiri (karena itu yang sudah translucent dilewati)."""
+
+    def eventFilter(self, obj, event):
+        if (
+            event.type() == QEvent.Type.Polish
+            and obj.inherits("QMenu")
+            and not obj.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        ):
+            obj.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            obj.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+            obj.setWindowFlag(Qt.WindowType.NoDropShadowWindowHint, True)
+        return False
 
 
 class AppBrankas(FramelessMainWindow):
@@ -340,8 +366,11 @@ class AppBrankas(FramelessMainWindow):
         # agar gaya + perilakunya identik dengan tooltip path di Open/Lock.
         self._global_tooltip = CustomToolTip()
         self._tooltip_filter = _GlobalToolTipFilter(self._global_tooltip)
+        # Bulatkan sudut semua QMenu native (menu klik-kanan) — lihat _RoundedMenuFilter.
+        self._rounded_menu_filter = _RoundedMenuFilter()
         if _app is not None:
             _app.installEventFilter(self._tooltip_filter)
+            _app.installEventFilter(self._rounded_menu_filter)
         get_settings().changed.connect(self._on_settings_changed)
         self._refresh_autolock_from_settings()
 
@@ -366,6 +395,7 @@ class AppBrankas(FramelessMainWindow):
         import sys
 
         from PySide6.QtCore import QProcess
+        from PySide6.QtNetwork import QLocalServer
 
         if self._is_busy():
             self._restart_blocked_notice(
@@ -378,8 +408,9 @@ class AppBrankas(FramelessMainWindow):
             )
             return
 
-        # Lepas IPC lock; tanpa ini instance baru akan mendeteksi instance ini dan
-        # hanya meneruskan argumen lalu keluar (tak ada app yang benar-benar restart).
+        # Lepas IPC lock DULU; tanpa ini instance baru akan mendeteksi instance ini
+        # dan hanya meneruskan argumen lalu keluar (tak ada app yang benar-benar
+        # restart). Urutan ini wajib untuk handshake single-instance.
         srv = getattr(self, "_ipc_server", None)
         if srv is not None:
             with contextlib.suppress(Exception):
@@ -390,6 +421,13 @@ class AppBrankas(FramelessMainWindow):
         started = QProcess.startDetached(sys.executable, arguments)
         if not started:
             logger.error("Restart gagal: tidak bisa menjalankan instance baru.")
+            # Relaunch gagal → instance ini TETAP jalan. Pulihkan single-instance
+            # lock yang sudah dilepas di atas, jika tidak launch berikutnya akan
+            # membuka instance kedua alih-alih diteruskan ke sini.
+            if srv is not None:
+                with contextlib.suppress(Exception):
+                    QLocalServer.removeServer(APP_AUMID)
+                    srv.listen(APP_AUMID)
             self._restart_blocked_notice(
                 tr("restart.failed.title", "Couldn't restart"),
                 tr(
@@ -500,7 +538,7 @@ class AppBrankas(FramelessMainWindow):
     def _init_tray(self, app_icon: QIcon) -> None:
         self.tray = QSystemTrayIcon(self)
         self.tray.setIcon(
-            app_icon if not app_icon.isNull() else qta.icon("mdi6.shield-outline", color="white")
+            app_icon if not app_icon.isNull() else qta.icon("mdi6.shield-outline", color=CLR_ACCENT)
         )
 
         tray_menu = AccessibleCenteredMenu()

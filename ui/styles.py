@@ -15,6 +15,8 @@ Deskripsi: Token warna + stylesheet (QSS) utama aplikasi, mengikuti
            menerima nilai bertema. Ganti tema lewat Settings butuh restart.
 """
 
+import contextlib
+
 from PySide6.QtGui import QColor
 
 # =============================================================================
@@ -59,12 +61,16 @@ CLR_TEXT_MUTED = "#A7C0C4"  # Label / teks sekunder
 CLR_TEXT_DIM = "#88A2A7"  # Deskripsi & bantuan
 CLR_TEXT_FAINT = "#5E787E"  # Placeholder & meta
 CLR_MONO_META = "#6E888D"  # Nilai mono / kode
+CLR_TEXT_DISABLED = "#5E787E"  # label tombol disabled (dark = sama dgn faint; di light
+# dibuat lebih gelap dari faint agar tetap terbaca di atas bg disabled terang).
 
 # --- INTERAKSI / STATE (turunan) ---
 CLR_HOVER_BG = "#19303A"  # hover tombol sekunder
 CLR_HOVER_BORDER = "#33545D"  # border hover / border tombol sekunder
 CLR_BTN_BORDER = "#33545D"  # border tombol sekunder default
 CLR_INPUT_BORDER = "#2A444C"  # border input default
+CLR_INPUT_FOCUS_BG = "#0E1B21"  # latar input saat fokus — recess gelap di dark,
+# di light dibalik jadi putih (lihat _LIGHT) agar fokus MENONJOL, bukan menggelap.
 CLR_LIST_HOVER = "rgba(79, 191, 201, 0.06)"  # baris daftar hover (tint aksen 6%)
 CLR_LIST_SELECTED = "rgba(79, 191, 201, 0.10)"  # baris daftar terpilih (tint 10%)
 CLR_BTN_TRANSPARENT = "rgba(19, 36, 42, 0.6)"
@@ -85,6 +91,14 @@ CLR_SCROLL_PRESSED = "#3F656F"
 # --- LAIN-LAIN ---
 CLR_TIPS_BG = CLR_INSET
 CLR_TIPS_BORDER = CLR_LINE
+
+# Tooltip — WARNA mengikuti tema (light di tema terang, dark di tema gelap); ukuran,
+# padding & border-radius identik di kedua tema (didefinisikan sekali di QSS). Di light
+# memakai permukaan kartu putih + border lebih tegas (lihat _LIGHT) agar tetap terpisah
+# dari latar tanpa jadi "gelembung gelap".
+CLR_TOOLTIP_BG = "#16282E"
+CLR_TOOLTIP_TEXT = "#EAF4F5"
+CLR_TOOLTIP_BORDER = "#253D44"
 
 # --- KOMPONEN TEKS GELAP DI ATAS AKSEN ---
 CLR_ON_ACCENT = "#072025"  # teks/ikon di atas latar aksen terang
@@ -389,7 +403,7 @@ def load_stylesheet() -> str:
     }}
 
     QFrame#InputBox[focused="true"] {{
-        background-color: {CLR_CANVAS};
+        background-color: {CLR_INPUT_FOCUS_BG};
         border: 1.5px solid {CLR_ACCENT};
     }}
 
@@ -422,7 +436,7 @@ def load_stylesheet() -> str:
 
     /* --- FOCUS & A11Y STATES --- */
     * {{ outline: none; }}
-    QFrame#InputBox[focused="true"] {{ background-color: {CLR_CANVAS}; border: 1.5px solid {CLR_ACCENT}; }}
+    QFrame#InputBox[focused="true"] {{ background-color: {CLR_INPUT_FOCUS_BG}; border: 1.5px solid {CLR_ACCENT}; }}
     QFrame[checked="true"][kbFocus="true"], QFrame[checked="false"][kbFocus="true"] {{ border: 2px solid {CLR_TEXT_MAIN}; }}
 
     /* --- BUTTONS (tombol sekunder/ghost — 46 · radius 13) --- */
@@ -450,7 +464,7 @@ def load_stylesheet() -> str:
     }}
     QPushButton:disabled {{
         background-color: {CLR_ACCENT_DISABLED};
-        color: {CLR_TEXT_FAINT};
+        color: {CLR_TEXT_DISABLED};
         border: 1px solid {CLR_LINE};
     }}
 
@@ -596,8 +610,11 @@ def load_stylesheet() -> str:
 
     /* --- MENU DROPDOWN (radius 10 · item radius 7) --- */
     QMenu {{ background-color: {CLR_CARD}; border: 1px solid {CLR_BORDER}; border-radius: 10px; padding: 5px; }}
-    QMenu::item {{ border-radius: 7px; background: transparent; padding: 9px 12px; }}
-    QMenu::item:selected {{ background-color: {CLR_CARD}; }}
+    QMenu::item {{ border-radius: 7px; background: transparent; padding: 9px 14px; }}
+    /* Hover/aktif: tint aksen (dulu = CLR_CARD = warna latar → highlight tak terlihat). */
+    QMenu::item:selected {{ background-color: rgba({ACCENT_RGB}, 0.14); color: {CLR_TEXT_MAIN}; }}
+    QMenu::item:disabled {{ color: {CLR_TEXT_FAINT}; }}
+    QMenu::separator {{ height: 1px; background-color: {CLR_LINE}; margin: 5px 10px; }}
 
     /* --- SCROLLBAR (w10 · radius 4 · handle 40) --- */
     QScrollBar:vertical {{ border: none; background: transparent; width: 10px; margin: 0px; }}
@@ -847,7 +864,7 @@ def load_stylesheet() -> str:
     }}
     QPushButton#BtnInlinePrimary:disabled {{
         background-color: {CLR_ACCENT_DISABLED};
-        color: {CLR_TEXT_FAINT};
+        color: {CLR_TEXT_DISABLED};
     }}
     QPushButton#BtnInlinePrimary[kbFocus="true"] {{
         border: 2px solid {CLR_TEXT_MAIN};
@@ -866,7 +883,7 @@ def load_stylesheet() -> str:
         border-color: {CLR_HOVER_BORDER};
     }}
     QPushButton#BtnInlineSecondary:disabled {{
-        color: {CLR_TEXT_FAINT};
+        color: {CLR_TEXT_DISABLED};
         border-color: {CLR_LINE};
     }}
     QPushButton#BtnInlineSecondary[kbFocus="true"] {{
@@ -877,9 +894,9 @@ def load_stylesheet() -> str:
     /* Satu definisi untuk tooltip native (QToolTip) DAN tooltip kustom path
        (QLabel#CustomToolTip) — gayanya dijamin identik dan tak bisa melenceng. */
     QToolTip, QLabel#CustomToolTip {{
-        background-color: {CLR_WINDOW};
-        color: {CLR_TEXT_MAIN};
-        border: 1px solid {CLR_BORDER};
+        background-color: {CLR_TOOLTIP_BG};
+        color: {CLR_TOOLTIP_TEXT};
+        border: 1px solid {CLR_TOOLTIP_BORDER};
         border-radius: 8px;
         padding: 7px 12px;
         font-size: 9pt;
@@ -977,25 +994,32 @@ _LIGHT = {
     "CLR_TEXT_MAIN": "#10262C",
     "CLR_TEXT_MUTED": "#3D575E",
     "CLR_TEXT_DIM": "#5F787E",
-    "CLR_TEXT_FAINT": "#90A3A8",
+    "CLR_TEXT_FAINT": "#7C8E93",
     "CLR_MONO_META": "#7A8E93",
+    "CLR_TEXT_DISABLED": "#6E8288",
     "CLR_HOVER_BG": "#E8F0F1",
     "CLR_HOVER_BORDER": "#BBCDD0",
     "CLR_BTN_BORDER": "#C7D5D7",
     "CLR_INPUT_BORDER": "#CBD9DB",
+    "CLR_INPUT_FOCUS_BG": "#FFFFFF",
     "CLR_LIST_HOVER": "rgba(20, 154, 166, 0.07)",
     "CLR_LIST_SELECTED": "rgba(20, 154, 166, 0.12)",
     "CLR_BTN_TRANSPARENT": "rgba(15, 60, 66, 0.05)",
     "CLR_PRESSED_BG": "#DCE7E8",
-    "CLR_TOGGLE_OFF": "#C3D0D2",
+    "CLR_TOGGLE_OFF": "#AEBEC1",
     "CLR_PANEL_SOFT": "rgba(15, 50, 56, 0.045)",
     "CLR_CTA_TRACK": "#3C5A60",
-    "CLR_SCROLL_HANDLE": "#C2D0D2",
-    "CLR_SCROLL_HOVER": "#AABDC0",
-    "CLR_SCROLL_PRESSED": "#95ABAF",
+    "CLR_SCROLL_HANDLE": "#9FB1B5",
+    "CLR_SCROLL_HOVER": "#889DA2",
+    "CLR_SCROLL_PRESSED": "#738B90",
     "CLR_TIPS_BG": "#EDF3F4",
     "CLR_TIPS_BORDER": "#E4ECED",
     "CLR_ON_ACCENT": "#FFFFFF",
+    # Tooltip ikut tema: kartu putih + teks gelap + border lebih tegas (agar terpisah
+    # dari latar terang). Ukuran/radius tetap sama dgn dark (di QSS, bukan di sini).
+    "CLR_TOOLTIP_BG": "#FFFFFF",
+    "CLR_TOOLTIP_TEXT": "#10262C",
+    "CLR_TOOLTIP_BORDER": "#AEBFC2",
     "ACCENT_RGB": "20, 154, 166",
     "SUCCESS_RGB": "44, 154, 100",
     "WARN_RGB": "210, 149, 47",
@@ -1044,8 +1068,6 @@ def accent_color(alpha: int = 255) -> QColor:
 
 def _detect_system_theme() -> str:
     """Deteksi tema OS (light/dark). Qt 6.5+ colorScheme → registry Windows → dark."""
-    import contextlib
-
     with contextlib.suppress(Exception):
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QApplication
@@ -1088,7 +1110,13 @@ def _read_theme_pref() -> str:
 
         # Key sama dengan settings_store.KEY_THEME ("appearance/theme").
         return QSettings(APP_ORG, APP_NAME).value("appearance/theme", "dark", type=str)
-    except Exception:
+    except Exception as e:
+        # Jangan diam-diam balik ke dark: tema Light pilihan user hilang tanpa jejak
+        # akan sulit didiagnosa. Log lalu fallback aman.
+        with contextlib.suppress(Exception):
+            from loguru import logger
+
+            logger.warning(f"Gagal membaca preferensi tema, fallback ke dark: {e}")
         return "dark"
 
 

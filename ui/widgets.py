@@ -40,6 +40,7 @@ from .styles import (
     CLR_HOVER_BG,
     CLR_INPUT_BORDER,
     CLR_INSET,
+    CLR_ON_ACCENT,
     CLR_PANEL_SOFT,
     CLR_SUCCESS,
     CLR_SUCCESS_BG,
@@ -47,9 +48,12 @@ from .styles import (
     CLR_TEXT_MAIN,
     CLR_TEXT_MUTED,
     CLR_TOGGLE_OFF,
+    CLR_TOOLTIP_BG,
+    CLR_TOOLTIP_BORDER,
     CLR_WARN,
     CLR_WARN_BG,
     CLR_WINDOW,
+    IS_LIGHT,
     accent_color,
     overlay_color,
 )
@@ -454,7 +458,7 @@ class HeroIconWidget(QWidget):
         # Bayangan halus (bukan glow) — sangat samar saat idle.
         self._glow_overlay = QGraphicsDropShadowEffect(self)
         self._glow_overlay.setBlurRadius(0)
-        self._glow_overlay.setColor(QColor(79, 191, 201, 0))
+        self._glow_overlay.setColor(accent_color(0))
         self._glow_overlay.setXOffset(0)
         self._glow_overlay.setYOffset(0)
         lbl_overlay.setGraphicsEffect(self._glow_overlay)
@@ -463,13 +467,13 @@ class HeroIconWidget(QWidget):
         """Beri penekanan halus saat drag aktif — tetap kalem, tanpa neon."""
         if active:
             self._glow_overlay.setBlurRadius(22)
-            self._glow_overlay.setColor(QColor(79, 191, 201, 150))
+            self._glow_overlay.setColor(accent_color(150))
             self._overlay_icon.setPixmap(
                 qta.icon(self._overlay_icon_name, color=CLR_ACCENT_HOVER).pixmap(36, 36)
             )
         else:
             self._glow_overlay.setBlurRadius(0)
-            self._glow_overlay.setColor(QColor(79, 191, 201, 0))
+            self._glow_overlay.setColor(accent_color(0))
             self._overlay_icon.setPixmap(
                 qta.icon(self._overlay_icon_name, color=CLR_ACCENT).pixmap(36, 36)
             )
@@ -481,24 +485,36 @@ class CustomToolTip(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+        # Latar transparan agar sudut tooltip benar-benar membulat (window tooltip di
+        # Windows 10 sebenarnya persegi opaque → border-radius QSS "bocor" jadi lancip).
+        # Pada QLabel translucent, QSS background-color TIDAK ikut ter-lukis, jadi latar
+        # + border digambar manual di paintEvent() (teks tetap dari QSS via super()).
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        # Tooltip tak boleh mencuri fokus / mencegat klik (klik harus tembus ke bawah).
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         # Gaya diambil dari QSS global (selektor `QToolTip, QLabel#CustomToolTip`)
         # supaya tooltip path (widget kustom ini) IDENTIK dengan tooltip native —
         # satu sumber kebenaran, tak ada style inline yang bisa melenceng.
         self.setObjectName("CustomToolTip")
+        # Selalu PlainText: tooltip menampilkan path/teks apa adanya — jangan biarkan
+        # QLabel menebaknya sebagai rich text (path dgn '&' atau '<…>' bisa salah
+        # render atau menimpa warna dari QSS).
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        # Bungkus teks panjang agar tooltip tak jadi satu baris super lebar (path dalam).
+        self.setWordWrap(True)
+        self.setMaximumWidth(560)
         self.hide()
 
-        # Timer tunggal untuk polling pergerakan mouse setiap 50ms
+        # Timer tunggal untuk polling pergerakan mouse setiap 50ms.
         self._monitor_timer = QTimer(self)
         self._monitor_timer.setInterval(50)
         self._monitor_timer.timeout.connect(self._check_mouse_state)
 
         self._pending_text = ""
         self._last_cursor_pos = QPoint()
-        self._time_hovered = 0
-
-        # Standar durasi UX OS Native
-        self._show_delay_ms = 1000  # Nongol setelah mouse diam 1 detik
-        self._hide_delay_ms = 5000  # Hilang otomatis setelah 5 detik (jika tidak gerak)
+        self._time_shown = 0  # ms sejak tooltip tampil (untuk auto-hide saat mouse diam)
+        self._hide_delay_ms = 5000  # auto-hide ~5 dtk setelah tampil bila mouse diam
 
     def show_now(self, text):
         """Tampilkan SEGERA (dipakai filter tooltip global, setelah delay native Qt).
@@ -511,38 +527,36 @@ class CustomToolTip(QLabel):
             return
         self._pending_text = text
         self._last_cursor_pos = QCursor.pos()
+        self._time_shown = 0
         self._do_show()
-        self._time_hovered = self._show_delay_ms  # lewati gerbang 'show delay'
         self._monitor_timer.start()
 
     def _check_mouse_state(self):
         current_pos = QCursor.pos()
 
-        # Hitung jarak pergerakan mouse dari posisi terakhir (Toleransi 5 pixel/anti-jitter)
+        # Jarak pergerakan mouse dari posisi terakhir (toleransi ~5px anti-jitter).
         diff = current_pos - self._last_cursor_pos
         distance_sq = diff.x() ** 2 + diff.y() ** 2
 
-        if distance_sq > 25:  # Jika mouse bergerak lebih dari ~5 px
-            self._last_cursor_pos = current_pos
-            self._time_hovered = 0  # Reset timer!
-            if self.isVisible():
-                self.hide()  # Langsung sembunyikan jika user gerak
-        else:
-            # Jika mouse terpantau diam, teruskan hitungan
-            self._time_hovered += 50
+        # Mouse bergerak → sembunyikan DAN hentikan polling. Tooltip berikutnya datang
+        # dari hover baru (QEvent.ToolTip → show_now), bukan re-show teks basi. (Dulu
+        # hanya hide() tanpa stop timer → timer jalan terus + bisa munculkan teks lama.)
+        if distance_sq > 25:
+            self.hide_tooltip()
+            return
 
-            # Waktunya tampilkan
-            if self._time_hovered == self._show_delay_ms and not self.isVisible():
-                self._do_show()
-            # Waktunya autohide (expired)
-            elif (
-                self._time_hovered >= (self._show_delay_ms + self._hide_delay_ms)
-                and self.isVisible()
-            ):
-                self.hide_tooltip()
+        # Mouse diam → hitung menuju auto-hide.
+        self._time_shown += 50
+        if self._time_shown >= self._hide_delay_ms:
+            self.hide_tooltip()
 
     def _do_show(self):
-        self.setText(self._pending_text)
+        # Sisipkan titik-putus zero-width (U+200B) setelah pemisah path agar QLabel
+        # (WordWrap hanya putus di spasi) bisa membungkus path panjang di batas folder
+        # alih-alih satu baris super lebar. ZWSP tak terlihat & tak mengubah
+        # _pending_text (yang dipakai untuk dedup di show_now).
+        zwsp = chr(0x200B)  # U+200B ZERO WIDTH SPACE (titik-putus tak terlihat)
+        self.setText(self._pending_text.replace("\\", "\\" + zwsp).replace("/", "/" + zwsp))
         self.adjustSize()
         pos = QCursor.pos()
 
@@ -567,6 +581,18 @@ class CustomToolTip(QLabel):
     def hide_tooltip(self):
         self._monitor_timer.stop()
         self.hide()
+
+    def paintEvent(self, event):
+        # WA_TranslucentBackground membuat QSS background QLabel tak ter-lukis → latar &
+        # border digambar manual; super() melukis teks. Sudut di luar radius transparan.
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        painter.setPen(QPen(QColor(CLR_TOOLTIP_BORDER), 1))
+        painter.setBrush(QColor(CLR_TOOLTIP_BG))
+        painter.drawRoundedRect(rect, 8, 8)
+        painter.end()
+        super().paintEvent(event)
 
 
 # ── ELIDED LABEL (Pemotong Teks ...) ────────────────────────────────
@@ -601,10 +627,15 @@ class ElidedLabel(QLabel):
 
 # ── TITLE BAR BUTTON (DINAMIS & HOVER EFEK) ─────────────────────────
 class TitleBarButton(QPushButton):
-    def __init__(self, icon_name: str, hover_bg_color: str, parent=None):
+    def __init__(self, icon_name: str, hover_bg_color: str, parent=None, hover_icon_color=None):
         super().__init__(parent)
         self.icon_name = icon_name
         self.hover_bg = hover_bg_color
+        # Warna ikon saat hover. Default = teks utama (untuk min/max yang hover-nya
+        # netral). Tombol close hover-nya merah (CLR_DANGER), jadi ia mengoper
+        # CLR_ON_ACCENT agar "×" tetap kontras (putih di light, gelap di dark) —
+        # konvensi universal × putih di atas merah, dan tak jadi gelap-di-merah di light.
+        self.hover_icon_color = hover_icon_color if hover_icon_color is not None else CLR_TEXT_MAIN
         self.setFixedSize(46, 46)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setIcon(qta.icon(self.icon_name, color=CLR_TEXT_DIM))
@@ -620,7 +651,7 @@ class TitleBarButton(QPushButton):
         """)
 
     def enterEvent(self, event):
-        self.setIcon(qta.icon(self.icon_name, color=CLR_TEXT_MAIN))
+        self.setIcon(qta.icon(self.icon_name, color=self.hover_icon_color))
         super().enterEvent(event)
 
     def leaveEvent(self, event):
@@ -629,7 +660,7 @@ class TitleBarButton(QPushButton):
 
     def change_icon(self, new_icon_name: str):
         self.icon_name = new_icon_name
-        current_color = CLR_TEXT_MAIN if self.underMouse() else CLR_TEXT_DIM
+        current_color = self.hover_icon_color if self.underMouse() else CLR_TEXT_DIM
         self.setIcon(qta.icon(self.icon_name, color=current_color))
 
 
@@ -677,7 +708,9 @@ class CustomTitleBar(QFrame):
         self.btn_max = TitleBarButton("mdi6.window-maximize", CLR_HOVER_BG, self)
         self.btn_max.clicked.connect(self._toggle_maximize)
 
-        self.btn_close = TitleBarButton("mdi6.close", CLR_DANGER, self)
+        self.btn_close = TitleBarButton(
+            "mdi6.close", CLR_DANGER, self, hover_icon_color=CLR_ON_ACCENT
+        )
         self.btn_close.clicked.connect(self.parent_window.close)
 
         control_lay.addWidget(self.btn_min)
@@ -1074,10 +1107,17 @@ class ToggleSwitch(QFrame):
                 QRectF(r).adjusted(0.5, 0.5, -0.5, -0.5), radius - 0.5, radius - 0.5
             )
 
-        # Knob putih yang menggeser
+        # Knob putih yang menggeser. Di light, track OFF berwarna abu terang →
+        # knob putih polos nyaris tak terlihat; beri outline gelap tipis agar tepi
+        # knob tetap terbaca di kedua state (di dark track gelap, outline ini tak
+        # terlihat dan tak mengganggu).
         margin = 3
         knob_d = r.height() - margin * 2
         x = margin + t * (r.width() - knob_d - margin * 2)
+        if IS_LIGHT:
+            painter.setPen(QPen(QColor(15, 45, 51, 45), 1))
+        else:
+            painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor("#FFFFFF"))
         painter.drawEllipse(int(round(x)), margin, knob_d, knob_d)
 

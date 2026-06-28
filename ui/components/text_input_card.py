@@ -23,8 +23,8 @@ from ..i18n import register, tr
 from ..styles import (
     CLR_ACCENT,
     CLR_BORDER,
-    CLR_CANVAS,
     CLR_DANGER,
+    CLR_INPUT_FOCUS_BG,
     CLR_INSET,
     CLR_TEXT_MAIN,
     CLR_TEXT_MUTED,
@@ -101,7 +101,7 @@ class TextInputCard(QFrame):
             }}
             QTextEdit:focus {{
                 border: 1.5px solid {CLR_ACCENT};
-                background-color: {CLR_CANVAS};
+                background-color: {CLR_INPUT_FOCUS_BG};
             }}
         """)
 

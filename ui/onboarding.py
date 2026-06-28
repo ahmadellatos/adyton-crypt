@@ -71,8 +71,10 @@ from .styles import (
 )
 
 # Komponen RGB untuk QColor terpaint (sejajar dengan token rgba di styles).
-_ACCENT_QRGB = (79, 191, 201)
-_SUCCESS_QRGB = (134, 203, 163)
+# Diturunkan dari token bertema agar glow/cincin dekoratif ikut tema (teal lebih
+# dalam + hijau lebih gelap di light), bukan terkunci ke aksen dark.
+_ACCENT_QRGB = QColor(CLR_ACCENT).getRgb()[:3]
+_SUCCESS_QRGB = QColor(CLR_SUCCESS).getRgb()[:3]
 
 
 def _qcolor(rgb: tuple[int, int, int], alpha: float) -> QColor:
@@ -708,8 +710,7 @@ def _chip(text: str) -> QFrame:
     chip = QFrame()
     chip.setObjectName("OnbChip")
     chip.setStyleSheet(
-        f"#OnbChip {{ background:{CLR_INSET}; border:1px solid {CLR_BORDER}; "
-        "border-radius:18px; }"
+        f"#OnbChip {{ background:{CLR_INSET}; border:1px solid {CLR_BORDER}; border-radius:18px; }}"
     )
     chip.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
     lay = QHBoxLayout(chip)

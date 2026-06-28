@@ -13,7 +13,14 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
-from .styles import CLR_TEXT_DIM, CLR_TEXT_MAIN
+from .styles import ACCENT_RGB, CLR_TEXT_DIM, CLR_TEXT_MAIN
+
+# Latar item menu — highlight memakai tint aksen BERTEMA (ACCENT_RGB ikut light/dark),
+# bukan teal hardcoded yang dulu salah hue di tema terang.
+_MENU_ITEM_HIGHLIGHT = f"QWidget#CenteredMenuItem {{ background-color: rgba({ACCENT_RGB}, 0.12); border-radius: 7px; }}"
+_MENU_ITEM_NORMAL = (
+    "QWidget#CenteredMenuItem { background-color: transparent; border-radius: 7px; }"
+)
 
 
 class HoverMenuWidget(QWidget):
@@ -46,14 +53,7 @@ class HoverMenuWidget(QWidget):
         lay.addStretch()
 
     def _apply_style(self):
-        if self._highlighted:
-            self.setStyleSheet(
-                "QWidget#CenteredMenuItem { background-color: rgba(79, 191, 201, 0.12); border-radius: 7px; }"
-            )
-        else:
-            self.setStyleSheet(
-                "QWidget#CenteredMenuItem { background-color: transparent; border-radius: 7px; }"
-            )
+        self.setStyleSheet(_MENU_ITEM_HIGHLIGHT if self._highlighted else _MENU_ITEM_NORMAL)
 
     def set_highlighted(self, highlighted: bool):
         self._highlighted = highlighted
@@ -136,11 +136,4 @@ class CenteredMenuAction(QWidgetAction):
 
     def set_highlighted(self, highlighted: bool):
         self.w.set_highlighted(highlighted)
-        if highlighted:
-            self.w.setStyleSheet(
-                "QWidget#CenteredMenuItem { background-color: rgba(79, 191, 201, 0.12); border-radius: 7px; }"
-            )
-        else:
-            self.w.setStyleSheet(
-                "QWidget#CenteredMenuItem { background-color: transparent; border-radius: 7px; }"
-            )
+        self.w.setStyleSheet(_MENU_ITEM_HIGHLIGHT if highlighted else _MENU_ITEM_NORMAL)
