@@ -6,11 +6,20 @@ Deskripsi: Controller utama untuk Tab "Buka Brankas".
 
 import os
 
+import qtawesome as qta
 from loguru import logger
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QDialog, QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QDialog,
+    QFrame,
+    QHBoxLayout,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
 
-from core.vault import VaultStatus, buka_brankas, cancel_pending_overwrite
+from core.vault import VaultStatus, buka_brankas, cancel_pending_overwrite, verify_vault
 from core.worker import CryptoWorker
 
 from .buttons import BigActionBtn
@@ -23,7 +32,7 @@ from .constants import APP_NAME
 from .dialogs import ModernMessageBox
 from .i18n import register, tr
 from .settings_store import get_settings
-from .styles import CLR_DANGER
+from .styles import CLR_DANGER, CLR_TEXT_MUTED
 from .utils import (
     ProgressETA,
     apply_cancelling_state,
@@ -53,6 +62,10 @@ class TabBuka(QWidget):
         self._has_password = False
         self._progress_eta = ProgressETA()
         self._external_busy = False
+        # Operasi yang sedang berjalan di worker bersama: "open" (ekstrak) atau
+        # "verify" (cek integritas tanpa menulis). Mengarahkan label progress &
+        # routing hasil; di-reset ke "open" tiap kali idle.
+        self._mode = "open"
 
         self._build_ui()
         self._connect_signals()
@@ -114,6 +127,28 @@ class TabBuka(QWidget):
 
         main_layout.addWidget(self.btn_aksi)
 
+        # Aksi sekunder: verifikasi integritas tanpa mengekstrak (parity 7-Zip "Test").
+        # Membuktikan password benar + seluruh data utuh tanpa folder tujuan / menulis
+        # plaintext ke disk. Subordinat terhadap CTA Open (gaya inline secondary).
+        self.btn_verify = QPushButton()
+        self.btn_verify.setObjectName("BtnInlineSecondary")
+        self.btn_verify.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_verify.setMinimumHeight(38)
+        self.btn_verify.setIcon(qta.icon("mdi6.shield-search", color=CLR_TEXT_MUTED))
+        register(
+            self.btn_verify,
+            "open.verify.btn",
+            "Verify integrity (without extracting)",
+        )
+        register(
+            self.btn_verify,
+            "a11y.btn.verify_vault",
+            "Verify vault integrity button",
+            "setAccessibleName",
+        )
+        self.btn_verify.setEnabled(False)
+        main_layout.addWidget(self.btn_verify)
+
         self.notif = AnimatedNotifBar(self)
 
     def _open_recent(self, path: str) -> None:
@@ -123,6 +158,7 @@ class TabBuka(QWidget):
 
     def _connect_signals(self):
         self.btn_aksi.clicked.connect(self._proses)
+        self.btn_verify.clicked.connect(self._verify)
         self.password_panel.attach_return_event(self._proses)
         self.drop_zone.file_changed.connect(self._on_file_changed)
         self.password_panel.valid_state_changed.connect(self._on_password_valid_changed)
@@ -172,6 +208,7 @@ class TabBuka(QWidget):
         if self._external_busy:
             self.btn_aksi.setEnabled(False)
             self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            self.btn_verify.setEnabled(False)
             return
         if not self._konfirmasi_timpa:
             enabled = self._has_file and self._has_password
@@ -190,6 +227,8 @@ class TabBuka(QWidget):
             self.btn_aksi.setFocusPolicy(
                 Qt.FocusPolicy.StrongFocus if enabled else Qt.FocusPolicy.NoFocus
             )
+            # Verify dibuka pada syarat yang sama (file valid + password + keyfile bila wajib).
+            self.btn_verify.setEnabled(enabled)
 
     def _reset_timpa(self):
         self._konfirmasi_timpa = False
@@ -213,6 +252,7 @@ class TabBuka(QWidget):
             self.btn_aksi.setProgressVisible(False)
             self.btn_aksi.setEnabled(False)
             self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            self.btn_verify.setEnabled(False)
             self.btn_aksi.setTextLabels(
                 tr("busy.other.title", "Another operation is running"),
                 tr("busy.other.sub", "Wait for it to finish, or cancel it first"),
@@ -257,6 +297,7 @@ class TabBuka(QWidget):
         if not path_file or not pw:
             return
 
+        self._mode = "open"
         self._progress_eta.reset()
         self._set_busy(True)
         self.worker = CryptoWorker(
@@ -267,9 +308,59 @@ class TabBuka(QWidget):
         start_crypto_worker(self.worker, self._update_progress, self._on_selesai)
         self.worker_started.emit(self.worker)
 
+    def _verify(self):
+        """Verifikasi integritas vault tanpa mengekstrak (tanpa folder tujuan).
+
+        Memakai worker bersama yang sama dengan Open (hanya satu operasi crypto pada
+        satu waktu). Tombol Open besar menjadi permukaan progress/cancel; hasil
+        diarahkan ke ``_on_verify_done`` lewat ``self._mode``.
+        """
+        if self._external_busy and self.worker is None:
+            self.notif.show_msg(
+                "warn",
+                tr(
+                    "busy.other.warn",
+                    "Another operation is running. Wait for it to finish or cancel the current process.",
+                ),
+                4000,
+            )
+            return
+
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.cancel()
+            self._progress_eta.reset()
+            apply_cancelling_state(self.btn_aksi)
+            return
+
+        path_file = self.drop_zone.get_file()
+        pw = self.password_panel.get_password()
+        keyfile = self.password_panel.keyfile_path() or None
+        if not path_file or not pw:
+            return
+
+        self._mode = "verify"
+        self._progress_eta.reset()
+        self._set_busy(True)
+        self.worker = CryptoWorker(verify_vault, path_file, pw, keyfile_path=keyfile, parent=self)
+        self.password_panel.reset_field()
+
+        start_crypto_worker(self.worker, self._update_progress, self._on_verify_done)
+        self.worker_started.emit(self.worker)
+
     def _update_progress(self, val):
         if self.worker and not self.worker.is_cancelled():
             eta_str = self._progress_eta.update(val)
+            if self._mode == "verify":
+                pct = int(max(0.0, min(1.0, val)) * 100)
+                self.password_panel.update_processing_stage(
+                    tr("open.verify.stage", "Checking integrity")
+                )
+                self.btn_aksi.setTextLabels(
+                    tr("open.verify.busy.title", "Verifying vault"),
+                    f"{pct}% • {eta_str} • " + tr("open.verify.click_cancel", "Click to cancel"),
+                )
+                self.btn_aksi.setProgressAnimated(val)
+                return
             stage = progress_stage_label(val, "buka")
             self.password_panel.update_processing_stage(stage)
             title, subtitle = format_progress_label(val, "buka", eta_str)
@@ -287,12 +378,20 @@ class TabBuka(QWidget):
 
     def _set_busy(self, busy: bool):
         self.drop_zone.set_busy(busy)
+        # Verify memakai tombol Open besar sebagai permukaan progress/cancel, jadi
+        # tombol Verify sekunder disembunyikan selama operasi apa pun berjalan.
+        self.btn_verify.setVisible(not busy)
 
         if busy:
+            verifying = self._mode == "verify"
             self.drop_zone.set_verification_state("checking")
             file_name, size_text = self._current_file_summary()
             self.password_panel.set_processing_state(
-                file_name, size_text, tr("dz.status.verifying_pw", "Verifying password")
+                file_name,
+                size_text,
+                tr("open.verify.stage", "Checking integrity")
+                if verifying
+                else tr("dz.status.verifying_pw", "Verifying password"),
             )
             self.status_changed.emit(
                 tr("open.status.verifying", "Verifying vault"),
@@ -301,10 +400,16 @@ class TabBuka(QWidget):
             )
             self.btn_aksi.setVisualIcons("mdi6.close-circle-outline")
             self.btn_aksi.setProgressVisible(True, 0.0)
-            self.btn_aksi.setTextLabels(
-                tr("open.busy.title", "Opening vault"),
-                tr("open.busy.sub", "Preparing vault • Click to cancel"),
-            )
+            if verifying:
+                self.btn_aksi.setTextLabels(
+                    tr("open.verify.busy.title", "Verifying vault"),
+                    tr("open.verify.busy.sub", "Checking integrity • Click to cancel"),
+                )
+            else:
+                self.btn_aksi.setTextLabels(
+                    tr("open.busy.title", "Opening vault"),
+                    tr("open.busy.sub", "Preparing vault • Click to cancel"),
+                )
             self.btn_aksi.setEnabled(True)
             self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         else:
@@ -442,6 +547,75 @@ class TabBuka(QWidget):
             )
             self.password_panel.set_error_state(user_msg)
             self.notif.show_msg("err", user_msg, 8000)
+
+    def _on_verify_done(self, result):
+        self.worker = None
+        status, msg = result
+        self._mode = "open"
+
+        self._set_busy(False)
+        self._progress_eta.reset()
+
+        if status == VaultStatus.SUCCESS:
+            # Pertahankan file yang dimuat (user mungkin lanjut "Open" setelahnya).
+            self.drop_zone.set_verification_state("verified")
+            self.status_changed.emit(
+                tr("open.verify.ok.title", "Integrity verified"),
+                tr("open.verify.ok.sub", "Credential correct • all data intact"),
+                "success",
+            )
+            logger.info("Verifikasi vault sukses.")
+            self.notif.show_msg(
+                "ok",
+                msg or tr("open.verify.ok.msg", "Vault verified — all data is intact."),
+                6000,
+            )
+
+        elif status == VaultStatus.CANCELLED:
+            logger.info("Verifikasi vault dibatalkan pengguna.")
+            self.drop_zone.set_verification_state(
+                "pending", tr("dz.meta.waiting", "Waiting for password")
+            )
+            self.status_changed.emit(
+                tr("open.status.cancelled", "Cancelled"),
+                tr("open.status.cancelled.sub", "Temporary files cleaned up"),
+                "warn",
+            )
+            self.notif.show_msg("warn", tr("notif.cancelled", "Operation cancelled."), 4000)
+
+        elif status == VaultStatus.WRONG_PASSWORD:
+            logger.warning("Verifikasi gagal: credential salah.")
+            user_msg = format_user_error(status, msg, "buka")
+            if self.password_panel.requires_keyfile() and not self.password_panel.keyfile_path():
+                user_msg = tr(
+                    "open.wrongpw.keyfile",
+                    "Wrong password or recovery key. If you're using your password, "
+                    "also select the keyfile this vault needs.",
+                )
+            self.drop_zone.set_verification_state("failed")
+            self.status_changed.emit(
+                tr("open.status.failed", "Verification failed"),
+                tr("open.status.failed.sub", "Wrong password or corrupted file"),
+                "error",
+            )
+            self.password_panel.set_error_state(user_msg)
+            self.notif.show_msg("err", user_msg, 8000)
+
+        else:
+            # ERROR: vault rusak / bukan vault / format beda. Pesan core sudah
+            # path-free & ramah, jadi ditampilkan apa adanya.
+            logger.warning(f"Verifikasi gagal: {msg}")
+            user_msg = msg or tr(
+                "open.verify.fail.msg", "Couldn't verify the vault. It may be corrupted."
+            )
+            self.drop_zone.set_verification_state("failed")
+            self.status_changed.emit(
+                tr("open.verify.fail.title", "Integrity check failed"),
+                tr("open.verify.fail.sub", "The vault may be corrupted or modified"),
+                "error",
+            )
+            self.password_panel.set_error_state(user_msg)
+            self.notif.show_msg("err", user_msg, 9000)
 
     def _retry_after_error(self) -> None:
         self.password_panel.set_idle_state()

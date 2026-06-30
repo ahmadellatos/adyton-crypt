@@ -91,6 +91,15 @@ GENERIC_FAILURE_MESSAGE = (
     "Technical details were saved to the log."
 )
 
+# Pesan saat verifikasi menemukan vault yang BISA di-unlock (credential benar) tapi
+# salah satu record gagal cek integritas (tag AEAD tak valid / file terpotong). Ini
+# berbeda dari WRONG_PASSWORD: Master Key sudah terbukti benar, jadi kegagalan di sini
+# berarti datanya yang rusak/diubah — bukan password yang salah.
+CORRUPT_VAULT_MESSAGE = (
+    "This vault opened, but some of its data failed the integrity check. The file may be "
+    "incomplete, corrupted, or modified. If you have a backup, restore from it."
+)
+
 
 # ── File Operations ───────────────────────────────────────────────────────────
 
@@ -1738,6 +1747,177 @@ def buka_brankas(
         logger.exception(
             "Gagal membuka brankas karena error internal saat proses dekripsi/ekstraksi."
         )
+        return VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE
+
+
+def verify_vault(
+    locked_path: str,
+    password: str,
+    progress_cb=None,
+    is_cancelled: Callable[[], bool] = None,
+    keyfile_path: str | None = None,
+) -> tuple[VaultStatus, str | None]:
+    """Verifikasi sebuah vault tanpa menulis output (parity 7-Zip "Test").
+
+    Membuktikan DUA hal sekaligus tanpa folder tujuan & tanpa plaintext menyentuh
+    disk: (1) credential benar (password / recovery key / keyfile membuka salah satu
+    slot), dan (2) seluruh arsip utuh sampai byte terakhir — setiap tag AES-GCM
+    (metadata, semua data, FINAL) terverifikasi. Guna: cek brankas backup/arsip dari
+    bit-rot, truncation, atau tamper tanpa membongkarnya, atau di komputer pinjaman
+    tanpa plaintext jatuh ke disk.
+
+    Status:
+      * ``SUCCESS`` — credential benar & semua data utuh.
+      * ``WRONG_PASSWORD`` — credential tidak membuka vault.
+      * ``CANCELLED`` — dibatalkan user.
+      * ``ERROR`` — bukan vault / versi beda / **vault rusak** (credential benar tapi
+        ada record gagal cek integritas → pesan ``CORRUPT_VAULT_MESSAGE``).
+
+    Tidak ada penulisan ke disk dan tidak menyentuh cache resume overwrite, jadi aman
+    dipanggil kapan saja tanpa efek samping.
+    """
+    target_path = Path(locked_path)
+    try:
+        total_size = target_path.stat().st_size
+
+        with target_path.open("rb") as fk:
+            magic = fk.read(4)
+            if magic != MAGIC_BYTES:
+                return VaultStatus.ERROR, "This file isn't a valid Adyton Crypt vault."
+
+            version = fk.read(1)
+            if version != VERSION:
+                return (
+                    VaultStatus.ERROR,
+                    "This vault was made by a different version of Adyton Crypt. "
+                    "Please update the app.",
+                )
+
+            min_slot = (
+                1 + 1 + 2 + ARGON2ID_PARAMS_SIZE + SALT_SIZE + WRAP_NONCE_SIZE + WRAPPED_KEY_SIZE
+            )
+            min_size = CORE_HEADER_SIZE + 1 + min_slot + (2 * CHUNK_RECORD_OVERHEAD)
+            if total_size < min_size:
+                return VaultStatus.ERROR, "The vault file is too small or incomplete."
+
+            keyfile_material: bytes | None = None
+            if keyfile_path:
+                try:
+                    keyfile_material = _load_keyfile_material(keyfile_path)
+                except ValueError as exc:
+                    return VaultStatus.ERROR, str(exc)
+
+            try:
+                hdr = _parse_header(fk)
+            except ValueError as exc:
+                return VaultStatus.ERROR, str(exc)
+
+            file_id = hdr["file_id"]
+            stored_chunk_size = hdr["chunk_size"]
+            flags = hdr["flags"]
+            if stored_chunk_size <= 0 or stored_chunk_size > CHUNK_SIZE:
+                return (
+                    VaultStatus.ERROR,
+                    "The vault's chunk parameters are invalid, or the file is corrupted.",
+                )
+
+            safe_cb(progress_cb, 0.02)
+            master_key = _recover_master_key(
+                password, file_id, _hint_bytes_from_header(hdr), hdr["slots"], keyfile_material
+            )
+            if master_key is None:
+                return VaultStatus.WRONG_PASSWORD, None
+
+            aesgcm = AESGCM(master_key)
+            header_context = _record_context(file_id, stored_chunk_size, flags)
+            safe_cb(progress_cb, 0.05)
+
+            # Credential SUDAH terbukti benar; mulai dari sini setiap InvalidTag berarti
+            # DATA yang rusak (bukan password salah). Bedakan agar pesan ke user jujur:
+            # "vault rusak", bukan "password salah".
+            try:
+                # Record 0: metadata terenkripsi (panjang nama + nama virtual).
+                record_type, record_index, plaintext_len, record_header = _read_record_header(fk)
+                if (
+                    record_type != RECORD_TYPE_METADATA
+                    or record_index != 0
+                    or plaintext_len < 2
+                    or plaintext_len > 2 + MAX_VIRTUAL_NAME_LENGTH
+                ):
+                    raise InvalidTag
+                metadata_ciphertext = _read_exact(fk, plaintext_len + TAG_SIZE)
+                metadata_plaintext = aesgcm.decrypt(
+                    _record_nonce(record_index),
+                    metadata_ciphertext,
+                    _record_aad(header_context, record_header),
+                )
+                _parse_virtual_folder_name(metadata_plaintext)
+
+                expected_index = 1
+                last_pct = 0.0
+                while True:
+                    if is_cancelled and is_cancelled():
+                        return VaultStatus.CANCELLED, "Verification cancelled."
+
+                    record_type, record_index, plaintext_len, record_header = _read_record_header(
+                        fk
+                    )
+                    if record_index != expected_index:
+                        raise InvalidTag
+
+                    if record_type == RECORD_TYPE_DATA:
+                        if plaintext_len <= 0 or plaintext_len > stored_chunk_size:
+                            raise InvalidTag
+                        ciphertext = _read_exact(fk, plaintext_len + TAG_SIZE)
+                        plaintext = aesgcm.decrypt(
+                            _record_nonce(record_index),
+                            ciphertext,
+                            _record_aad(header_context, record_header),
+                        )
+                        # Plaintext sengaja DIBUANG (tak ditulis ke disk); kita hanya
+                        # peduli tag-nya valid. Cek panjang sebagai jaring tambahan.
+                        if len(plaintext) != plaintext_len:
+                            raise InvalidTag
+                        expected_index += 1
+
+                        pct = min(0.98, 0.05 + 0.93 * (fk.tell() / max(total_size, 1)))
+                        if pct - last_pct >= 0.005:
+                            safe_cb(progress_cb, pct)
+                            last_pct = pct
+
+                    elif record_type == RECORD_TYPE_FINAL:
+                        if plaintext_len != 0:
+                            raise InvalidTag
+                        ciphertext = _read_exact(fk, TAG_SIZE)
+                        final_plaintext = aesgcm.decrypt(
+                            _record_nonce(record_index),
+                            ciphertext,
+                            _record_aad(header_context, record_header),
+                        )
+                        if final_plaintext != b"":
+                            raise InvalidTag
+                        break
+                    else:
+                        raise InvalidTag
+
+                # Tidak boleh ada byte sisa setelah FINAL — kalau ada, file tak konsisten.
+                if fk.tell() != total_size:
+                    raise InvalidTag
+            except InvalidTag:
+                return VaultStatus.ERROR, CORRUPT_VAULT_MESSAGE
+            except ValueError:
+                # _parse_virtual_folder_name menolak metadata yang strukturnya aneh.
+                # Dengan MK yang benar ini menandakan korupsi, bukan password salah.
+                return VaultStatus.ERROR, CORRUPT_VAULT_MESSAGE
+
+        safe_cb(progress_cb, 1.0)
+        return (
+            VaultStatus.SUCCESS,
+            "Vault verified — your credential is correct and all data is intact.",
+        )
+
+    except Exception:
+        logger.exception("Gagal memverifikasi brankas.")
         return VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE
 
 
