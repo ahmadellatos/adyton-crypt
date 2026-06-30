@@ -66,6 +66,7 @@ from .constants import (
     WRAP_NONCE_SIZE,
     WRAPPED_KEY_SIZE,
     ZSTD_COMPRESSION_LEVEL,
+    ZSTD_DISK_ESTIMATE_RATIO,
 )
 from .crypto import (
     combine_kek_with_keyfile,
@@ -283,22 +284,35 @@ def _hitung_kebutuhan_disk_kunci(
     paths: list[str],
     virtual_name: str,
     target_dir: str = "",
+    compress: bool = False,
 ) -> int:
     """Hitung kebutuhan ruang disk saat membuat vault (chunked AEAD).
 
     AES-GCM per record menambah 16-byte tag per metadata/data/final record,
     ditambah header record 13 byte. Estimasi plaintext tar tetap konservatif
     untuk banyak file kecil.
+
+    Untuk lock TERKOMPRESI, output yang benar-benar ditulis ke disk ≈ ukuran
+    TERKOMPRESI — tar mentah TIDAK pernah ditulis ke disk (di-stream tar→zstd→AEAD
+    langsung ke file vault). Jadi reservasi payload diturunkan dengan asumsi rasio
+    ``ZSTD_DISK_ESTIMATE_RATIO`` agar lock yang valid pada disk sempit tak ditolak
+    percuma. Bila data ternyata kurang kompresibel, penulisan bisa kehabisan ruang di
+    tengah → aman (vault parsial dihapus + backup dipulihkan, sumber asli tak disentuh).
+    Overhead record tetap dihitung dari ukuran mentah (konservatif; nilainya ~ratusan
+    byte per 16 MB, jadi efeknya dapat diabaikan).
     """
     metadata_size = 2 + len(virtual_name.encode("utf-8"))
     estimated_tar_size = _estimate_tar_plaintext_size(paths, target_dir)
     data_records = max(1, (estimated_tar_size + CHUNK_SIZE - 1) // CHUNK_SIZE)
+    payload_reserve = estimated_tar_size
+    if compress:
+        payload_reserve = estimated_tar_size // ZSTD_DISK_ESTIMATE_RATIO
     return (
         MAX_HEADER_SIZE  # header (bound atas: hint maksimal + slot penuh)
         + CHUNK_RECORD_OVERHEAD  # metadata record
         + metadata_size
         + (data_records * CHUNK_RECORD_OVERHEAD)
-        + estimated_tar_size
+        + payload_reserve
         + CHUNK_RECORD_OVERHEAD  # final record
         + DISK_OVERHEAD_BYTES
     )
@@ -1557,7 +1571,9 @@ def kunci_brankas(
     try:
         free_space = shutil.disk_usage(target_path.parent).free
         total_size = _hitung_total_size(valid_paths)
-        required_space = _hitung_kebutuhan_disk_kunci(valid_paths, nama_virtual, target_dir)
+        required_space = _hitung_kebutuhan_disk_kunci(
+            valid_paths, nama_virtual, target_dir, compress
+        )
 
         if free_space < required_space:
             req_mb = required_space / (1024 * 1024)

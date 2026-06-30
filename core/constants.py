@@ -101,6 +101,15 @@ ZSTD_COMPRESSION_LEVEL = 3
 # nyata lebih tinggi lagi, ekstraksi gagal dengan rollback aman (data lama tak disentuh).
 COMPRESSED_DECRYPT_RATIO_GUESS = 4
 
+# Saat MENGUNCI dengan kompresi, output yang ditulis ke disk ≈ ukuran TERKOMPRESI,
+# bukan tar mentah. Karena rasio tak diketahui sebelum mengompres, pra-cek ruang disk
+# mengasumsikan payload turun sebesar rasio ini (konservatif: hanya 2:1, sementara
+# data yang layak dikompres biasanya jauh lebih baik). Kalau data ternyata kurang
+# kompresibel, penulisan bisa kehabisan ruang DI TENGAH — itu aman (vault parsial
+# dihapus + backup dipulihkan, sumber asli tak disentuh), jadi lebih baik agak
+# optimistis di sini daripada menolak lock yang sebenarnya muat.
+ZSTD_DISK_ESTIMATE_RATIO = 2
+
 # Hint password disimpan TANPA enkripsi (harus terbaca sebelum unlock).
 MAX_HINT_LENGTH = 256  # byte UTF-8
 

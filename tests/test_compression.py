@@ -128,6 +128,61 @@ def test_compressed_lock_cancel_cleans_up(tmp_path):
     assert not vault_path.exists()
 
 
+# ── Pra-cek ruang disk untuk lock terkompresi ───────────────────────────────────────
+
+
+def _compressible_source(tmp_path):
+    source = tmp_path / "docs"
+    source.mkdir()
+    (source / "big.txt").write_text("A" * 4_000_000, encoding="utf-8")
+    return source
+
+
+def test_compressed_disk_estimate_is_lower(tmp_path):
+    """Reservasi disk untuk lock terkompresi < tak-terkompresi (payload diasumsikan turun)."""
+    from core.constants import DISK_OVERHEAD_BYTES
+    from core.vault import _hitung_kebutuhan_disk_kunci
+
+    paths = [str(_compressible_source(tmp_path))]
+    plain = _hitung_kebutuhan_disk_kunci(paths, "docs", "", compress=False)
+    comp = _hitung_kebutuhan_disk_kunci(paths, "docs", "", compress=True)
+    assert comp < plain
+    assert comp >= DISK_OVERHEAD_BYTES  # buffer tetap jadi lantai
+
+
+def test_compressed_lock_proceeds_on_tight_disk(tmp_path, monkeypatch):
+    """Lock terkompresi LOLOS pra-cek pada ruang yang MENOLAK lock tak-terkompresi."""
+    import types
+
+    import core.vault as vault
+    from core.vault import _hitung_kebutuhan_disk_kunci
+
+    paths = [str(_compressible_source(tmp_path))]
+    req_plain = _hitung_kebutuhan_disk_kunci(paths, "docs", "", compress=False)
+    req_comp = _hitung_kebutuhan_disk_kunci(paths, "docs", "", compress=True)
+    assert req_comp < req_plain
+
+    # Ruang bebas tepat DI BAWAH kebutuhan tak-terkompresi, tapi DI ATAS terkompresi.
+    fake_free = req_plain - 1
+    assert fake_free >= req_comp
+    monkeypatch.setattr(
+        vault.shutil,
+        "disk_usage",
+        lambda _p: types.SimpleNamespace(total=0, used=0, free=fake_free),
+    )
+
+    # Tanpa kompresi → ditolak di pra-cek.
+    st, msg = vault.kunci_brankas(paths, str(tmp_path / "plain.adtn"), PASSWORD, compress=False)
+    assert st == VaultStatus.ERROR
+    assert "storage" in msg.lower()
+
+    # Dengan kompresi → lolos pra-cek & sukses (penulisan nyata ke disk tmp yang lega).
+    v2 = tmp_path / "comp.adtn"
+    st, msg = vault.kunci_brankas(paths, str(v2), PASSWORD, compress=True)
+    assert st == VaultStatus.SUCCESS, msg
+    assert v2.exists()
+
+
 def test_empty_folder_compressed_roundtrips(tmp_path):
     source = tmp_path / "kosong"
     source.mkdir()
