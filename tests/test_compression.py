@@ -98,6 +98,36 @@ def test_incompressible_data_roundtrips(tmp_path):
     assert (tmp_path / name / "rand.bin").read_bytes() == payload
 
 
+def test_compressed_multi_record_roundtrip(tmp_path):
+    """Regresi: compressed output > CHUNK_SIZE (16 MB) → zstd stream dipotong jadi
+    >1 record AEAD. Pastikan batas record yang memotong frame zstd transparan."""
+    import os
+
+    source = tmp_path / "blob"
+    source.mkdir()
+    payload = os.urandom(20 * 1024 * 1024)  # ~inkompresibel → output > 16 MB → 2+ record
+    (source / "big.bin").write_bytes(payload)
+    vault_path = tmp_path / "v.adtn"
+    status, _ = kunci_brankas([str(source)], str(vault_path), PASSWORD, compress=True)
+    assert status == VaultStatus.SUCCESS
+    assert vault_path.stat().st_size > 16 * 1024 * 1024  # benar-benar multi-record
+    shutil.rmtree(source)
+    status, name = buka_brankas(str(vault_path), PASSWORD)
+    assert status == VaultStatus.SUCCESS
+    assert (tmp_path / name / "big.bin").read_bytes() == payload
+
+
+def test_compressed_lock_cancel_cleans_up(tmp_path):
+    """Batal saat lock terkompresi → CANCELLED + tak meninggalkan vault parsial."""
+    source = _make_source(tmp_path)
+    vault_path = tmp_path / "v.adtn"
+    status, _ = kunci_brankas(
+        [str(source)], str(vault_path), PASSWORD, compress=True, is_cancelled=lambda: True
+    )
+    assert status == VaultStatus.CANCELLED
+    assert not vault_path.exists()
+
+
 def test_empty_folder_compressed_roundtrips(tmp_path):
     source = tmp_path / "kosong"
     source.mkdir()
