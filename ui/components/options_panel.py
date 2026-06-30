@@ -149,6 +149,39 @@ class OptionsPanel(QWidget):
         lay_collapse.addLayout(lay_chk2)
         lay_opsi_hapus.addWidget(self.widget_secure_wipe)
 
+        # --- Baris kompresi (opsi mandiri, sejajar "Delete original") ---
+        lay_chk_compress = QHBoxLayout()
+        lay_chk_compress.setContentsMargins(0, 8, 0, 0)
+        lay_chk_compress.setSpacing(12)
+
+        v_compress_txt = QVBoxLayout()
+        v_compress_txt.setSpacing(3)
+        lbl_compress_title = QLabel()
+        lbl_compress_title.setObjectName("SectionLabel")
+        register(lbl_compress_title, "options.compress.title", "Compress before encrypting")
+        lbl_compress_desc = QLabel()
+        lbl_compress_desc.setObjectName("OptionDesc")
+        register(
+            lbl_compress_desc,
+            "options.compress.desc",
+            "Smaller vaults for text & documents. Little effect on already-compressed "
+            "files (photos, video, zip).",
+        )
+        lbl_compress_desc.setWordWrap(True)
+        v_compress_txt.addWidget(lbl_compress_title)
+        v_compress_txt.addWidget(lbl_compress_desc)
+
+        self.switch_compress = ToggleSwitch(checked=False)
+        register(
+            self.switch_compress,
+            "a11y.switch.compress",
+            "Compress data before encrypting",
+            "setAccessibleName",
+        )
+        lay_chk_compress.addLayout(v_compress_txt, 1)
+        lay_chk_compress.addWidget(self.switch_compress, 0, Qt.AlignmentFlag.AlignVCenter)
+        lay_opsi_hapus.addLayout(lay_chk_compress)
+
         self.anim_secure = QPropertyAnimation(self.widget_secure_wipe, b"maximumHeight")
         self.anim_secure.setDuration(250)
         self.anim_secure.setEasingCurve(QEasingCurve.Type.InOutCubic)
@@ -206,18 +239,28 @@ class OptionsPanel(QWidget):
     def is_secure_wipe(self) -> bool:
         return self.chk_secure._checked
 
-    def apply_defaults(self, delete_original: bool, secure_wipe: bool) -> None:
+    def is_compress(self) -> bool:
+        return self.switch_compress.isChecked()
+
+    def apply_defaults(
+        self, delete_original: bool, secure_wipe: bool, compress: bool = False
+    ) -> None:
         """Set opsi awal dari Settings. Secure wipe diset langsung tanpa dialog
         konfirmasi karena user sudah memilihnya secara sadar di Settings."""
         if delete_original and not self.switch_hapus.isChecked():
             self.switch_hapus.setChecked(True)  # membuka sub-opsi Secure Wipe + emit
         if delete_original and secure_wipe and not self.chk_secure._checked:
             self.chk_secure.set_checked(True)
+        self.switch_compress.setChecked(bool(compress))
 
     def reset_options(self):
         if self.switch_hapus.isChecked():
             self.switch_hapus.setChecked(False)  # memicu _on_hapus_toggled (collapse + emit)
+        # Kompresi sengaja TIDAK di-reset: tak destruktif, dan membiarkannya menyala
+        # antar-operasi lebih nyaman bagi user yang rutin mengompres (default awal
+        # tetap diatur dari Settings via apply_defaults).
 
     def set_busy(self, busy: bool):
         self.switch_hapus.setEnabled(not busy)
         self.chk_secure.setEnabled(not busy)
+        self.switch_compress.setEnabled(not busy)

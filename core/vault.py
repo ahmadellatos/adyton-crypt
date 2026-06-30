@@ -17,6 +17,7 @@ from collections.abc import Callable
 from enum import Enum
 from pathlib import Path, PureWindowsPath
 
+import zstandard
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from loguru import logger
@@ -32,9 +33,11 @@ from .constants import (
     CHUNK_RECORD_HEADER_SIZE,
     CHUNK_RECORD_OVERHEAD,
     CHUNK_SIZE,
+    COMPRESSED_DECRYPT_RATIO_GUESS,
     CORE_HEADER_SIZE,
     DISK_OVERHEAD_BYTES,
     FILE_ID_SIZE,
+    FLAG_COMPRESSED,
     FLAG_HINT,
     FLAG_NONE,
     KDF_ID_ARGON2ID,
@@ -62,6 +65,7 @@ from .constants import (
     VERSION,
     WRAP_NONCE_SIZE,
     WRAPPED_KEY_SIZE,
+    ZSTD_COMPRESSION_LEVEL,
 )
 from .crypto import (
     combine_kek_with_keyfile,
@@ -300,14 +304,22 @@ def _hitung_kebutuhan_disk_kunci(
     )
 
 
-def _hitung_kebutuhan_disk_buka(cipher_len: int) -> int:
+def _hitung_kebutuhan_disk_buka(cipher_len: int, compressed: bool = False) -> int:
     """Hitung kebutuhan ruang disk saat membuka vault.
 
     Setelah tag GCM valid, proses buka menyimpan temporary tar plaintext dan
     mengekstraknya ke folder sementara sebelum dipindahkan ke lokasi akhir.
     Karena itu kebutuhan ruang bisa mendekati 2x payload, bukan hanya ukuran
     ciphertext.
+
+    Untuk vault TERKOMPRESI, payload terdekompresi bisa jauh lebih besar dari
+    ciphertext, jadi reservasi dinaikkan dengan asumsi rasio konservatif
+    (``COMPRESSED_DECRYPT_RATIO_GUESS``). Ini hanya pra-cek UX: bila rasio nyata lebih
+    tinggi lagi, ekstraksi gagal dengan rollback aman (folder tujuan lama tak disentuh
+    sebelum hasil ekstraksi lengkap), jadi under-estimate tak menyebabkan kehilangan data.
     """
+    if compressed:
+        return cipher_len + (cipher_len * COMPRESSED_DECRYPT_RATIO_GUESS) + DISK_OVERHEAD_BYTES
     return (cipher_len * 2) + DISK_OVERHEAD_BYTES
 
 
@@ -524,6 +536,44 @@ class ChunkedAEADEncryptingStream:
             b"",
         )
         self._finished = True
+
+
+class _CompressProgressWriter:
+    """File-like di SISI INPUT tar saat kompresi aktif.
+
+    Saat vault dikompresi, ``ChunkedAEADEncryptingStream`` menerima byte TERKOMPRESI,
+    sehingga progress berbasis output-nya tak lagi mencerminkan kemajuan terhadap data
+    sumber. Wrapper ini duduk di antara ``tarfile`` dan zstd writer: meneruskan byte tar
+    mentah ke zstd, melaporkan progress berdasarkan byte UNCOMPRESSED yang ditulis, dan
+    mengecek pembatalan per-write (lebih responsif daripada menunggu blok zstd ter-flush
+    ke lapisan enkripsi). Saat kompresi aktif, progress di ``ChunkedAEADEncryptingStream``
+    dimatikan (``progress_cb=None``) agar tidak ada laporan ganda.
+    """
+
+    def __init__(self, dest, progress_cb, total_bytes: int, is_cancelled: Callable[[], bool]):
+        self.dest = dest
+        self.progress_cb = progress_cb
+        self.total_bytes = total_bytes
+        self.is_cancelled = is_cancelled
+        self.written = 0
+        self._last_pct = 0.0
+
+    def write(self, data: bytes) -> int:
+        if self.is_cancelled and self.is_cancelled():
+            raise InterruptedError("Operation cancelled by the user.")
+        self.dest.write(data)
+        self.written += len(data)
+        if self.total_bytes > 0:
+            pct = min(0.85, 0.05 + 0.80 * (self.written / self.total_bytes))
+            if pct - self._last_pct >= 0.005:
+                safe_cb(self.progress_cb, pct)
+                self._last_pct = pct
+        return len(data)
+
+    def flush(self):
+        # Jangan paksa zstd menutup blok di tiap flush tarfile (sinkronisasi, bukan
+        # akhir stream); frame difinalkan saat zstd writer ditutup oleh pemanggil.
+        return
 
 
 # ── Format Envelope / Keyslot ───────────────────────────────────────────────────
@@ -848,6 +898,27 @@ def _read_header_from_path(path: Path) -> dict:
         return _parse_header(fk)
 
 
+@contextlib.contextmanager
+def _open_payload_tar(temp_tar_path: Path, compressed: bool):
+    """Buka tar payload hasil dekripsi; decompress streaming bila vault terkompresi.
+
+    Vault tak terkompresi → tar dibuka seekable (mode ``"r"``) seperti biasa. Vault
+    terkompresi → file temp berisi tar ter-zstd; dibaca lewat ``stream_reader`` dan
+    dibuka tarfile mode streaming (``"r|"``) sehingga tar terdekompresi TIDAK perlu
+    ditulis ulang ke disk (puncak pemakaian disk tetap ≈ ukuran payload, bukan 2×).
+    Loop ekstraksi membaca tiap member secara berurutan & penuh, jadi kompatibel
+    dengan mode streaming.
+    """
+    if not compressed:
+        with tarfile.open(temp_tar_path, mode="r") as tar:
+            yield tar
+        return
+    with temp_tar_path.open("rb") as f:
+        reader = zstandard.ZstdDecompressor().stream_reader(f)
+        with tarfile.open(fileobj=reader, mode="r|") as tar:
+            yield tar
+
+
 def _extract_and_place_vault(
     temp_tar_path: Path,
     temp_ext_dir: Path,
@@ -855,15 +926,19 @@ def _extract_and_place_vault(
     path_tujuan: Path,
     progress_cb,
     is_cancelled: Callable[[], bool],
+    compressed: bool = False,
 ) -> None:
     """
     Melakukan ekstraksi isi tar dari file temporary ke lokasi akhir.
-    Termasuk TarSlip protection, progress, dan pemindahan folder.
+    Termasuk TarSlip protection, progress, dan pemindahan folder. Bila ``compressed``,
+    file temp didecompress streaming (zstd) tanpa menulis tar terdekompresi ke disk.
     """
+    # Denominator progress: ukuran file temp (untuk vault terkompresi ini ukuran
+    # TERKOMPRESI, jadi progress fase ekstraksi hanya perkiraan & ter-cap di 0.99).
     total_tar_size = temp_tar_path.stat().st_size
     extracted_bytes = 0
 
-    with tarfile.open(temp_tar_path, mode="r") as tar:
+    with _open_payload_tar(temp_tar_path, compressed) as tar:
         for member in tar:
             if is_cancelled and is_cancelled():
                 raise InterruptedError("Operation cancelled by the user.")
@@ -1097,14 +1172,24 @@ def _sanitize_virtual_name(name: str) -> str:
 class _PendingExtract:
     """Tar plaintext terverifikasi yang menunggu konfirmasi overwrite."""
 
-    __slots__ = ("temp_ext_dir", "temp_tar_path", "nama_folder", "vault_size", "vault_mtime")
+    __slots__ = (
+        "temp_ext_dir",
+        "temp_tar_path",
+        "nama_folder",
+        "vault_size",
+        "vault_mtime",
+        "compressed",
+    )
 
-    def __init__(self, temp_ext_dir, temp_tar_path, nama_folder, vault_size, vault_mtime):
+    def __init__(
+        self, temp_ext_dir, temp_tar_path, nama_folder, vault_size, vault_mtime, compressed=False
+    ):
         self.temp_ext_dir = temp_ext_dir
         self.temp_tar_path = temp_tar_path
         self.nama_folder = nama_folder
         self.vault_size = vault_size
         self.vault_mtime = vault_mtime
+        self.compressed = compressed
 
 
 _pending_extracts: dict[str, _PendingExtract] = {}
@@ -1176,6 +1261,7 @@ def _try_resume_overwrite(
             path_tujuan,
             progress_cb,
             is_cancelled,
+            compressed=handle.compressed,
         )
         safe_cb(progress_cb, 1.0)
         return VaultStatus.SUCCESS, handle.nama_folder
@@ -1224,6 +1310,7 @@ def _buka_brankas_from_open_file(
         file_id = hdr["file_id"]
         stored_chunk_size = hdr["chunk_size"]
         flags = hdr["flags"]
+        compressed = bool(flags & FLAG_COMPRESSED)
 
         if stored_chunk_size <= 0 or stored_chunk_size > CHUNK_SIZE:
             return (
@@ -1334,7 +1421,7 @@ def _buka_brankas_from_open_file(
                 pkey = _pending_key(target_path)
                 _discard_pending(pkey)  # buang pending lama untuk vault ini bila ada
                 _pending_extracts[pkey] = _PendingExtract(
-                    temp_ext_dir, temp_tar_path, nama_folder, size, mtime
+                    temp_ext_dir, temp_tar_path, nama_folder, size, mtime, compressed
                 )
                 keep_temp = True
             except OSError:
@@ -1348,6 +1435,7 @@ def _buka_brankas_from_open_file(
             path_tujuan,
             progress_cb,
             is_cancelled,
+            compressed=compressed,
         )
 
         safe_cb(progress_cb, 1.0)
@@ -1401,6 +1489,7 @@ def kunci_brankas(
     hint: str | None = None,
     kdf_params: dict[str, int] | None = None,
     keyfile_path: str | None = None,
+    compress: bool = False,
 ) -> tuple[VaultStatus, str]:
     """Buat vault envelope dari ``paths``.
 
@@ -1494,6 +1583,8 @@ def kunci_brankas(
             hint_bytes = hint_bytes.decode("utf-8", "ignore").encode("utf-8")
             if hint_bytes:
                 flags |= FLAG_HINT
+        if compress:
+            flags |= FLAG_COMPRESSED
 
         pw_slot_type = SLOT_TYPE_PASSWORD_KEYFILE if keyfile_material else SLOT_TYPE_PASSWORD
         slots = [
@@ -1543,11 +1634,19 @@ def kunci_brankas(
                 metadata_plaintext,
             )
 
+            # Saat kompresi aktif, ChunkedAEADEncryptingStream menerima byte TERKOMPRESI,
+            # jadi progress-nya dimatikan (progress_cb=None) dan dilaporkan dari sisi
+            # input tar oleh _CompressProgressWriter (berbasis byte uncompressed).
             out_stream = ChunkedAEADEncryptingStream(
-                fk, aesgcm, header_context, progress_cb, total_size, is_cancelled
+                fk,
+                aesgcm,
+                header_context,
+                None if compress else progress_cb,
+                total_size,
+                is_cancelled,
             )
 
-            with tarfile.open(fileobj=out_stream, mode="w|") as tar:
+            def _add_sources(tar):
                 for p in valid_paths:
                     path_item = Path(p)
                     # Single-file: root arcname HARUS = nama_virtual (sudah disanitasi)
@@ -1560,7 +1659,23 @@ def kunci_brankas(
                     )
                     tar.add(path_item, arcname=arcname)
 
-            out_stream.finish()
+            if compress:
+                # tar → zstd writer → out_stream (AEAD record). closefd=False agar
+                # menutup zstd writer TIDAK menutup out_stream (finish() dipanggil sendiri).
+                cctx = zstandard.ZstdCompressor(level=ZSTD_COMPRESSION_LEVEL)
+                with cctx.stream_writer(out_stream, closefd=False) as zwriter:
+                    tar_sink = _CompressProgressWriter(
+                        zwriter, progress_cb, total_size, is_cancelled
+                    )
+                    with tarfile.open(fileobj=tar_sink, mode="w|") as tar:
+                        _add_sources(tar)
+                # zstd writer ditutup di sini → frame difinalkan, semua byte terkompresi
+                # sudah mengalir ke out_stream.
+                out_stream.finish()
+            else:
+                with tarfile.open(fileobj=out_stream, mode="w|") as tar:
+                    _add_sources(tar)
+                out_stream.finish()
 
             # Paksa OS flush disk buffer cache ke hardware fisik.
             # Ini satu-satunya cara memastikan data benar-benar tersimpan
@@ -1700,9 +1815,19 @@ def buka_brankas(
             if total_size < min_size:
                 return VaultStatus.ERROR, "The vault file is too small or incomplete."
 
-            # 4. Ruang disk: dekripsi menyimpan temp tar + ekstraksi (≈2× payload).
+            # Intip flag kompresi (FLAGS = 4 byte terakhir core header) untuk reservasi
+            # disk yang tepat, lalu seek kembali ke posisi tepat setelah VERSION agar
+            # _parse_header (dipanggil _buka_brankas_from_open_file) tak terpengaruh.
+            compressed = False
+            peek = fk.read(CORE_HEADER_SIZE - 5)  # FILE_ID(16)+CHUNK_SIZE(4)+FLAGS(4)
+            if len(peek) == CORE_HEADER_SIZE - 5:
+                compressed = bool(int.from_bytes(peek[-4:], byteorder="big") & FLAG_COMPRESSED)
+            fk.seek(5)
+
+            # 4. Ruang disk: dekripsi menyimpan temp tar + ekstraksi (≈2× payload; lebih
+            #    untuk vault terkompresi karena payload terdekompresi > ciphertext).
             free_space = shutil.disk_usage(base_dir).free
-            required_space = _hitung_kebutuhan_disk_buka(total_size)
+            required_space = _hitung_kebutuhan_disk_buka(total_size, compressed)
             if free_space < required_space:
                 req_mb = required_space / (1024 * 1024)
                 free_mb = free_space / (1024 * 1024)

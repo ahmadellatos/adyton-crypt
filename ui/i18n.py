@@ -47,6 +47,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "settings.destructive": "Merusak.",
         "settings.secure_wipe": "Hapus aman (timpa data)",
         "settings.secure_wipe.desc": "Timpa data sebelum dihapus (lebih lambat).",
+        "settings.compress": "Kompres sebelum enkripsi",
+        "settings.compress.desc": "Vault lebih kecil untuk teks & dokumen; sedikit efek pada foto/video/zip.",
         "settings.privacy": "Privasi",
         "settings.privacy.cap": "Kurangi jejak yang tertinggal",
         "settings.clipboard": "Bersihkan clipboard otomatis",
@@ -392,6 +394,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "options.delete.desc": "Penghapusan standar — cepat & aman untuk SSD.",
         "options.secure.title": "Lanjutan: Hapus Aman (timpa data)",
         "options.secure.desc": "Lebih lambat — untuk HDD atau data sangat sensitif.",
+        "options.compress.title": "Kompres sebelum enkripsi",
+        "options.compress.desc": "Vault lebih kecil untuk teks & dokumen. Sedikit efek pada file yang sudah terkompresi (foto, video, zip).",
         "options.secure.dialog.title": "Perhatian: Kompatibilitas Hardware",
         "options.secure.dialog.msg": "Hapus Aman menimpa data asli dengan byte acak sebelum menghapus, sehingga pemulihan jauh lebih sulit.\n\nPenting:\n• Hindari ini di SSD — penimpaan berulang mempercepat keausan drive.\n• Pakai hanya untuk hard disk tradisional (HDD).\n\nAktifkan Hapus Aman?",
         # ── Drop zone (Buka / Kelola) ───────────────────────────────────────
@@ -541,6 +545,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "a11y.switch.add_keyfile": "Lindungi dengan keyfile",
         "a11y.switch.delete_original": "Hapus file asli setelah dikunci",
         "a11y.switch.secure_wipe": "Hapus Aman — timpa data asli",
+        "a11y.switch.compress": "Kompres data sebelum enkripsi",
     }
 }
 

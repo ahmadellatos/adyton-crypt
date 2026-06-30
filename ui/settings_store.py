@@ -23,6 +23,7 @@ from core.constants import DEFAULT_KDF_LEVEL, KDF_LEVELS
 KEY_KDF_LEVEL = "security/kdf_level"
 KEY_DELETE_ORIGINAL = "defaults/delete_original"
 KEY_SECURE_WIPE = "defaults/secure_wipe"
+KEY_COMPRESS = "defaults/compress"
 KEY_CLIPBOARD_SECONDS = "privacy/clipboard_seconds"
 KEY_AUTO_LOCK_ENABLED = "privacy/auto_lock_enabled"
 KEY_AUTO_LOCK_MINUTES = "privacy/auto_lock_minutes"
@@ -36,6 +37,7 @@ _DEFAULTS: dict[str, object] = {
     KEY_KDF_LEVEL: DEFAULT_KDF_LEVEL,
     KEY_DELETE_ORIGINAL: False,
     KEY_SECURE_WIPE: False,
+    KEY_COMPRESS: False,  # kompresi opsional (zstd) — default mati
     KEY_CLIPBOARD_SECONDS: 30,  # 0 = matikan auto-clear
     KEY_AUTO_LOCK_ENABLED: False,
     KEY_AUTO_LOCK_MINUTES: 5,
@@ -91,6 +93,12 @@ class SettingsStore(QObject):
 
     def set_secure_wipe(self, value: bool) -> None:
         self._set(KEY_SECURE_WIPE, bool(value))
+
+    def compress(self) -> bool:
+        return self._get(KEY_COMPRESS, bool)
+
+    def set_compress(self, value: bool) -> None:
+        self._set(KEY_COMPRESS, bool(value))
 
     # ── Privacy ─────────────────────────────────────────────────────────────
     def clipboard_seconds(self) -> int:

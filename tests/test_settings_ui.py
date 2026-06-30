@@ -22,6 +22,7 @@ def test_settings_defaults(qtbot, tmp_path):
     assert st.kdf_level() == DEFAULT_KDF_LEVEL
     assert st.delete_original() is False
     assert st.secure_wipe() is False
+    assert st.compress() is False
     assert st.clipboard_seconds() == 30
     assert st.auto_lock_enabled() is False
     assert st.language() == "en"
@@ -36,6 +37,7 @@ def test_settings_roundtrip_and_change_signal(qtbot, tmp_path):
 
     st.set_kdf_level(KDF_LEVEL_PARANOID)
     st.set_delete_original(True)
+    st.set_compress(True)
     st.set_clipboard_seconds(0)
     st.set_auto_lock_enabled(True)
     st.set_language("id")
@@ -43,6 +45,7 @@ def test_settings_roundtrip_and_change_signal(qtbot, tmp_path):
 
     assert st.kdf_level() == KDF_LEVEL_PARANOID
     assert st.delete_original() is True
+    assert st.compress() is True
     assert st.clipboard_seconds() == 0
     assert st.auto_lock_enabled() is True
     assert st.language() == "id"

@@ -206,9 +206,21 @@ class SettingsWindow(QDialog):
         self.lbl_wipe_desc = self._label(
             "settings.secure_wipe.desc", "Overwrite data before deleting (slower)."
         )
-        lay.addLayout(self._row(self.lbl_wipe, self.lbl_wipe_desc, self.sw_wipe, divider=True))
+        lay.addLayout(self._row(self.lbl_wipe, self.lbl_wipe_desc, self.sw_wipe))
+        self.sw_compress = ToggleSwitch(checked=False)
+        self.lbl_compress = self._label(
+            "settings.compress", "Compress before encrypting", main=True
+        )
+        self.lbl_compress_desc = self._label(
+            "settings.compress.desc",
+            "Smaller vaults for text & documents; little effect on photos/video/zip.",
+        )
+        lay.addLayout(
+            self._row(self.lbl_compress, self.lbl_compress_desc, self.sw_compress, divider=True)
+        )
         self.sw_delete.toggled.connect(self.s.set_delete_original)
         self.sw_wipe.toggled.connect(self.s.set_secure_wipe)
+        self.sw_compress.toggled.connect(self.s.set_compress)
         self.body_lay.addWidget(sec)
 
         # ── Privacy ──
@@ -537,6 +549,7 @@ class SettingsWindow(QDialog):
         self._select_kdf(self.s.kdf_level())
         self.sw_delete.setChecked(self.s.delete_original())
         self.sw_wipe.setChecked(self.s.secure_wipe())
+        self.sw_compress.setChecked(self.s.compress())
 
         self._fill_combo(
             self.combo_clip,

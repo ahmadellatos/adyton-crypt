@@ -85,7 +85,21 @@ KEYFILE_GENERATED_SIZE = 128  # byte acak saat app membuatkan keyfile (1024-bit)
 # Flags header.
 FLAG_NONE = 0
 FLAG_HINT = 1 << 0
-SUPPORTED_FLAGS = FLAG_HINT
+# Payload (stream tar) dikompres dengan zstd SEBELUM dienkripsi. Flag ini ikut di
+# AAD record (lihat _record_context), jadi pilihan kompresi terautentikasi: tak bisa
+# diubah diam-diam. Kompresi terjadi di dalam region terenkripsi → tidak membocorkan
+# rasio/isi ke header cleartext. Hanya data record yang dikompres; record metadata
+# (record 0, berisi nama folder) tetap apa adanya.
+FLAG_COMPRESSED = 1 << 1
+SUPPORTED_FLAGS = FLAG_HINT | FLAG_COMPRESSED
+
+# Level zstd untuk kompresi opsional. Level 3 (default zstd) = sweet spot rasio vs
+# kecepatan; aman untuk data besar yang jadi nilai jual app.
+ZSTD_COMPRESSION_LEVEL = 3
+# Saat membuka vault TERKOMPRESI, payload terdekompresi bisa jauh lebih besar dari
+# ciphertext. Pemeriksaan ruang disk memakai asumsi rasio konservatif ini; bila rasio
+# nyata lebih tinggi lagi, ekstraksi gagal dengan rollback aman (data lama tak disentuh).
+COMPRESSED_DECRYPT_RATIO_GUESS = 4
 
 # Hint password disimpan TANPA enkripsi (harus terbaca sebelum unlock).
 MAX_HINT_LENGTH = 256  # byte UTF-8

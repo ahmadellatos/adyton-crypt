@@ -1,6 +1,7 @@
 PySide6>=6.6.0
 PySideSix-Frameless-Window>=0.3.0
 cryptography>=46.0.7,<47.0.0
+zstandard>=0.22.0                  # Kompresi opsional (zstd) sebelum enkripsi — FLAG_COMPRESSED
 QtAwesome>=1.3.0
 loguru>=0.7.0
 windows-toasts>=1.3.0

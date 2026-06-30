@@ -76,9 +76,9 @@ class TabKunci(QWidget):
         # Opsi "Delete original" kini berada di dalam card target (dasar daftar).
         self.drop_zone.embed_options(self.options_panel)
 
-        # Terapkan default opsi dari Settings (Hapus Asli / Secure Wipe).
+        # Terapkan default opsi dari Settings (Hapus Asli / Secure Wipe / Kompresi).
         _s = get_settings()
-        self.options_panel.apply_defaults(_s.delete_original(), _s.secure_wipe())
+        self.options_panel.apply_defaults(_s.delete_original(), _s.secure_wipe(), _s.compress())
 
         # Panel password bisa lebih tinggi dari kolom (form + recovery + hint),
         # jadi dibungkus scroll area sendiri agar isinya tidak terpotong dan hanya
@@ -250,6 +250,7 @@ class TabKunci(QWidget):
         pw = self.password_panel.get_password()
         hapus_asli = self.options_panel.is_hapus_asli()
         secure_wipe = self.options_panel.is_secure_wipe()
+        compress = self.options_panel.is_compress()
 
         # Enter di field password memicu _proses walau tombol aksi sedang disabled
         # (mis. belum ada target, atau password kosong). Cegah lebih dulu agar tidak
@@ -340,6 +341,7 @@ class TabKunci(QWidget):
             hint=hint,
             kdf_params=kdf_params_for_level(get_settings().kdf_level()),
             keyfile_path=keyfile_path,
+            compress=compress,
             parent=self,
         )
 
