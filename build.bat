@@ -69,6 +69,7 @@ python -m nuitka ^
     --include-package=core ^
     --include-package=ui ^
     --include-package=cryptography ^
+    --include-package=zstandard ^
     --include-module=cryptography.hazmat.primitives.kdf.argon2 ^
     --include-data-dir=assets=assets ^
     --noinclude-pytest-mode=nofollow ^
@@ -141,9 +142,9 @@ if errorlevel 1 (
     exit /b 1
 )
 
-python -c "import qtawesome, loguru, windows_toasts, zxcvbn" >nul 2>nul
+python -c "import qtawesome, loguru, windows_toasts, zxcvbn, zstandard" >nul 2>nul
 if errorlevel 1 (
-    echo [ERROR] Satu atau lebih dependency tidak ditemukan: qtawesome, loguru, windows_toasts, zxcvbn
+    echo [ERROR] Satu atau lebih dependency tidak ditemukan: qtawesome, loguru, windows_toasts, zxcvbn, zstandard
     echo         Jalankan: pip install -r requirements.txt
     exit /b 1
 )
