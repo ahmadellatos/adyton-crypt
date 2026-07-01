@@ -73,7 +73,12 @@ def test_enter_filter_steps_aside_when_popup_open(qtbot):
     btn = QPushButton("x")
     qtbot.addWidget(btn)
     btn.show()
-    btn.setFocus()
+    # Aktifkan window tombol dulu agar setFocus() benar-benar mendarat. Di platform
+    # offscreen (suite penuh berbagi satu QApplication), setFocus() hanya efektif bila
+    # top-level window tombol adalah window aktif; tanpa ini fokus bisa tak mendarat
+    # tergantung state window dari test sebelumnya → focusWidget() None (bukan tombol).
+    btn.activateWindow()
+    btn.setFocus(Qt.FocusReason.OtherFocusReason)
     ev = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
 
     # Tanpa popup: Enter pada tombol fokus tetap dikonsumsi (perilaku lama dipertahankan).

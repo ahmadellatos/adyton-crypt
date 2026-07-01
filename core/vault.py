@@ -7,6 +7,7 @@ Telah ditambal dari celah keamanan Path Traversal (TarSlip) dan rapuhnya deteksi
 
 import contextlib
 import hashlib
+import io
 import os
 import shutil
 import stat
@@ -36,6 +37,7 @@ from .constants import (
     COMPRESSED_DECRYPT_RATIO_GUESS,
     CORE_HEADER_SIZE,
     DISK_OVERHEAD_BYTES,
+    EXTRACT_STAGING_PREFIX,
     FILE_ID_SIZE,
     FLAG_COMPRESSED,
     FLAG_HINT,
@@ -67,6 +69,7 @@ from .constants import (
     WRAPPED_KEY_SIZE,
     ZSTD_COMPRESSION_LEVEL,
     ZSTD_DISK_ESTIMATE_RATIO,
+    VaultEntry,
 )
 from .crypto import (
     combine_kek_with_keyfile,
@@ -552,6 +555,114 @@ class ChunkedAEADEncryptingStream:
         self._finished = True
 
 
+class ChunkedAEADDecryptingStream(io.RawIOBase):
+    """File-like READER: menarik record AEAD dari vault & meng-yield plaintext.
+
+    Counterpart baca dari ``ChunkedAEADEncryptingStream``. Setiap record diverifikasi
+    tag-nya (``aesgcm.decrypt``) SEBELUM plaintext-nya diekspos, jadi konsumen
+    (``tarfile`` mode ``r|``) tak pernah melihat plaintext yang belum terautentikasi.
+    Membaca record DATA berurutan mulai ``start_index`` sampai ``RECORD_TYPE_FINAL``;
+    index tak berurutan / tipe tak dikenal / byte sisa setelah FINAL → ``InvalidTag``.
+
+    Dipakai untuk browse (list isi tanpa menulis ke disk) dan ekstrak selektif: reader
+    yang sama mengalirkan payload tar terdekripsi ke tarfile streaming. Pembacaan
+    berhenti begitu tarfile mencapai akhir arsip — record FINAL & cek byte-sisa hanya
+    tereksekusi bila stream benar-benar dibaca sampai habis (mis. verifikasi penuh),
+    dan itu bukan tujuan browse.
+    """
+
+    def __init__(
+        self,
+        fk,
+        aesgcm: AESGCM,
+        header_context: bytes,
+        stored_chunk_size: int,
+        total_size: int,
+        start_index: int = 1,
+        progress_cb=None,
+        is_cancelled: Callable[[], bool] | None = None,
+    ):
+        super().__init__()
+        self._fk = fk
+        self._aesgcm = aesgcm
+        self._header_context = header_context
+        self._chunk_size = stored_chunk_size
+        self._total_size = total_size
+        self._expected_index = start_index
+        self._progress_cb = progress_cb
+        self._is_cancelled = is_cancelled
+        self._buf = bytearray()
+        self._eof = False
+        self._last_pct = 0.0
+
+    def readable(self) -> bool:
+        return True
+
+    def _pull_record(self) -> bool:
+        """Baca & dekripsi satu record ke buffer. Return False saat FINAL/EOF."""
+        if self._eof:
+            return False
+        if self._is_cancelled and self._is_cancelled():
+            raise InterruptedError("Operation cancelled by the user.")
+
+        record_type, record_index, plaintext_len, record_header = _read_record_header(self._fk)
+        if record_index != self._expected_index:
+            raise InvalidTag
+
+        if record_type == RECORD_TYPE_DATA:
+            if plaintext_len <= 0 or plaintext_len > self._chunk_size:
+                raise InvalidTag
+            ciphertext = _read_exact(self._fk, plaintext_len + TAG_SIZE)
+            plaintext = self._aesgcm.decrypt(
+                _record_nonce(record_index),
+                ciphertext,
+                _record_aad(self._header_context, record_header),
+            )
+            if len(plaintext) != plaintext_len:
+                raise InvalidTag
+            self._buf.extend(plaintext)
+            self._expected_index += 1
+
+            if self._total_size > 0 and self._progress_cb:
+                pct = min(0.98, 0.05 + 0.93 * (self._fk.tell() / self._total_size))
+                if pct - self._last_pct >= 0.005:
+                    safe_cb(self._progress_cb, pct)
+                    self._last_pct = pct
+            return True
+
+        if record_type == RECORD_TYPE_FINAL:
+            if plaintext_len != 0:
+                raise InvalidTag
+            ciphertext = _read_exact(self._fk, TAG_SIZE)
+            final_plaintext = self._aesgcm.decrypt(
+                _record_nonce(record_index),
+                ciphertext,
+                _record_aad(self._header_context, record_header),
+            )
+            if final_plaintext != b"":
+                raise InvalidTag
+            self._expected_index += 1
+            self._eof = True
+            # Tidak boleh ada byte sisa setelah FINAL.
+            if self._fk.tell() != self._total_size:
+                raise InvalidTag
+            return False
+
+        raise InvalidTag
+
+    def readinto(self, b) -> int:
+        # Isi buffer dari SATU record bila kosong; readinto boleh mengembalikan
+        # kurang dari len(b) — tarfile/zstd mengulang read() sampai cukup atau EOF.
+        while not self._buf and not self._eof:
+            self._pull_record()
+        if not self._buf:
+            return 0
+        n = min(len(b), len(self._buf))
+        b[:n] = self._buf[:n]
+        del self._buf[:n]
+        return n
+
+
 class _CompressProgressWriter:
     """File-like di SISI INPUT tar saat kompresi aktif.
 
@@ -931,6 +1042,117 @@ def _open_payload_tar(temp_tar_path: Path, compressed: bool):
         reader = zstandard.ZstdDecompressor().stream_reader(f)
         with tarfile.open(fileobj=reader, mode="r|") as tar:
             yield tar
+
+
+class _VaultOpenError(Exception):
+    """Sinyal internal saat membuka vault untuk browse/ekstrak (bukan bug).
+
+    Membawa ``VaultStatus`` + pesan agar pemanggil publik memetakan hasil dengan
+    tepat: format asing / chunk aneh → ``ERROR``; credential salah → ``WRONG_PASSWORD``;
+    data rusak setelah credential benar → ``ERROR`` + ``CORRUPT_VAULT_MESSAGE``.
+    """
+
+    def __init__(self, status: VaultStatus, message: str | None):
+        super().__init__(message or "")
+        self.status = status
+        self.message = message
+
+
+def _open_and_unlock(
+    fk, password: str, keyfile_material: bytes | None
+) -> tuple[dict, AESGCM, bytes, str]:
+    """Parse header, pulihkan Master Key, & baca record metadata (nama folder root).
+
+    ``fk`` harus berada tepat SETELAH byte VERSION (MAGIC+VERSION sudah divalidasi
+    pemanggil). Mengembalikan ``(hdr, aesgcm, header_context, nama_folder)``. Melempar
+    ``_VaultOpenError`` untuk semua kegagalan yang diharapkan sehingga pemanggil publik
+    (list/extract) memetakan status secara seragam. Setelah MK terbukti benar (AAD wrap
+    mengikat credential), kegagalan berikutnya diperlakukan sebagai KORUPSI — bukan
+    password salah — sama seperti ``verify_vault``.
+    """
+    try:
+        hdr = _parse_header(fk)
+    except ValueError as exc:
+        raise _VaultOpenError(VaultStatus.ERROR, str(exc)) from exc
+
+    stored_chunk_size = hdr["chunk_size"]
+    if stored_chunk_size <= 0 or stored_chunk_size > CHUNK_SIZE:
+        raise _VaultOpenError(
+            VaultStatus.ERROR,
+            "The vault's chunk parameters are invalid, or the file is corrupted.",
+        )
+
+    master_key = _recover_master_key(
+        password, hdr["file_id"], _hint_bytes_from_header(hdr), hdr["slots"], keyfile_material
+    )
+    if master_key is None:
+        raise _VaultOpenError(VaultStatus.WRONG_PASSWORD, None)
+
+    aesgcm = AESGCM(master_key)
+    header_context = _record_context(hdr["file_id"], stored_chunk_size, hdr["flags"])
+
+    try:
+        record_type, record_index, plaintext_len, record_header = _read_record_header(fk)
+        if (
+            record_type != RECORD_TYPE_METADATA
+            or record_index != 0
+            or plaintext_len < 2
+            or plaintext_len > 2 + MAX_VIRTUAL_NAME_LENGTH
+        ):
+            raise InvalidTag
+        metadata_ciphertext = _read_exact(fk, plaintext_len + TAG_SIZE)
+        metadata_plaintext = aesgcm.decrypt(
+            _record_nonce(record_index),
+            metadata_ciphertext,
+            _record_aad(header_context, record_header),
+        )
+        nama_folder, name_offset = _parse_virtual_folder_name(metadata_plaintext)
+        if name_offset != len(metadata_plaintext):
+            raise ValueError("invalid extra metadata")
+    except (InvalidTag, ValueError) as exc:
+        raise _VaultOpenError(VaultStatus.ERROR, CORRUPT_VAULT_MESSAGE) from exc
+
+    return hdr, aesgcm, header_context, nama_folder
+
+
+@contextlib.contextmanager
+def _open_payload_tar_stream(
+    fk,
+    aesgcm: AESGCM,
+    header_context: bytes,
+    stored_chunk_size: int,
+    total_size: int,
+    compressed: bool,
+    progress_cb=None,
+    is_cancelled: Callable[[], bool] | None = None,
+):
+    """Buka payload tar langsung dari ``fk`` via stream-decrypt (tanpa temp file).
+
+    Membungkus ``ChunkedAEADDecryptingStream`` (→ zstd ``stream_reader`` bila
+    terkompresi) dengan ``tarfile`` mode ``"r|"``. Dipakai browse & ekstrak selektif:
+    tak ada plaintext seluruh payload yang jatuh ke disk. Pola sama dengan
+    ``_open_payload_tar`` tapi sumbernya reader in-memory, bukan tar temp.
+    """
+    reader = ChunkedAEADDecryptingStream(
+        fk,
+        aesgcm,
+        header_context,
+        stored_chunk_size,
+        total_size,
+        start_index=1,
+        progress_cb=progress_cb,
+        is_cancelled=is_cancelled,
+    )
+    try:
+        if compressed:
+            zreader = zstandard.ZstdDecompressor().stream_reader(reader)
+            with tarfile.open(fileobj=zreader, mode="r|") as tar:
+                yield tar
+        else:
+            with tarfile.open(fileobj=reader, mode="r|") as tar:
+                yield tar
+    finally:
+        reader.close()
 
 
 def _extract_and_place_vault(
@@ -2059,6 +2281,302 @@ def verify_vault(
 
     except Exception:
         logger.exception("Gagal memverifikasi brankas.")
+        return VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE
+
+
+# ── Browse isi + ekstrak selektif (read-only, stream-decrypt) ────────────────────
+
+
+def _read_and_check_prelude(fk, total_size: int) -> None:
+    """Validasi MAGIC+VERSION+ukuran minimum; ``fk`` maju ke tepat setelah VERSION.
+
+    Melempar ``_VaultOpenError`` (ERROR) untuk file asing / versi beda / terlalu kecil.
+    """
+    if fk.read(4) != MAGIC_BYTES:
+        raise _VaultOpenError(VaultStatus.ERROR, "This file isn't a valid Adyton Crypt vault.")
+    if fk.read(1) != VERSION:
+        raise _VaultOpenError(
+            VaultStatus.ERROR,
+            "This vault was made by a different version of Adyton Crypt. Please update the app.",
+        )
+    min_slot = 1 + 1 + 2 + ARGON2ID_PARAMS_SIZE + SALT_SIZE + WRAP_NONCE_SIZE + WRAPPED_KEY_SIZE
+    min_size = CORE_HEADER_SIZE + 1 + min_slot + (2 * CHUNK_RECORD_OVERHEAD)
+    if total_size < min_size:
+        raise _VaultOpenError(VaultStatus.ERROR, "The vault file is too small or incomplete.")
+
+
+def _rel_to_root(name: str, root: str) -> str:
+    """Nama member tar → path relatif terhadap folder root (pemisah ``/``).
+
+    Mengembalikan ``""`` untuk entri root itu sendiri.
+    """
+    norm = name.replace("\\", "/").strip("/")
+    root = root.replace("\\", "/").strip("/")
+    if norm == root:
+        return ""
+    prefix = root + "/"
+    if norm.startswith(prefix):
+        return norm[len(prefix) :]
+    return norm
+
+
+def _rel_selected(rel: str, selected_set: set[str]) -> bool:
+    """True bila ``rel`` dipilih persis atau berada di bawah dir yang dipilih."""
+    if rel in selected_set:
+        return True
+    return any(rel.startswith(sel + "/") for sel in selected_set)
+
+
+def _unique_extract_target(base: Path) -> Path:
+    """Path folder hasil ekstrak yang dijamin belum ada (``base`` atau ``base (n)``).
+
+    Ekstrak selektif TIDAK pernah menimpa data yang sudah ada di tujuan — subset yang
+    diekstrak selalu mendarat di folder barunya sendiri (mencegah kehilangan file yang
+    tak ikut dipilih bila folder bernama sama sudah ada).
+    """
+    if not base.exists():
+        return base
+    for i in range(1, 1000):
+        cand = base.with_name(f"{base.name} ({i})")
+        if not cand.exists():
+            return cand
+    raise FileExistsError("Couldn't find a free name for the extracted folder.")
+
+
+def list_vault_contents(
+    locked_path: str,
+    password: str,
+    *,
+    keyfile_path: str | None = None,
+    progress_cb=None,
+    is_cancelled: Callable[[], bool] | None = None,
+) -> tuple[VaultStatus, str | None, list[VaultEntry] | None]:
+    """Daftar isi vault TANPA menulis apa pun ke disk (browse).
+
+    Stream-decrypt seluruh record (O(vault) CPU, **nol disk**) lalu mengumpulkan header
+    TAR → daftar ``VaultEntry`` (rel_path relatif root, size, is_dir, mtime). Karena
+    payload TAR berselang-seling dengan data di dalam region terenkripsi dan tak punya
+    manifest, ini harus mendekripsi hampir seluruh stream — tapi data member dibuang,
+    tak ada plaintext yang jatuh ke disk. Tak butuh folder tujuan & tak menyentuh cache
+    resume overwrite.
+
+    Return:
+      * ``(SUCCESS, root_name, entries)``
+      * ``(WRONG_PASSWORD, None, None)``
+      * ``(CANCELLED, msg, None)``
+      * ``(ERROR, msg, None)`` — bukan vault / versi beda / rusak.
+    """
+    target_path = Path(locked_path)
+    try:
+        total_size = target_path.stat().st_size
+
+        keyfile_material: bytes | None = None
+        if keyfile_path:
+            try:
+                keyfile_material = _load_keyfile_material(keyfile_path)
+            except ValueError as exc:
+                return VaultStatus.ERROR, str(exc), None
+
+        with target_path.open("rb") as fk:
+            try:
+                _read_and_check_prelude(fk, total_size)
+                hdr, aesgcm, header_context, nama_folder = _open_and_unlock(
+                    fk, password, keyfile_material
+                )
+            except _VaultOpenError as exc:
+                return exc.status, exc.message, None
+
+            compressed = bool(hdr["flags"] & FLAG_COMPRESSED)
+            entries: list[VaultEntry] = []
+            try:
+                with _open_payload_tar_stream(
+                    fk,
+                    aesgcm,
+                    header_context,
+                    hdr["chunk_size"],
+                    total_size,
+                    compressed,
+                    progress_cb=progress_cb,
+                    is_cancelled=is_cancelled,
+                ) as tar:
+                    for member in tar:
+                        if is_cancelled and is_cancelled():
+                            return VaultStatus.CANCELLED, "Browse cancelled.", None
+                        rel = _rel_to_root(member.name, nama_folder)
+                        if rel == "":
+                            continue  # entri root itu sendiri
+                        if member.isdir():
+                            entries.append(VaultEntry(rel, 0, True, member.mtime))
+                        elif member.isreg():
+                            entries.append(VaultEntry(rel, member.size, False, member.mtime))
+                        # symlink/device/hardlink dilewati (tak akan diekstrak juga).
+            except InterruptedError:
+                return VaultStatus.CANCELLED, "Browse cancelled.", None
+            except (InvalidTag, tarfile.TarError, ValueError):
+                return VaultStatus.ERROR, CORRUPT_VAULT_MESSAGE, None
+
+        safe_cb(progress_cb, 1.0)
+        return VaultStatus.SUCCESS, nama_folder, entries
+
+    except Exception:
+        logger.exception("Gagal membaca daftar isi vault.")
+        return VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE, None
+
+
+def extract_selected(
+    locked_path: str,
+    password: str,
+    selected,
+    dest_dir: str,
+    *,
+    keyfile_path: str | None = None,
+    expected_bytes: int | None = None,
+    progress_cb=None,
+    is_cancelled: Callable[[], bool] | None = None,
+) -> tuple[VaultStatus, str | None]:
+    """Ekstrak HANYA item terpilih dari vault ke ``dest_dir`` (stream-decrypt).
+
+    ``selected`` = iterable rel_path (file/dir, relatif root, pemisah ``/``) pilihan
+    user. Member yang cocok (persis atau di bawah dir terpilih) diekstrak ke folder
+    **staging** di dalam ``dest_dir``, lalu subtree root dipindahkan ke folder final
+    unik (``<root>`` atau ``<root> (n)``) **hanya setelah stream selesai sukses** →
+    tujuan final tak pernah berisi hasil parsial & tak pernah menimpa data lama
+    (cancel/korup/error → staging dibersihkan). Reuse proteksi TarSlip
+    ``_is_safe_tar_member``; symlink/device dilewati. Peak disk ≈ ukuran subset
+    terpilih, bukan 2×.
+
+    Catatan invariant: berbeda dari ``buka_brankas`` yang memverifikasi SELURUH arsip
+    sebelum menaruh apa pun, ekstrak selektif menulis saat mengalir. Relaksasi ini
+    ditutup dengan staging-lalu-move: setiap record tetap diverifikasi tag-nya sebelum
+    byte-nya ditulis, dan tujuan final hanya menerima subtree yang sudah lengkap.
+    """
+    target_path = Path(locked_path)
+    dest = Path(dest_dir)
+    selected_set = {s.replace("\\", "/").strip("/") for s in selected if s not in (None, "")}
+    if not selected_set:
+        return VaultStatus.ERROR, "No items were selected to extract."
+
+    staging: Path | None = None
+    try:
+        total_size = target_path.stat().st_size
+
+        if not dest.is_dir():
+            return VaultStatus.ERROR, "The destination folder doesn't exist."
+
+        # Pra-cek disk (best-effort): butuh ruang ≈ ukuran subset terpilih + overhead.
+        if expected_bytes:
+            free = shutil.disk_usage(dest).free
+            required = expected_bytes + DISK_OVERHEAD_BYTES
+            if free < required:
+                req_mb = required / (1024 * 1024)
+                free_mb = free / (1024 * 1024)
+                return (
+                    VaultStatus.ERROR,
+                    f"Not enough storage space.\nDisk free: {free_mb:.1f} MB. "
+                    f"At least {req_mb:.1f} MB is required.",
+                )
+
+        keyfile_material: bytes | None = None
+        if keyfile_path:
+            try:
+                keyfile_material = _load_keyfile_material(keyfile_path)
+            except ValueError as exc:
+                return VaultStatus.ERROR, str(exc)
+
+        with target_path.open("rb") as fk:
+            try:
+                _read_and_check_prelude(fk, total_size)
+                hdr, aesgcm, header_context, nama_folder = _open_and_unlock(
+                    fk, password, keyfile_material
+                )
+            except _VaultOpenError as exc:
+                return exc.status, exc.message
+
+            compressed = bool(hdr["flags"] & FLAG_COMPRESSED)
+            staging = dest / f"{EXTRACT_STAGING_PREFIX}{uuid.uuid4().hex[:8]}"
+            staging.mkdir(parents=True, exist_ok=False)
+            staging_resolved = staging.resolve()
+            extracted_any = False
+
+            try:
+                with _open_payload_tar_stream(
+                    fk,
+                    aesgcm,
+                    header_context,
+                    hdr["chunk_size"],
+                    total_size,
+                    compressed,
+                    progress_cb=progress_cb,
+                    is_cancelled=is_cancelled,
+                ) as tar:
+                    for member in tar:
+                        if is_cancelled and is_cancelled():
+                            raise InterruptedError("Operation cancelled by the user.")
+                        rel = _rel_to_root(member.name, nama_folder)
+                        if rel == "" or not _rel_selected(rel, selected_set):
+                            continue
+
+                        if not _is_safe_tar_member(member.name, staging):
+                            raise Exception("Security anomaly: path traversal (TarSlip) detected.")
+                        member_path = (staging_resolved / member.name).resolve()
+
+                        if member.isdir():
+                            member_path.mkdir(parents=True, exist_ok=True)
+                            extracted_any = True
+                        elif member.isreg():
+                            member_path.parent.mkdir(parents=True, exist_ok=True)
+                            with (
+                                tar.extractfile(member) as source,
+                                open(member_path, "wb") as tgt,
+                            ):
+                                while True:
+                                    if is_cancelled and is_cancelled():
+                                        raise InterruptedError("Operation cancelled by the user.")
+                                    chunk = source.read(CHUNK_SIZE)
+                                    if not chunk:
+                                        break
+                                    tgt.write(chunk)
+                            with contextlib.suppress(Exception):
+                                os.chmod(member_path, member.mode)
+                                os.utime(member_path, (member.mtime, member.mtime))
+                            extracted_any = True
+                        else:
+                            logger.warning(f"Melewati member tidak standar: {member.name}")
+            except InterruptedError:
+                _cleanup_temp_decrypt_dir(staging)
+                staging = None
+                return VaultStatus.CANCELLED, "Extraction cancelled. No files were placed."
+            except (InvalidTag, tarfile.TarError, ValueError):
+                _cleanup_temp_decrypt_dir(staging)
+                staging = None
+                return VaultStatus.ERROR, CORRUPT_VAULT_MESSAGE
+
+        if not extracted_any:
+            _cleanup_temp_decrypt_dir(staging)
+            staging = None
+            return VaultStatus.ERROR, "None of the selected items were found in the vault."
+
+        src_root = staging / nama_folder
+        if not src_root.exists():
+            # Semestinya tak terjadi (semua member berawalan root); jaga agar tak
+            # meninggalkan staging & laporkan sebagai kegagalan tak terduga.
+            _cleanup_temp_decrypt_dir(staging)
+            staging = None
+            return VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE
+
+        final_dst = _unique_extract_target(dest / nama_folder)
+        # staging berada DI DALAM dest → rename dalam volume yang sama (atomik).
+        os.replace(src_root, final_dst)
+        _cleanup_temp_decrypt_dir(staging)
+        staging = None
+
+        safe_cb(progress_cb, 1.0)
+        return VaultStatus.SUCCESS, final_dst.name
+
+    except Exception:
+        logger.exception("Gagal mengekstrak item terpilih dari vault.")
+        if staging is not None:
+            _cleanup_temp_decrypt_dir(staging)
         return VaultStatus.ERROR, GENERIC_FAILURE_MESSAGE
 
 

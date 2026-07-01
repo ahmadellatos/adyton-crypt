@@ -11,6 +11,7 @@ from loguru import logger
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QPushButton,
@@ -19,7 +20,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.vault import VaultStatus, buka_brankas, cancel_pending_overwrite, verify_vault
+from core.vault import (
+    VaultStatus,
+    buka_brankas,
+    cancel_pending_overwrite,
+    extract_selected,
+    list_vault_contents,
+    verify_vault,
+)
 from core.worker import CryptoWorker
 
 from .buttons import BigActionBtn
@@ -43,6 +51,7 @@ from .utils import (
     progress_stage_label,
     start_crypto_worker,
 )
+from .vault_browser_dialog import VaultBrowserDialog
 from .widgets import AnimatedNotifBar
 
 
@@ -149,6 +158,29 @@ class TabBuka(QWidget):
         self.btn_verify.setEnabled(False)
         main_layout.addWidget(self.btn_verify)
 
+        # Aksi sekunder: telusuri isi vault & ekstrak file terpilih (tanpa membongkar
+        # seluruhnya). Listing stream-decrypt tanpa menulis ke disk; ekstrak menaruh
+        # hanya subset yang dipilih. Gating sama seperti Verify (file valid + password
+        # + keyfile bila wajib).
+        self.btn_browse = QPushButton()
+        self.btn_browse.setObjectName("BtnInlineSecondary")
+        self.btn_browse.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_browse.setMinimumHeight(38)
+        self.btn_browse.setIcon(qta.icon("mdi6.folder-search-outline", color=CLR_TEXT_MUTED))
+        register(
+            self.btn_browse,
+            "open.browse.btn",
+            "Browse contents & extract selected",
+        )
+        register(
+            self.btn_browse,
+            "a11y.btn.browse_vault",
+            "Browse vault contents button",
+            "setAccessibleName",
+        )
+        self.btn_browse.setEnabled(False)
+        main_layout.addWidget(self.btn_browse)
+
         self.notif = AnimatedNotifBar(self)
 
     def _open_recent(self, path: str) -> None:
@@ -159,6 +191,7 @@ class TabBuka(QWidget):
     def _connect_signals(self):
         self.btn_aksi.clicked.connect(self._proses)
         self.btn_verify.clicked.connect(self._verify)
+        self.btn_browse.clicked.connect(self._browse)
         self.password_panel.attach_return_event(self._proses)
         self.drop_zone.file_changed.connect(self._on_file_changed)
         self.password_panel.valid_state_changed.connect(self._on_password_valid_changed)
@@ -209,6 +242,7 @@ class TabBuka(QWidget):
             self.btn_aksi.setEnabled(False)
             self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             self.btn_verify.setEnabled(False)
+            self.btn_browse.setEnabled(False)
             return
         if not self._konfirmasi_timpa:
             enabled = self._has_file and self._has_password
@@ -227,8 +261,10 @@ class TabBuka(QWidget):
             self.btn_aksi.setFocusPolicy(
                 Qt.FocusPolicy.StrongFocus if enabled else Qt.FocusPolicy.NoFocus
             )
-            # Verify dibuka pada syarat yang sama (file valid + password + keyfile bila wajib).
+            # Verify & Browse dibuka pada syarat yang sama (file valid + password +
+            # keyfile bila wajib).
             self.btn_verify.setEnabled(enabled)
+            self.btn_browse.setEnabled(enabled)
 
     def _reset_timpa(self):
         self._konfirmasi_timpa = False
@@ -253,6 +289,7 @@ class TabBuka(QWidget):
             self.btn_aksi.setEnabled(False)
             self.btn_aksi.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             self.btn_verify.setEnabled(False)
+            self.btn_browse.setEnabled(False)
             self.btn_aksi.setTextLabels(
                 tr("busy.other.title", "Another operation is running"),
                 tr("busy.other.sub", "Wait for it to finish, or cancel it first"),
@@ -347,16 +384,230 @@ class TabBuka(QWidget):
         start_crypto_worker(self.worker, self._update_progress, self._on_verify_done)
         self.worker_started.emit(self.worker)
 
+    def _browse(self):
+        """Baca daftar isi vault (stream-decrypt, tanpa menulis ke disk) → dialog.
+
+        Memakai worker bersama yang sama dengan Open/Verify. Password + keyfile
+        di-cache karena ekstrak (bila user memilih) butuh pass dekripsi kedua.
+        """
+        if self._external_busy and self.worker is None:
+            self.notif.show_msg(
+                "warn",
+                tr(
+                    "busy.other.warn",
+                    "Another operation is running. Wait for it to finish or cancel the current process.",
+                ),
+                4000,
+            )
+            return
+
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.cancel()
+            self._progress_eta.reset()
+            apply_cancelling_state(self.btn_aksi)
+            return
+
+        path_file = self.drop_zone.get_file()
+        pw = self.password_panel.get_password()
+        keyfile = self.password_panel.keyfile_path() or None
+        if not path_file or not pw:
+            return
+
+        self._mode = "browse"
+        self._cached_pw = pw
+        self._cached_keyfile = keyfile
+        self._progress_eta.reset()
+        self._set_busy(True)
+        self.worker = CryptoWorker(
+            list_vault_contents, path_file, pw, keyfile_path=keyfile, parent=self
+        )
+        self.password_panel.reset_field()
+
+        start_crypto_worker(self.worker, self._update_progress, self._on_browse_listed)
+        self.worker_started.emit(self.worker)
+
+    def _on_browse_listed(self, result):
+        self.worker = None
+        status = result[0]
+        self._mode = "open"
+
+        self._set_busy(False)
+        self._progress_eta.reset()
+
+        if status == VaultStatus.SUCCESS:
+            root_name, entries = result[1], result[2]
+            self.drop_zone.set_verification_state("verified")
+            self.status_changed.emit(
+                tr("open.browse.ok.title", "Vault contents ready"),
+                tr("open.browse.ok.sub", "Choose what to extract"),
+                "success",
+            )
+            self._prompt_and_extract(root_name, entries or [])
+            return
+
+        # Selain sukses: buang credential yang di-cache (tak jadi ekstrak).
+        self._cached_pw = None
+        self._cached_keyfile = None
+
+        if status == VaultStatus.CANCELLED:
+            logger.info("Browse dibatalkan pengguna.")
+            self.drop_zone.set_verification_state(
+                "pending", tr("dz.meta.waiting", "Waiting for password")
+            )
+            self.status_changed.emit(
+                tr("open.status.cancelled", "Cancelled"),
+                tr("open.status.cancelled.sub", "Temporary files cleaned up"),
+                "warn",
+            )
+            self.notif.show_msg("warn", tr("notif.cancelled", "Operation cancelled."), 4000)
+
+        elif status == VaultStatus.WRONG_PASSWORD:
+            logger.warning("Browse gagal: credential salah.")
+            user_msg = format_user_error(status, result[1], "buka")
+            if self.password_panel.requires_keyfile() and not self.password_panel.keyfile_path():
+                user_msg = tr(
+                    "open.wrongpw.keyfile",
+                    "Wrong password or recovery key. If you're using your password, "
+                    "also select the keyfile this vault needs.",
+                )
+            self.drop_zone.set_verification_state("failed")
+            self.status_changed.emit(
+                tr("open.status.failed", "Verification failed"),
+                tr("open.status.failed.sub", "Wrong password or corrupted file"),
+                "error",
+            )
+            self.password_panel.set_error_state(user_msg)
+            self.notif.show_msg("err", user_msg, 8000)
+
+        else:
+            logger.warning(f"Browse gagal: {result[1]}")
+            user_msg = result[1] or tr(
+                "open.browse.fail.msg", "Couldn't read the vault contents. It may be corrupted."
+            )
+            self.drop_zone.set_verification_state("failed")
+            self.status_changed.emit(
+                tr("open.browse.fail.title", "Couldn't read contents"),
+                tr("open.browse.fail.sub", "The vault may be corrupted or modified"),
+                "error",
+            )
+            self.password_panel.set_error_state(user_msg)
+            self.notif.show_msg("err", user_msg, 9000)
+
+    def _prompt_and_extract(self, root_name: str, entries):
+        """Buka dialog isi vault; bila user memilih & konfirmasi → ekstrak selektif."""
+        dialog = VaultBrowserDialog(root_name, entries, parent=self)
+        accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        selected = dialog.selected_paths() if accepted else []
+        expected = dialog.selected_bytes() if accepted else 0
+
+        if not accepted or not selected:
+            self._cached_pw = None
+            self._cached_keyfile = None
+            self.drop_zone.set_verification_state("verified")
+            return
+
+        dest = QFileDialog.getExistingDirectory(
+            self, tr("open.extract.pick_dest", "Choose where to extract the selected items")
+        )
+        if not dest:
+            self._cached_pw = None
+            self._cached_keyfile = None
+            self.drop_zone.set_verification_state("verified")
+            return
+
+        path_file = self.drop_zone.get_file()
+        pw = self._cached_pw
+        keyfile = self._cached_keyfile
+        if not path_file or not pw:
+            return
+
+        self._mode = "extract"
+        self._progress_eta.reset()
+        self._set_busy(True)
+        self.worker = CryptoWorker(
+            extract_selected,
+            path_file,
+            pw,
+            selected,
+            dest,
+            keyfile_path=keyfile,
+            expected_bytes=expected,
+            parent=self,
+        )
+        start_crypto_worker(self.worker, self._update_progress, self._on_extract_done)
+        self.worker_started.emit(self.worker)
+
+    def _on_extract_done(self, result):
+        self.worker = None
+        status, msg = result
+        self._mode = "open"
+        self._cached_pw = None
+        self._cached_keyfile = None
+
+        self._set_busy(False)
+        self._progress_eta.reset()
+
+        if status == VaultStatus.SUCCESS:
+            self.drop_zone.set_verification_state("verified")
+            self.status_changed.emit(
+                tr("open.extract.ok.title", "Extraction complete"),
+                tr("open.extract.ok.sub", "Selected items were saved"),
+                "success",
+            )
+            logger.info(f"Ekstrak selektif sukses: {msg}")
+            self.notif.show_msg(
+                "ok",
+                tr("open.extract.ok.msg", "Extracted the selected items to '{name}'.").format(
+                    name=msg
+                ),
+                6000,
+            )
+            self.system_notification.emit(
+                APP_NAME,
+                tr("open.extract.notif", "Extraction finished — '{name}' is ready.").format(
+                    name=msg
+                ),
+            )
+
+        elif status == VaultStatus.CANCELLED:
+            logger.info("Ekstrak selektif dibatalkan pengguna.")
+            self.drop_zone.set_verification_state("verified")
+            self.status_changed.emit(
+                tr("open.status.cancelled", "Cancelled"),
+                tr("open.status.cancelled.sub", "Temporary files cleaned up"),
+                "warn",
+            )
+            self.notif.show_msg("warn", tr("notif.cancelled", "Operation cancelled."), 4000)
+
+        else:
+            logger.warning(f"Ekstrak selektif gagal: {msg}")
+            user_msg = msg or tr("open.extract.fail.msg", "Couldn't extract the selected items.")
+            self.drop_zone.set_verification_state("verified")
+            self.status_changed.emit(
+                tr("open.extract.fail.title", "Extraction failed"),
+                tr("open.extract.fail.sub", "Check the destination, permissions, or disk space"),
+                "error",
+            )
+            self.password_panel.set_error_state(user_msg)
+            self.notif.show_msg("err", user_msg, 9000)
+
     def _update_progress(self, val):
         if self.worker and not self.worker.is_cancelled():
             eta_str = self._progress_eta.update(val)
-            if self._mode == "verify":
+            if self._mode in ("verify", "browse", "extract"):
                 pct = int(max(0.0, min(1.0, val)) * 100)
-                self.password_panel.update_processing_stage(
-                    tr("open.verify.stage", "Checking integrity")
-                )
+                if self._mode == "browse":
+                    stage = tr("open.browse.stage", "Reading contents")
+                    title = tr("open.browse.busy.title", "Reading vault contents")
+                elif self._mode == "extract":
+                    stage = tr("open.extract.stage", "Extracting files")
+                    title = tr("open.extract.busy.title", "Extracting selected files")
+                else:
+                    stage = tr("open.verify.stage", "Checking integrity")
+                    title = tr("open.verify.busy.title", "Verifying vault")
+                self.password_panel.update_processing_stage(stage)
                 self.btn_aksi.setTextLabels(
-                    tr("open.verify.busy.title", "Verifying vault"),
+                    title,
                     f"{pct}% • {eta_str} • " + tr("open.verify.click_cancel", "Click to cancel"),
                 )
                 self.btn_aksi.setProgressAnimated(val)
@@ -378,21 +629,26 @@ class TabBuka(QWidget):
 
     def _set_busy(self, busy: bool):
         self.drop_zone.set_busy(busy)
-        # Verify memakai tombol Open besar sebagai permukaan progress/cancel, jadi
-        # tombol Verify sekunder disembunyikan selama operasi apa pun berjalan.
+        # Verify & Browse memakai tombol Open besar sebagai permukaan progress/cancel,
+        # jadi tombol sekunder disembunyikan selama operasi apa pun berjalan.
         self.btn_verify.setVisible(not busy)
+        self.btn_browse.setVisible(not busy)
 
         if busy:
             verifying = self._mode == "verify"
+            browsing = self._mode == "browse"
+            extracting = self._mode == "extract"
             self.drop_zone.set_verification_state("checking")
             file_name, size_text = self._current_file_summary()
-            self.password_panel.set_processing_state(
-                file_name,
-                size_text,
-                tr("open.verify.stage", "Checking integrity")
-                if verifying
-                else tr("dz.status.verifying_pw", "Verifying password"),
-            )
+            if browsing:
+                panel_stage = tr("open.browse.stage", "Reading contents")
+            elif extracting:
+                panel_stage = tr("open.extract.stage", "Extracting files")
+            elif verifying:
+                panel_stage = tr("open.verify.stage", "Checking integrity")
+            else:
+                panel_stage = tr("dz.status.verifying_pw", "Verifying password")
+            self.password_panel.set_processing_state(file_name, size_text, panel_stage)
             self.status_changed.emit(
                 tr("open.status.verifying", "Verifying vault"),
                 tr("open.status.verifying.sub", "Keep the app open"),
@@ -400,7 +656,17 @@ class TabBuka(QWidget):
             )
             self.btn_aksi.setVisualIcons("mdi6.close-circle-outline")
             self.btn_aksi.setProgressVisible(True, 0.0)
-            if verifying:
+            if browsing:
+                self.btn_aksi.setTextLabels(
+                    tr("open.browse.busy.title", "Reading vault contents"),
+                    tr("open.browse.busy.sub", "Decrypting to list files • Click to cancel"),
+                )
+            elif extracting:
+                self.btn_aksi.setTextLabels(
+                    tr("open.extract.busy.title", "Extracting selected files"),
+                    tr("open.extract.busy.sub", "Writing to destination • Click to cancel"),
+                )
+            elif verifying:
                 self.btn_aksi.setTextLabels(
                     tr("open.verify.busy.title", "Verifying vault"),
                     tr("open.verify.busy.sub", "Checking integrity • Click to cancel"),

@@ -6,6 +6,8 @@ Tujuan: Sentralisasi magic numbers agar mudah dikelola dan diaudit.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 # ============================================================================
 # PROTOKOL FILE FORMAT
 # ============================================================================
@@ -177,3 +179,26 @@ def kdf_params_for_level(level: str) -> dict[str, int]:
 DISK_OVERHEAD_BYTES = 50 * 1024 * 1024  # Buffer ruang disk saat kunci/buka
 OLD_TEMP_MAX_AGE_SECONDS = 300  # 5 menit — umur maksimal temp decrypt dir
 MAX_VIRTUAL_NAME_LENGTH = 512  # Batas aman untuk nama folder virtual
+
+# ============================================================================
+# BROWSE / EKSTRAK SELEKTIF (read-only; tanpa perubahan format)
+# ============================================================================
+
+# Prefix folder staging saat ekstrak selektif. Hasil ekstraksi ditulis ke folder
+# ini DI DALAM tujuan pilihan user, lalu dipindahkan ke tempat final hanya setelah
+# stream selesai sukses → tujuan final tak pernah berisi hasil parsial.
+EXTRACT_STAGING_PREFIX = "._ext_"
+
+
+class VaultEntry(NamedTuple):
+    """Satu entri isi vault untuk browse (nama relatif terhadap root, ukuran, tipe).
+
+    ``rel_path`` sudah dilepas prefix nama folder root (mis. ``docs/a.txt``), memakai
+    pemisah ``/``. Untuk direktori ``size`` = 0. Dikumpulkan dari header TAR saat
+    stream-decrypt tanpa menulis apa pun ke disk.
+    """
+
+    rel_path: str
+    size: int
+    is_dir: bool
+    mtime: float
