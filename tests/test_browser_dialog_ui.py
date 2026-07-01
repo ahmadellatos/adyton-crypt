@@ -115,6 +115,18 @@ def test_dialog_empty_vault(qtbot):
 
 
 @pytest.mark.qt
+def test_secondary_buttons_live_in_password_panel(qtbot):
+    # Verify & Browse ada di baris aksi sekunder DALAM password panel (bukan
+    # ditumpuk full-width di dasar tab), dan TabBuka meng-alias referensinya.
+    tab = TabBuka()
+    qtbot.addWidget(tab)
+    assert tab.btn_verify is tab.password_panel.btn_verify
+    assert tab.btn_browse is tab.password_panel.btn_browse
+    assert tab.btn_verify.parent() is tab.password_panel.secondary_actions
+    assert tab.btn_browse.parent() is tab.password_panel.secondary_actions
+
+
+@pytest.mark.qt
 def test_browse_button_starts_disabled(qtbot):
     tab = TabBuka()
     qtbot.addWidget(tab)

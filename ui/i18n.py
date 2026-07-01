@@ -208,7 +208,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "open.overwrite.msg": "File atau folder bernama '{name}' sudah ada di lokasi ini.\n\nAdyton akan mengekstrak ke folder sementara dulu, dan baru menggantikan data yang ada setelah vault berhasil dibuka.\n\nGanti data yang ada?",
         "open.overwrite.replace": "Ganti Data",
         # ── Verify integritas (Tab Buka) ────────────────────────────────────
-        "open.verify.btn": "Verifikasi integritas (tanpa mengekstrak)",
+        "open.verify.btn": "Verifikasi integritas",
+        "open.verify.tip": "Cek tiap blok data tanpa mengekstrak apa pun",
         "open.verify.stage": "Memeriksa integritas",
         "open.verify.busy.title": "Memverifikasi vault",
         "open.verify.busy.sub": "Memeriksa integritas • Klik untuk membatalkan",
@@ -220,7 +221,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "open.verify.fail.sub": "Vault mungkin rusak atau telah diubah",
         "open.verify.fail.msg": "Tidak bisa memverifikasi vault. Mungkin rusak.",
         # ── Browse isi + ekstrak selektif (Tab Buka) ────────────────────────
-        "open.browse.btn": "Telusuri isi & ekstrak terpilih",
+        "open.browse.btn": "Telusuri isi vault",
+        "open.browse.tip": "Daftar file di dalamnya & ekstrak hanya yang kamu pilih",
         "open.browse.stage": "Membaca isi",
         "open.browse.busy.title": "Membaca isi vault",
         "open.browse.busy.sub": "Mendekripsi untuk mendaftar file • Klik untuk membatalkan",

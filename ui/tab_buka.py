@@ -6,7 +6,6 @@ Deskripsi: Controller utama untuk Tab "Buka Brankas".
 
 import os
 
-import qtawesome as qta
 from loguru import logger
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -14,7 +13,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QHBoxLayout,
-    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -40,7 +38,7 @@ from .constants import APP_NAME
 from .dialogs import ModernMessageBox
 from .i18n import register, tr
 from .settings_store import get_settings
-from .styles import CLR_DANGER, CLR_TEXT_MUTED
+from .styles import CLR_DANGER
 from .utils import (
     ProgressETA,
     apply_cancelling_state,
@@ -91,6 +89,12 @@ class TabBuka(QWidget):
         self.drop_zone = DropZoneOpen()
         self.password_panel = PasswordPanelOpen()
 
+        # Verify & Browse hidup di dasar password panel (berdampingan, dekat input
+        # password). Referensi di-alias agar logika gating/visibilitas TabBuka tak
+        # perlu berubah — keduanya tetap self.btn_verify / self.btn_browse.
+        self.btn_verify = self.password_panel.btn_verify
+        self.btn_browse = self.password_panel.btn_browse
+
         h_container = QHBoxLayout()
         h_container.setSpacing(28)  # More generous separation between columns
         h_container.addWidget(self.drop_zone, 1)
@@ -136,50 +140,9 @@ class TabBuka(QWidget):
 
         main_layout.addWidget(self.btn_aksi)
 
-        # Aksi sekunder: verifikasi integritas tanpa mengekstrak (parity 7-Zip "Test").
-        # Membuktikan password benar + seluruh data utuh tanpa folder tujuan / menulis
-        # plaintext ke disk. Subordinat terhadap CTA Open (gaya inline secondary).
-        self.btn_verify = QPushButton()
-        self.btn_verify.setObjectName("BtnInlineSecondary")
-        self.btn_verify.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_verify.setMinimumHeight(38)
-        self.btn_verify.setIcon(qta.icon("mdi6.shield-search", color=CLR_TEXT_MUTED))
-        register(
-            self.btn_verify,
-            "open.verify.btn",
-            "Verify integrity (without extracting)",
-        )
-        register(
-            self.btn_verify,
-            "a11y.btn.verify_vault",
-            "Verify vault integrity button",
-            "setAccessibleName",
-        )
-        self.btn_verify.setEnabled(False)
-        main_layout.addWidget(self.btn_verify)
-
-        # Aksi sekunder: telusuri isi vault & ekstrak file terpilih (tanpa membongkar
-        # seluruhnya). Listing stream-decrypt tanpa menulis ke disk; ekstrak menaruh
-        # hanya subset yang dipilih. Gating sama seperti Verify (file valid + password
-        # + keyfile bila wajib).
-        self.btn_browse = QPushButton()
-        self.btn_browse.setObjectName("BtnInlineSecondary")
-        self.btn_browse.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_browse.setMinimumHeight(38)
-        self.btn_browse.setIcon(qta.icon("mdi6.folder-search-outline", color=CLR_TEXT_MUTED))
-        register(
-            self.btn_browse,
-            "open.browse.btn",
-            "Browse contents & extract selected",
-        )
-        register(
-            self.btn_browse,
-            "a11y.btn.browse_vault",
-            "Browse vault contents button",
-            "setAccessibleName",
-        )
-        self.btn_browse.setEnabled(False)
-        main_layout.addWidget(self.btn_browse)
+        # btn_verify & btn_browse dibangun DI DALAM password panel (baris berdampingan
+        # dekat input password) — lihat PasswordPanelOpen._build_secondary_actions.
+        # Bagian bawah tab kini bersih: hanya CTA "Buka Vault".
 
         self.notif = AnimatedNotifBar(self)
 
@@ -630,9 +593,8 @@ class TabBuka(QWidget):
     def _set_busy(self, busy: bool):
         self.drop_zone.set_busy(busy)
         # Verify & Browse memakai tombol Open besar sebagai permukaan progress/cancel,
-        # jadi tombol sekunder disembunyikan selama operasi apa pun berjalan.
-        self.btn_verify.setVisible(not busy)
-        self.btn_browse.setVisible(not busy)
+        # jadi baris aksi sekunder (di password panel) disembunyikan selama operasi.
+        self.password_panel.secondary_actions.setVisible(not busy)
 
         if busy:
             verifying = self._mode == "verify"

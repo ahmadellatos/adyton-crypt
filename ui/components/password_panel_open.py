@@ -94,8 +94,68 @@ class PasswordPanelOpen(QFrame):
         self.v_pw.addWidget(self.error_box)
 
         self.v_pw.addStretch(1)
+        self.secondary_actions = self._build_secondary_actions()
+        self.v_pw.addWidget(self.secondary_actions)
         self.info_box = self._build_info_box()
         self.v_pw.addWidget(self.info_box)
+
+    def _build_secondary_actions(self) -> QFrame:
+        """Aksi sekunder atas vault (Verify + Browse) — satu baris dua tombol.
+
+        Ditempatkan di sini (bukan di dasar tab, ditumpuk full-width) agar berdampingan
+        & dekat dengan input password: kedua aksi butuh password/keyfile yang sama
+        seperti "Buka Vault". Label sengaja ringkas agar muat setengah lebar; makna
+        penuh ada di tooltip. ``TabBuka`` memakai ``btn_verify``/``btn_browse`` untuk
+        gating & wiring sinyal, dan menyembunyikan seluruh baris ini saat operasi jalan.
+        """
+        box = QFrame()
+        row = QHBoxLayout(box)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(10)
+
+        self.btn_verify = QPushButton()
+        self.btn_verify.setObjectName("BtnInlineSecondary")
+        self.btn_verify.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_verify.setMinimumHeight(40)
+        self.btn_verify.setIcon(qta.icon("mdi6.shield-search", color=CLR_TEXT_MUTED))
+        register(self.btn_verify, "open.verify.btn", "Verify integrity")
+        register(
+            self.btn_verify,
+            "open.verify.tip",
+            "Check every block without extracting anything",
+            "setToolTip",
+        )
+        register(
+            self.btn_verify,
+            "a11y.btn.verify_vault",
+            "Verify vault integrity button",
+            "setAccessibleName",
+        )
+        self.btn_verify.setEnabled(False)
+
+        self.btn_browse = QPushButton()
+        self.btn_browse.setObjectName("BtnInlineSecondary")
+        self.btn_browse.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_browse.setMinimumHeight(40)
+        self.btn_browse.setIcon(qta.icon("mdi6.folder-search-outline", color=CLR_TEXT_MUTED))
+        register(self.btn_browse, "open.browse.btn", "Browse contents")
+        register(
+            self.btn_browse,
+            "open.browse.tip",
+            "List the files inside and extract only the ones you pick",
+            "setToolTip",
+        )
+        register(
+            self.btn_browse,
+            "a11y.btn.browse_vault",
+            "Browse vault contents button",
+            "setAccessibleName",
+        )
+        self.btn_browse.setEnabled(False)
+
+        row.addWidget(self.btn_verify, 1)
+        row.addWidget(self.btn_browse, 1)
+        return box
 
     def _build_info_box(self) -> QFrame:
         tips = [
