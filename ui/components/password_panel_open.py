@@ -41,6 +41,10 @@ class PasswordPanelOpen(QFrame):
     # Dipancarkan saat pilihan keyfile berubah → TabBuka me-revalidasi tombol Open
     # (untuk vault 2FA tanpa recovery, keyfile wajib agar tombol aktif).
     keyfile_changed = Signal()
+    # Enter di field password → minta buka vault. Dipancarkan dari eventFilter yang
+    # SEKALIGUS mengonsumsi event Enter (lihat eventFilter) agar tidak merambat ke
+    # tombol CTA yang menerima fokus saat field disembunyikan.
+    submit_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -344,6 +348,20 @@ class PasswordPanelOpen(QFrame):
         self.setTabOrder(self.entry_pw, self.entry_pw)  # internal handling
 
     def eventFilter(self, obj, event):
+        if obj == self.entry_pw and event.type() == event.Type.KeyPress:
+            if (
+                event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+                and not event.isAutoRepeat()
+                and event.modifiers()
+                in (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.KeypadModifier)
+            ):
+                # Picu buka lalu KONSUMSI event Enter di sini. Kalau dibiarkan merambat,
+                # QLineEdit tidak meng-accept Enter (agar bisa mengaktifkan tombol default),
+                # sehingga event sampai ke tombol CTA yang menerima fokus begitu field
+                # password disembunyikan → _EnterActivatesButtonFilter mengkliknya →
+                # _proses kedua = dekripsi langsung di-cancel begitu dimulai.
+                self.submit_requested.emit()
+                return True
         if event.type() in (event.Type.FocusIn, event.Type.FocusOut):
             if obj == self.entry_pw:
                 is_focus = event.type() == event.Type.FocusIn
@@ -438,7 +456,11 @@ class PasswordPanelOpen(QFrame):
         self.valid_state_changed.emit(False)
 
     def attach_return_event(self, slot_func):
-        self.entry_pw.returnPressed.connect(slot_func)
+        # Pakai submit_requested (dari eventFilter yang mengonsumsi Enter), BUKAN
+        # returnPressed: returnPressed membiarkan event Enter merambat ke tombol CTA
+        # dan memicu cancel begitu dekripsi dimulai. submit_requested + konsumsi event
+        # memastikan Enter hanya memicu satu aksi buka.
+        self.submit_requested.connect(slot_func)
 
     def set_idle_state(self) -> None:
         self.lbl_title_pw.setText(tr("open.pw.title", "Enter Your Password"))

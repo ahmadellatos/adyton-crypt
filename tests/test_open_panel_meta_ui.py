@@ -4,6 +4,9 @@ import pytest
 
 pytest.importorskip("PySide6")
 
+from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QKeyEvent
+
 from ui.components.password_panel_open import (
     _PLACEHOLDER_PW,
     _PLACEHOLDER_PW_RECOVERY,
@@ -124,3 +127,44 @@ def test_keyfile_note_mentions_recovery_only_when_present(qtbot):
 
     panel.show_vault_meta(None, has_recovery=False, requires_keyfile=True)
     assert "recovery" not in panel.lbl_keyfile_note.text().lower()
+
+
+@pytest.mark.qt
+def test_enter_consumed_and_emits_submit_once(qtbot):
+    """Regresi: Enter di field password memicu submit SEKALI lalu DIKONSUMSI.
+
+    Kalau event Enter dibiarkan merambat, ia mengaktifkan tombol CTA (yang menerima
+    fokus saat field disembunyikan) → _proses kedua = dekripsi langsung di-cancel.
+    """
+    panel = PasswordPanelOpen()
+    qtbot.addWidget(panel)
+    panel.show()
+
+    fired = []
+    panel.attach_return_event(lambda: fired.append(1))
+
+    ev = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
+    consumed = panel.eventFilter(panel.entry_pw, ev)
+
+    assert consumed is True  # event Enter di-stop di sini (tak merambat ke CTA)
+    assert fired == [1]  # submit dipancarkan tepat sekali
+
+
+@pytest.mark.qt
+def test_enter_with_modifier_and_plain_keys_pass_through(qtbot):
+    """Ctrl+Enter dan tombol biasa TIDAK dikonsumsi (mengetik password normal)."""
+    panel = PasswordPanelOpen()
+    qtbot.addWidget(panel)
+    panel.show()
+
+    fired = []
+    panel.attach_return_event(lambda: fired.append(1))
+
+    ctrl_enter = QKeyEvent(
+        QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier
+    )
+    letter = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_A, Qt.KeyboardModifier.NoModifier)
+
+    assert panel.eventFilter(panel.entry_pw, ctrl_enter) is False
+    assert panel.eventFilter(panel.entry_pw, letter) is False
+    assert fired == []  # tak ada submit yang terpicu
