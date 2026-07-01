@@ -620,6 +620,29 @@ class TabManage(QWidget):
         self.form.valid_state_changed.connect(lambda *_: self._refresh_action_buttons())
         self.entry_current.textChanged.connect(lambda *_: self._refresh_action_buttons())
         self.entry_rec_pass.textChanged.connect(lambda *_: self._refresh_action_buttons())
+        # Enter di field mana pun → jalankan aksi utama segmen yang aktif (seragam
+        # dengan tab lain: Enter = submit). Field password mengonsumsi Enter di sumber
+        # (PasswordLineEdit) jadi tak merambat ke tombol lain.
+        self.entry_current.returnPressed.connect(self._submit_active)
+        self.entry_rec_pass.returnPressed.connect(self._submit_active)
+        self.form.attach_return_event(self._submit_active)
+
+    def _submit_active(self):
+        """Klik tombol aksi utama untuk segmen yang sedang aktif (kalau enabled).
+
+        Change → Change password; Recovery → Add/Remove (yang terlihat); Keyfile →
+        Enable/Remove (yang terlihat). Aksi destruktif (remove) tetap lewat dialog
+        konfirmasi, jadi Enter tak langsung merusak.
+        """
+        idx = self.stack.currentIndex()
+        if idx == 0:
+            btn = self.btn_change
+        elif idx == 1:
+            btn = self.btn_remove if self.btn_remove.isVisible() else self.btn_add
+        else:
+            btn = self.btn_kf_remove if self.btn_kf_remove.isVisible() else self.btn_kf_add
+        if btn.isEnabled():
+            btn.click()
 
     # ── Vault selection ───────────────────────────────────────────────────────
     def _on_file_changed(self, path: str):

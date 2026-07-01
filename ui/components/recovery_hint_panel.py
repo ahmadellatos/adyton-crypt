@@ -245,6 +245,11 @@ class RecoveryHintPanel(QWidget):
     def recovery_passphrase(self) -> str:
         return self.entry_pass.text()
 
+    def attach_return_event(self, slot_func):
+        """Enter di field recovery passphrase memicu aksi utama (kunci), seragam
+        dengan field password utama."""
+        self.entry_pass.returnPressed.connect(slot_func)
+
     def get_hint(self) -> str:
         return self.entry_hint.text().strip()
 

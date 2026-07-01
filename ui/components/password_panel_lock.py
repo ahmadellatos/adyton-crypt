@@ -92,7 +92,10 @@ class PasswordPanelLock(QFrame):
         self.keyfile_panel.reset()
 
     def attach_return_event(self, slot_func):
+        # Enter di field password utama MAUPUN field recovery passphrase memicu kunci,
+        # seragam dengan tab lain (Enter = jalankan aksi utama).
         self.form.attach_return_event(slot_func)
+        self.recovery_hint.attach_return_event(slot_func)
 
     # --- Recovery key + hint passthrough ---
     def recovery_enabled(self) -> bool:

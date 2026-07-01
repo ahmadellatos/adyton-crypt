@@ -10,6 +10,17 @@ import pytest
 
 pytest.importorskip("PySide6")
 
+from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QKeyEvent
+from PySide6.QtWidgets import QApplication
+
+
+def _press_enter(line_edit):
+    ev = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
+    QApplication.sendEvent(line_edit, ev)
+    return ev
+
+
 from core.crypto import generate_recovery_code
 from core.vault import (
     VaultStatus,
@@ -394,3 +405,36 @@ def test_manage_keyfile_roundtrip_core(tmp_path):
     status, _ = remove_keyfile(vault, PASSWORD, keyfile)
     assert status == VaultStatus.SUCCESS
     assert vault_info(vault)["requires_keyfile"] is False
+
+
+@pytest.mark.qt
+def test_manage_enter_triggers_active_segment_action(qtbot, tmp_path):
+    """Enter di field Manage menjalankan aksi utama segmen aktif (seragam Enter=submit).
+
+    Change page → Change password; Recovery page → Add (belum ada recovery). Event Enter
+    dikonsumsi PasswordLineEdit jadi tak merambat ke tombol lain.
+    """
+    vault = _make_vault(tmp_path)
+    tab = TabManage()
+    qtbot.addWidget(tab)
+    tab.drop_zone.load_file(vault)
+    tab.entry_current.setText(PASSWORD)
+    tab.form.entry_pw1.setText(PASSWORD)
+    tab.form.entry_pw2.setText(PASSWORD)
+
+    # Segmen Password → Enter memicu Change password.
+    tab.stack.setCurrentIndex(0)
+    assert tab.btn_change.isEnabled() is True
+    clicked = []
+    tab.btn_change.click = lambda: clicked.append("change")
+    ev = _press_enter(tab.entry_current.line_edit)
+    assert clicked == ["change"]
+    assert ev.isAccepted() is True  # dikonsumsi, tak merambat
+
+    # Segmen Recovery → Enter memicu Add (vault belum punya recovery).
+    tab.stack.setCurrentIndex(1)
+    clicked.clear()
+    tab.btn_add.click = lambda: clicked.append("add")
+    tab.entry_rec_pass.setText("a recovery phrase")
+    _press_enter(tab.entry_rec_pass.line_edit)
+    assert clicked == ["add"]

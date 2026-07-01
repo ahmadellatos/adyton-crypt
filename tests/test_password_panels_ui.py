@@ -5,7 +5,9 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtWidgets import QSizePolicy
+from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QKeyEvent
+from PySide6.QtWidgets import QApplication, QSizePolicy
 
 from ui.components.create_password_form import CreatePasswordForm
 from ui.components.password_panel_lock import PasswordPanelLock
@@ -15,6 +17,13 @@ from ui.widgets import (
     build_tips_box,
     make_generator_button,
 )
+
+
+def _press_enter(line_edit, modifier=Qt.KeyboardModifier.NoModifier):
+    ev = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, modifier)
+    QApplication.sendEvent(line_edit, ev)
+    return ev
+
 
 # 14 chars, no dictionary words, all four character classes present.
 STRONG_PW = "Zr4!qP9mWk2$tL"
@@ -130,3 +139,39 @@ def test_password_input_height_is_fixed_and_uniform(qtbot):
     qtbot.addWidget(pe)
     assert pe.sizePolicy().verticalPolicy() == QSizePolicy.Policy.Fixed
     assert pe.sizeHint().height() == 52
+
+
+@pytest.mark.qt
+def test_lock_enter_from_main_and_recovery_fields(qtbot):
+    """Enter di field password utama MAUPUN recovery passphrase memicu aksi kunci,
+    dan event dikonsumsi (tak merambat ke CTA → cegah bug start-lalu-cancel)."""
+    panel = PasswordPanelLock()
+    qtbot.addWidget(panel)
+
+    fired = []
+    panel.attach_return_event(lambda: fired.append(1))
+
+    ev_main = _press_enter(panel.form.entry_pw2.line_edit)
+    ev_rec = _press_enter(panel.recovery_hint.entry_pass.line_edit)
+
+    assert len(fired) == 2  # kedua field memicu aksi
+    assert ev_main.isAccepted() is True
+    assert ev_rec.isAccepted() is True
+
+
+@pytest.mark.qt
+def test_create_form_enter_consumed_and_fires_once(qtbot):
+    """CreatePasswordForm (Lock/Text/Manage): Enter di confirm → submit sekali,
+    Ctrl+Enter tidak submit."""
+    form = CreatePasswordForm()
+    qtbot.addWidget(form)
+
+    fired = []
+    form.attach_return_event(lambda: fired.append(1))
+
+    ev = _press_enter(form.entry_pw2.line_edit)
+    assert fired == [1]
+    assert ev.isAccepted() is True
+
+    _press_enter(form.entry_pw2.line_edit, Qt.KeyboardModifier.ControlModifier)
+    assert fired == [1]  # Ctrl+Enter tidak menambah submit
