@@ -41,10 +41,6 @@ class PasswordPanelOpen(QFrame):
     # Dipancarkan saat pilihan keyfile berubah → TabBuka me-revalidasi tombol Open
     # (untuk vault 2FA tanpa recovery, keyfile wajib agar tombol aktif).
     keyfile_changed = Signal()
-    # Enter di field password → minta buka vault. Dipancarkan dari eventFilter yang
-    # SEKALIGUS mengonsumsi event Enter (lihat eventFilter) agar tidak merambat ke
-    # tombol CTA yang menerima fokus saat field disembunyikan.
-    submit_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -344,34 +340,10 @@ class PasswordPanelOpen(QFrame):
         return val
 
     def _setup_accessibility(self):
-        self.entry_pw.installEventFilter(self)
+        # Enter di field password ditangani terpusat oleh PasswordLineEdit (emit
+        # returnPressed + konsumsi event agar tak merambat ke CTA); tak perlu filter
+        # khusus di sini. Highlight fokus juga sudah diurus PasswordLineEdit sendiri.
         self.setTabOrder(self.entry_pw, self.entry_pw)  # internal handling
-
-    def eventFilter(self, obj, event):
-        # entry_pw adalah PasswordLineEdit (komposit): installEventFilter-nya memasang
-        # filter ke QLineEdit di dalamnya, jadi event Enter tiba dengan obj = line_edit,
-        # BUKAN entry_pw. Cocokkan ke line_edit itu.
-        if obj is self.entry_pw.line_edit and event.type() == event.Type.KeyPress:
-            if (
-                event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
-                and not event.isAutoRepeat()
-                and event.modifiers()
-                in (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.KeypadModifier)
-            ):
-                # Picu buka lalu KONSUMSI event Enter di sini. Kalau dibiarkan merambat,
-                # QLineEdit tidak meng-accept Enter (agar bisa mengaktifkan tombol default),
-                # sehingga event sampai ke tombol CTA yang menerima fokus begitu field
-                # password disembunyikan → _EnterActivatesButtonFilter mengkliknya →
-                # _proses kedua = dekripsi langsung di-cancel begitu dimulai.
-                self.submit_requested.emit()
-                return True
-        if event.type() in (event.Type.FocusIn, event.Type.FocusOut):
-            if obj == self.entry_pw:
-                is_focus = event.type() == event.Type.FocusIn
-                self.entry_pw.setProperty("focused", is_focus)
-                self.entry_pw.style().unpolish(self.entry_pw)
-                self.entry_pw.style().polish(self.entry_pw)
-        return super().eventFilter(obj, event)
 
     def _on_pw_change(self):
         pw = self.entry_pw.text()
@@ -459,11 +431,10 @@ class PasswordPanelOpen(QFrame):
         self.valid_state_changed.emit(False)
 
     def attach_return_event(self, slot_func):
-        # Pakai submit_requested (dari eventFilter yang mengonsumsi Enter), BUKAN
-        # returnPressed: returnPressed membiarkan event Enter merambat ke tombol CTA
-        # dan memicu cancel begitu dekripsi dimulai. submit_requested + konsumsi event
-        # memastikan Enter hanya memicu satu aksi buka.
-        self.submit_requested.connect(slot_func)
+        # returnPressed kini dipancarkan oleh PasswordLineEdit yang SEKALIGUS mengonsumsi
+        # event Enter (lihat widgets.PasswordLineEdit.eventFilter), jadi Enter memicu
+        # satu aksi buka tanpa merambat ke CTA. Seragam dengan semua field password.
+        self.entry_pw.returnPressed.connect(slot_func)
 
     def set_idle_state(self) -> None:
         self.lbl_title_pw.setText(tr("open.pw.title", "Enter Your Password"))

@@ -920,7 +920,10 @@ class PasswordLineEdit(QFrame):
             self.btn_toggle, "a11y.toggle_password", "Show or hide password", "setAccessibleName"
         )
         self.btn_toggle.setToolTip(tr("pw.show", "Show password"))
-        self.line_edit.returnPressed.connect(self.returnPressed)
+        # Enter di-handle di eventFilter (emit returnPressed + konsumsi event) agar tak
+        # merambat ke tombol CTA. Jangan sambungkan returnPressed native QLineEdit di
+        # sini — event akan dikonsumsi sebelum QLineEdit memancarkannya, dan menyambung
+        # ganda bisa membuat Enter-bermodifier ikut submit.
         lay.addWidget(self.btn_toggle)
 
         # Store reference to styles (imported at top level)
@@ -928,6 +931,21 @@ class PasswordLineEdit(QFrame):
         self._accent_color = CLR_ACCENT
 
     def eventFilter(self, obj, event):
+        if obj is self.line_edit and event.type() == event.Type.KeyPress:
+            if (
+                event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+                and not event.isAutoRepeat()
+                and event.modifiers()
+                in (Qt.KeyboardModifier.NoModifier, Qt.KeyboardModifier.KeypadModifier)
+            ):
+                # Enter di field password: pancarkan returnPressed lalu KONSUMSI event.
+                # QLineEdit sengaja tidak meng-accept Enter (agar bisa mengaktifkan tombol
+                # default), jadi kalau dibiarkan, event merambat & bisa mengklik tombol CTA
+                # yang menerima fokus saat panel password disembunyikan/disabled →
+                # operasi (lock/decrypt) langsung ke-cancel begitu dimulai. Konsumsi di
+                # SUMBER = perilaku Enter seragam untuk semua field password di app.
+                self.returnPressed.emit()
+                return True
         if obj is self.btn_toggle and event.type() == event.Type.KeyPress:
             if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
                 self.btn_toggle.click()

@@ -144,39 +144,66 @@ def test_keyfile_note_mentions_recovery_only_when_present(qtbot):
 
 
 @pytest.mark.qt
-def test_enter_consumed_and_emits_submit_once(qtbot):
-    """Regresi: Enter di field password memicu submit SEKALI lalu DIKONSUMSI.
+def test_enter_triggers_submit_once_and_is_consumed(qtbot):
+    """Regresi: Enter di field password memicu submit SEKALI lalu event DIKONSUMSI.
 
     Kalau event Enter dibiarkan merambat, ia mengaktifkan tombol CTA (yang menerima
-    fokus saat field disembunyikan) → _proses kedua = dekripsi langsung di-cancel.
+    fokus saat field disembunyikan/disabled) → _proses kedua = operasi langsung
+    di-cancel. Konsumsi ditangani terpusat oleh PasswordLineEdit → berlaku untuk
+    SEMUA field password (Open/Lock/Text/Manage/Recovery).
     """
     panel = PasswordPanelOpen()
     qtbot.addWidget(panel)
     panel.show()
 
-    submits = []
-    panel.attach_return_event(lambda: submits.append(1))
-    rp = []
-    panel.entry_pw.returnPressed.connect(lambda: rp.append(1))
+    fired = []
+    panel.attach_return_event(lambda: fired.append(1))
 
     ev = _press(panel, Qt.Key.Key_Return)
 
-    assert submits == [1]  # submit dipancarkan tepat sekali
-    assert rp == []  # returnPressed tidak ikut jalan (Enter dikonsumsi)
+    assert fired == [1]  # submit dipancarkan tepat sekali
     assert ev.isAccepted() is True  # event di-stop → tak merambat ke CTA
 
 
 @pytest.mark.qt
-def test_enter_with_modifier_and_plain_keys_pass_through(qtbot):
-    """Ctrl+Enter dan tombol biasa TIDAK dikonsumsi (mengetik password normal)."""
+def test_enter_with_modifier_and_plain_keys_do_not_submit(qtbot):
+    """Ctrl+Enter dan tombol biasa TIDAK memicu submit (mengetik password normal)."""
     panel = PasswordPanelOpen()
     qtbot.addWidget(panel)
     panel.show()
 
-    submits = []
-    panel.attach_return_event(lambda: submits.append(1))
+    fired = []
+    panel.attach_return_event(lambda: fired.append(1))
 
     _press(panel, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
     _press(panel, Qt.Key.Key_A)
 
-    assert submits == []  # tak ada submit yang terpicu
+    assert fired == []  # tak ada submit yang terpicu
+
+
+@pytest.mark.qt
+def test_password_line_edit_consumes_enter_at_source(qtbot):
+    """PasswordLineEdit (dipakai SEMUA field password) mengonsumsi Enter di sumber →
+    memancarkan returnPressed sekali + event accepted (tak merambat ke tombol CTA).
+    Menjamin perilaku Enter seragam di Open/Lock/Text/Manage/Recovery."""
+    from PySide6.QtWidgets import QApplication as _QApp
+
+    from ui.widgets import PasswordLineEdit
+
+    field = PasswordLineEdit()
+    qtbot.addWidget(field)
+    field.show()
+
+    fired = []
+    field.returnPressed.connect(lambda: fired.append(1))
+
+    ev = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
+    _QApp.sendEvent(field.line_edit, ev)
+    assert fired == [1]
+    assert ev.isAccepted() is True
+
+    # Ctrl+Enter tidak submit (dibiarkan untuk kombinasi lain), tak ada emit ganda.
+    fired.clear()
+    ev2 = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    _QApp.sendEvent(field.line_edit, ev2)
+    assert fired == []
