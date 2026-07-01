@@ -348,7 +348,10 @@ class PasswordPanelOpen(QFrame):
         self.setTabOrder(self.entry_pw, self.entry_pw)  # internal handling
 
     def eventFilter(self, obj, event):
-        if obj == self.entry_pw and event.type() == event.Type.KeyPress:
+        # entry_pw adalah PasswordLineEdit (komposit): installEventFilter-nya memasang
+        # filter ke QLineEdit di dalamnya, jadi event Enter tiba dengan obj = line_edit,
+        # BUKAN entry_pw. Cocokkan ke line_edit itu.
+        if obj is self.entry_pw.line_edit and event.type() == event.Type.KeyPress:
             if (
                 event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
                 and not event.isAutoRepeat()

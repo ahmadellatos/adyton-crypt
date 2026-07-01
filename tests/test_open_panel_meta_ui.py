@@ -6,12 +6,26 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QKeyEvent
+from PySide6.QtWidgets import QApplication
 
 from ui.components.password_panel_open import (
     _PLACEHOLDER_PW,
     _PLACEHOLDER_PW_RECOVERY,
     PasswordPanelOpen,
 )
+
+
+def _press(panel, key, modifier=Qt.KeyboardModifier.NoModifier):
+    """Kirim KeyPress lewat sendEvent ke QLineEdit di dalam entry_pw.
+
+    Memakai objek nyata (``entry_pw.line_edit``) + ``sendEvent`` agar event benar-benar
+    melewati event filter yang terpasang — meniru jalur runtime. (Memanggil
+    ``eventFilter`` langsung dengan ``entry_pw`` menyembunyikan bug: filter terpasang
+    di line_edit, jadi obj-nya line_edit, bukan entry_pw.)
+    """
+    ev = QKeyEvent(QEvent.Type.KeyPress, key, modifier)
+    QApplication.sendEvent(panel.entry_pw.line_edit, ev)
+    return ev
 
 
 def _placeholder(panel: PasswordPanelOpen) -> str:
@@ -140,14 +154,16 @@ def test_enter_consumed_and_emits_submit_once(qtbot):
     qtbot.addWidget(panel)
     panel.show()
 
-    fired = []
-    panel.attach_return_event(lambda: fired.append(1))
+    submits = []
+    panel.attach_return_event(lambda: submits.append(1))
+    rp = []
+    panel.entry_pw.returnPressed.connect(lambda: rp.append(1))
 
-    ev = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
-    consumed = panel.eventFilter(panel.entry_pw, ev)
+    ev = _press(panel, Qt.Key.Key_Return)
 
-    assert consumed is True  # event Enter di-stop di sini (tak merambat ke CTA)
-    assert fired == [1]  # submit dipancarkan tepat sekali
+    assert submits == [1]  # submit dipancarkan tepat sekali
+    assert rp == []  # returnPressed tidak ikut jalan (Enter dikonsumsi)
+    assert ev.isAccepted() is True  # event di-stop → tak merambat ke CTA
 
 
 @pytest.mark.qt
@@ -157,14 +173,10 @@ def test_enter_with_modifier_and_plain_keys_pass_through(qtbot):
     qtbot.addWidget(panel)
     panel.show()
 
-    fired = []
-    panel.attach_return_event(lambda: fired.append(1))
+    submits = []
+    panel.attach_return_event(lambda: submits.append(1))
 
-    ctrl_enter = QKeyEvent(
-        QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier
-    )
-    letter = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_A, Qt.KeyboardModifier.NoModifier)
+    _press(panel, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    _press(panel, Qt.Key.Key_A)
 
-    assert panel.eventFilter(panel.entry_pw, ctrl_enter) is False
-    assert panel.eventFilter(panel.entry_pw, letter) is False
-    assert fired == []  # tak ada submit yang terpicu
+    assert submits == []  # tak ada submit yang terpicu
