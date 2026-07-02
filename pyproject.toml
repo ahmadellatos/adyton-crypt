@@ -29,6 +29,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Allow assert + guarded imports (pytest.importorskip before importing Qt) in tests
 "tests/**" = ["S101", "E402"]
+# core/vault.py re-exports the public API + test-only private helpers from the
+# vault_* submodules; those imports are never called locally by design.
+"core/vault.py" = ["F401"]
 
 [tool.ruff.format]
 quote-style = "double"

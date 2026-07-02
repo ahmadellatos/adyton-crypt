@@ -6,6 +6,7 @@ Tujuan: Sentralisasi magic numbers agar mudah dikelola dan diaudit.
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import NamedTuple
 
 # ============================================================================
@@ -202,3 +203,66 @@ class VaultEntry(NamedTuple):
     size: int
     is_dir: bool
     mtime: float
+
+
+# ============================================================================
+# STATUS & PESAN HASIL OPERASI
+# ============================================================================
+
+
+class VaultStatus(Enum):
+    SUCCESS = "success"
+    WRONG_PASSWORD = "wrong_password"  # nosec B105
+    OVERWRITE_NEEDED = "overwrite_needed"
+    ERROR = "error"
+    CANCELLED = "cancelled"
+
+
+# Pesan untuk exception TAK TERDUGA (catch-all `except Exception`). Sengaja TIDAK
+# menyertakan str(exc): teks exception bisa memuat path absolut atau detail internal
+# yang lalu bocor ke UI (mis. "[WinError 5] Access is denied: 'C:\\Users\\...\\rahasia.adtn'").
+# Detail lengkap tetap masuk log (logger.exception) untuk diagnosis. Kalimat ini
+# netral-operasi sehingga rapi baik berdiri sendiri (Tab Manage) maupun setelah
+# awalan "Couldn't open/lock the vault." dari format_user_error.
+GENERIC_FAILURE_MESSAGE = (
+    "Check the file, your permissions, and free disk space, then try again. "
+    "Technical details were saved to the log."
+)
+
+# Pesan saat verifikasi menemukan vault yang BISA di-unlock (credential benar) tapi
+# salah satu record gagal cek integritas (tag AEAD tak valid / file terpotong). Ini
+# berbeda dari WRONG_PASSWORD: Master Key sudah terbukti benar, jadi kegagalan di sini
+# berarti datanya yang rusak/diubah — bukan password yang salah.
+CORRUPT_VAULT_MESSAGE = (
+    "This vault opened, but some of its data failed the integrity check. The file may be "
+    "incomplete, corrupted, or modified. If you have a backup, restore from it."
+)
+
+# Pesan panjang/multi-baris dijadikan konstanta agar lapisan UI (ui/core_messages.py)
+# bisa memetakannya ke terjemahan dengan aman — tanpa menyalin ulang teks persis
+# (rawan salah ketik pada em-dash / tanda kutip).
+SAVE_INSIDE_SOURCE_MESSAGE = (
+    "The vault's save location can't be the same as, or inside, the "
+    "file/folder being locked. Choose another location so the vault isn't "
+    "deleted along with it or pulled into the archive."
+)
+KEYFILE_INSIDE_SOURCE_MESSAGE = (
+    "The keyfile can't be the same as, or inside, the file or folder "
+    'being locked. It would be archived into the vault and — with "delete '
+    'original" on — wiped along with it, locking you out. Store the keyfile '
+    "somewhere else."
+)
+VERIFY_DISK_FAIL_MESSAGE = (
+    "The vault couldn't be verified on the physical disk. The original file was not deleted. "
+    "Try checking your disk space and the condition of your storage hardware."
+)
+KEYFILE_CREATED_MESSAGE = "Keyfile created. Keep it safe — you'll need it to open the vault."
+# Vault final SUDAH tersimpan & terverifikasi, tapi sebagian sumber gagal dihapus
+# (mis. file sedang dibuka aplikasi lain / dikunci antivirus — umum di Windows).
+# Status tetap SUCCESS: vault aman dan tidak boleh ikut dihapus hanya karena fase
+# hapus-asli gagal; UI menampilkan pesan ini sebagai peringatan.
+DELETE_ORIGINAL_FAILED_MESSAGE = (
+    "The vault was created and verified, but some of the original files couldn't be "
+    "deleted — they may be open in another app or write-protected. Your data is safely "
+    "locked in the vault; delete the originals manually."
+)
