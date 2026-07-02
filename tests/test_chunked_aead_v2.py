@@ -4,7 +4,7 @@ Regression tests for the chunked AEAD vault format (envelope).
 
 import shutil
 
-from core.constants import MAGIC_BYTES, VERSION
+from core.constants import CORRUPT_VAULT_MESSAGE, MAGIC_BYTES, VERSION
 from core.vault import VaultStatus, buka_brankas, kunci_brankas
 
 PASSWORD = "P@ssw0rd!Kuat123"
@@ -59,8 +59,9 @@ def test_corrupted_final_record_does_not_prompt_overwrite_or_leave_temp(tmp_path
     status, message = buka_brankas(str(vault_path), PASSWORD)
     after = set(tmp_path.glob("._dec_*"))
 
-    assert status == VaultStatus.WRONG_PASSWORD
-    assert message is None
+    # Password benar + final record rusak = korupsi, dilaporkan jujur.
+    assert status == VaultStatus.ERROR
+    assert message == CORRUPT_VAULT_MESSAGE
     assert after == before
     assert (source / "a.txt").read_text(encoding="utf-8") == "alpha"
 
@@ -77,10 +78,12 @@ def test_truncated_vault_is_rejected_without_temp_leak(tmp_path):
     vault_path.write_bytes(data[:-23])
 
     before = set(tmp_path.glob("._dec_*"))
-    status, _ = buka_brankas(str(vault_path), PASSWORD)
+    status, message = buka_brankas(str(vault_path), PASSWORD)
     after = set(tmp_path.glob("._dec_*"))
 
-    assert status == VaultStatus.WRONG_PASSWORD
+    # File terpotong dengan password benar = korupsi/tak lengkap, bukan wrong password.
+    assert status == VaultStatus.ERROR
+    assert message == CORRUPT_VAULT_MESSAGE
     assert after == before
     assert not source.exists()
 

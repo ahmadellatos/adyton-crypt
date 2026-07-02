@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.constants import kdf_params_for_level
+from core.constants import DELETE_ORIGINAL_FAILED_MESSAGE, kdf_params_for_level
 from core.crypto import generate_recovery_code
 from core.vault import VaultStatus, kunci_brankas
 from core.worker import CryptoWorker
@@ -30,6 +30,7 @@ from .components.drop_zone_lock import DropZoneLock
 from .components.options_panel import OptionsPanel
 from .components.password_panel_lock import PasswordPanelLock
 from .constants import APP_NAME
+from .core_messages import localize_core_message
 from .dialogs import ModernMessageBox, RecoveryCodeDialog
 from .i18n import register, tr
 from .settings_store import get_settings
@@ -387,7 +388,20 @@ class TabKunci(QWidget):
         self._set_busy(False)
         self._progress_eta.reset()
 
-        if status == VaultStatus.SUCCESS:
+        if status == VaultStatus.SUCCESS and msg == DELETE_ORIGINAL_FAILED_MESSAGE:
+            # Vault jadi & terverifikasi, tapi sebagian sumber gagal dihapus (mis.
+            # file sedang dibuka aplikasi lain). Sukses — tapi user HARUS tahu
+            # file aslinya masih ada.
+            logger.warning("Vault dibuat, tapi sebagian file asli gagal dihapus.")
+            warn_msg = localize_core_message(msg)
+            self.notif.show_msg("warn", f" {warn_msg}", 10000)
+            self.status_changed.emit(
+                tr("lock.status.locked", "Locked"),
+                tr("lock.status.delete_failed.sub", "Some originals couldn't be deleted"),
+                "warn",
+            )
+            self.system_notification.emit(APP_NAME, warn_msg)
+        elif status == VaultStatus.SUCCESS:
             logger.info(f"Enkripsi sukses: {msg}")
             # Jangan tampilkan msg core mentah (English) di notif — itu bocor ke mode ID.
             # Pakai teks tr() + ukuran yang dihitung di sini (konsisten dgn tab Buka).

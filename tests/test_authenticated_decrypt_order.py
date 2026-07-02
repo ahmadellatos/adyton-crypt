@@ -7,6 +7,7 @@ until the AES-GCM authentication tag has been verified successfully.
 
 import shutil
 
+from core.constants import CORRUPT_VAULT_MESSAGE
 from core.vault import VaultStatus, buka_brankas, kunci_brankas
 
 PASSWORD = "P@ssw0rd!Kuat123"
@@ -40,8 +41,10 @@ def test_corrupted_tag_does_not_return_overwrite_needed_when_target_folder_exist
 
     status, message = buka_brankas(str(vault_path), PASSWORD)
 
-    assert status == VaultStatus.WRONG_PASSWORD
-    assert message is None
+    # Password benar + tag rusak = KORUPSI (bukan wrong password) — MK sudah
+    # terbukti benar di unwrap keyslot, jadi laporannya harus jujur.
+    assert status == VaultStatus.ERROR
+    assert message == CORRUPT_VAULT_MESSAGE
     assert (source / "dokumen.txt").read_text(encoding="utf-8") == "Ini file rahasia"
 
 
@@ -55,10 +58,11 @@ def test_corrupted_tag_does_not_leave_plaintext_temp_dir(tmp_path):
     _corrupt_gcm_tag(vault_path)
 
     before = set(tmp_path.glob("._dec_*"))
-    status, _ = buka_brankas(str(vault_path), PASSWORD)
+    status, message = buka_brankas(str(vault_path), PASSWORD)
     after = set(tmp_path.glob("._dec_*"))
 
-    assert status == VaultStatus.WRONG_PASSWORD
+    assert status == VaultStatus.ERROR
+    assert message == CORRUPT_VAULT_MESSAGE
     assert after == before
     assert not source.exists()
 

@@ -91,11 +91,12 @@ def test_stale_pending_is_discarded_when_vault_changes(tmp_path):
 
     # Ubah UKURAN file vault setelah prompt (signature pasti berubah, tak bergantung
     # resolusi mtime): resume harus menolak cache & dekripsi ulang, yang lalu gagal
-    # sebagai wrong_password. Yang penting: tidak mengekstrak tar basi diam-diam.
+    # sebagai vault korup (ada byte sisa setelah FINAL). Yang penting: tidak
+    # mengekstrak tar basi diam-diam.
     data = bytearray(vault_path.read_bytes())
     data.append(0x00)
     vault_path.write_bytes(data)
 
     status, _ = buka_brankas(str(vault_path), PASSWORD, force=True)
-    assert status == VaultStatus.WRONG_PASSWORD
+    assert status == VaultStatus.ERROR
     assert not list(tmp_path.glob("._dec_*"))

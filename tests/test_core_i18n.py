@@ -27,10 +27,8 @@ _ALLOWLIST = {
 }
 
 
-def _extract_core_messages() -> set[str]:
-    """String English user-facing yang dikembalikan core.vault (return tuple / ValueError)."""
-    src = (ROOT / "core" / "vault.py").read_text(encoding="utf-8")
-    tree = ast.parse(src)
+def _module_string_constants(tree: ast.Module) -> dict[str, str]:
+    """NAMA → nilai untuk assignment string level-modul (dipakai resolusi Name)."""
     constmap: dict[str, str] = {}
     for node in tree.body:
         if (
@@ -41,36 +39,53 @@ def _extract_core_messages() -> set[str]:
             and isinstance(node.value.value, str)
         ):
             constmap[node.targets[0].id] = node.value.value
+    return constmap
+
+
+def _extract_core_messages() -> set[str]:
+    """String English user-facing yang dikembalikan core (return tuple / ValueError).
+
+    Memindai SEMUA modul vault (vault.py + hasil split vault_*.py). Konstanta pesan
+    kini hidup di core/constants.py, jadi constmap-nya dibangun dari sana lebih dulu
+    agar ``return VaultStatus.X, NAMA_KONSTANTA`` tetap teresolusi.
+    """
+    constmap = _module_string_constants(
+        ast.parse((ROOT / "core" / "constants.py").read_text(encoding="utf-8"))
+    )
 
     msgs: set[str] = set()
-    for n in ast.walk(tree):
-        # return (VaultStatus.X, "msg"[, ...])
-        if isinstance(n, ast.Return) and isinstance(n.value, ast.Tuple) and n.value.elts:
-            head = n.value.elts[0]
+    for src_path in sorted((ROOT / "core").glob("vault*.py")):
+        tree = ast.parse(src_path.read_text(encoding="utf-8"))
+        local_constmap = {**constmap, **_module_string_constants(tree)}
+
+        for n in ast.walk(tree):
+            # return (VaultStatus.X, "msg"[, ...])
+            if isinstance(n, ast.Return) and isinstance(n.value, ast.Tuple) and n.value.elts:
+                head = n.value.elts[0]
+                if (
+                    isinstance(head, ast.Attribute)
+                    and isinstance(head.value, ast.Name)
+                    and head.value.id == "VaultStatus"
+                ):
+                    for el in n.value.elts[1:]:
+                        if isinstance(el, ast.Constant) and isinstance(el.value, str):
+                            s = el.value
+                            if len(s) > 5 and s[0].isupper() and "{" not in s:
+                                msgs.add(s)
+                        elif isinstance(el, ast.Name) and el.id in local_constmap:
+                            msgs.add(local_constmap[el.id])
+            # raise ValueError("Msg ...")
             if (
-                isinstance(head, ast.Attribute)
-                and isinstance(head.value, ast.Name)
-                and head.value.id == "VaultStatus"
+                isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Name)
+                and n.func.id == "ValueError"
+                and n.args
+                and isinstance(n.args[0], ast.Constant)
+                and isinstance(n.args[0].value, str)
             ):
-                for el in n.value.elts[1:]:
-                    if isinstance(el, ast.Constant) and isinstance(el.value, str):
-                        s = el.value
-                        if len(s) > 5 and s[0].isupper() and "{" not in s:
-                            msgs.add(s)
-                    elif isinstance(el, ast.Name) and el.id in constmap:
-                        msgs.add(constmap[el.id])
-        # raise ValueError("Msg ...")
-        if (
-            isinstance(n, ast.Call)
-            and isinstance(n.func, ast.Name)
-            and n.func.id == "ValueError"
-            and n.args
-            and isinstance(n.args[0], ast.Constant)
-            and isinstance(n.args[0].value, str)
-        ):
-            s = n.args[0].value
-            if s and s[0].isupper() and " " in s and "{" not in s:
-                msgs.add(s)
+                s = n.args[0].value
+                if s and s[0].isupper() and " " in s and "{" not in s:
+                    msgs.add(s)
     return msgs
 
 

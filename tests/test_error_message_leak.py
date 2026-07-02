@@ -10,6 +10,7 @@ tetap diteruskan apa adanya — itu diuji terpisah & tidak terpengaruh perubahan
 import shutil
 
 from core import vault as vault_mod
+from core import vault_extract as vault_extract_mod
 from core.vault import (
     GENERIC_FAILURE_MESSAGE,
     VaultStatus,
@@ -47,7 +48,7 @@ def test_buka_brankas_unexpected_error_does_not_leak_path(tmp_path, monkeypatch)
     assert kunci_brankas([str(source)], str(vault_path), PASSWORD)[0] == VaultStatus.SUCCESS
     shutil.rmtree(source)  # tujuan tak ada → lanjut ke ekstraksi (bukan overwrite)
 
-    monkeypatch.setattr(vault_mod, "_extract_and_place_vault", _boom)
+    monkeypatch.setattr(vault_extract_mod, "_extract_and_place_vault", _boom)
     status, message = buka_brankas(str(vault_path), PASSWORD)
     assert status == VaultStatus.ERROR
     _assert_clean(message)

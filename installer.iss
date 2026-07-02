@@ -14,16 +14,20 @@
 ;
 ; ═════════════════════════════════════════════════════════════════════════════
 
+; Versi didefinisikan SEKALI di sini. Jaga tetap sinkron dengan
+; ui/constants.py (APP_VERSION) dan build.bat (APP_VERSION).
+#define MyAppVersion "1.0.0"
+
 [Setup]
 AppId={{A3D9B5E6-7D42-4A21-B861-C3F982AD7999}
 AppName=Adyton Crypt
-AppVersion=1.0.0
+AppVersion={#MyAppVersion}
 AppPublisher=Adyton Security
-AppPublisherURL=https://github.com/yourusername/adyton-crypt
-AppSupportURL=https://github.com/yourusername/adyton-crypt/issues
-AppUpdatesURL=https://github.com/yourusername/adyton-crypt/releases
+AppPublisherURL=https://github.com/ahmadellatos/adyton-crypt
+AppSupportURL=https://github.com/ahmadellatos/adyton-crypt/issues
+AppUpdatesURL=https://github.com/ahmadellatos/adyton-crypt/releases
 AppComments=Advanced AES-256-GCM Digital Vault
-VersionInfoVersion=1.0.0.0
+VersionInfoVersion={#MyAppVersion}.0
 VersionInfoCompany=Adyton Security
 VersionInfoDescription=Adyton Crypt Installer
 UninstallDisplayName=Adyton Crypt
@@ -53,7 +57,7 @@ CloseApplications=no
 RestartApplications=no
 
 OutputDir=release_build
-OutputBaseFilename=Adyton_Crypt_Setup_v1.0.0
+OutputBaseFilename=Adyton_Crypt_Setup_v{#MyAppVersion}
 SetupIconFile=assets\icon_adyton.ico
 
 Compression=lzma2/max

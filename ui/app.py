@@ -489,6 +489,10 @@ class AppBrankas(FramelessMainWindow):
         for le in self.findChildren(PasswordLineEdit):
             with contextlib.suppress(Exception):
                 le.clear()
+        # Kredensial yang di-cache TabBuka (konfirmasi overwrite / ekstrak setelah
+        # browse) ikut dibuang — mengosongkan field saja tidak menghapus salinan ini.
+        with contextlib.suppress(Exception):
+            self.tab_buka.clear_credential_cache()
         # Tab Teks: kosongkan input + hasil dekripsi yang masih tampil.
         for attr in ("input_card", "result_card", "password_panel"):
             w = getattr(self.tab_teks, attr, None)

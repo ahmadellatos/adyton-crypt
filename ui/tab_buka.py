@@ -849,6 +849,15 @@ class TabBuka(QWidget):
             self.password_panel.set_error_state(user_msg)
             self.notif.show_msg("err", user_msg, 9000)
 
+    def clear_credential_cache(self) -> None:
+        """Buang password/keyfile yang di-cache (untuk konfirmasi overwrite dan
+        ekstrak-setelah-browse). Dipanggil auto-lock idle sebagai bagian panic-clear —
+        mengosongkan field saja tidak cukup karena salinan ini tetap di memori.
+        Konsekuensinya konfirmasi Replace berikutnya minta password lagi (wajar
+        untuk fitur panic)."""
+        self._cached_pw = None
+        self._cached_keyfile = None
+
     def _retry_after_error(self) -> None:
         self.password_panel.set_idle_state()
         self.drop_zone.set_verification_state(

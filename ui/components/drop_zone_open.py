@@ -470,10 +470,12 @@ class DropZoneOpen(QWidget):
             fmt: str,
             *,
             state: str = "error",
-            subtitle: str = "File can't be opened yet",
+            subtitle: str | None = None,
             openable: bool = False,
             kdf: str | None = None,
         ) -> dict[str, object]:
+            if subtitle is None:
+                subtitle = tr("dz.err.cant_open", "File can't be opened yet")
             info.update(
                 {
                     "badge": badge,
@@ -492,80 +494,100 @@ class DropZoneOpen(QWidget):
             if not path.lower().endswith(".adtn"):
                 return mark_problem(
                     "ERROR",
-                    "Invalid extension",
-                    "Not a .adtn file",
+                    tr("dz.err.ext", "Invalid extension"),
+                    tr("dz.err.not_adtn", "Not a .adtn file"),
                 )
 
             file_size = os.path.getsize(path)
             if file_size <= 0:
-                return mark_problem("ERROR", "Empty file", "Incomplete")
+                return mark_problem(
+                    "ERROR",
+                    tr("dz.err.empty", "Empty file"),
+                    tr("dz.err.incomplete", "Incomplete"),
+                )
 
             with open(path, "rb") as f:
                 if f.read(4) != MAGIC_BYTES:
                     return mark_problem(
                         "ERROR",
-                        "Not an Adyton vault",
-                        "Unrecognized",
+                        tr("dz.err.not_vault", "Not an Adyton vault"),
+                        tr("dz.err.unrecognized", "Unrecognized"),
                     )
 
                 version = f.read(1)
                 if version != VERSION:
                     return mark_problem(
                         "UNSUPPORTED",
-                        "Unsupported version",
-                        "Newer/unknown version",
+                        tr("dz.err.unsupported_version", "Unsupported version"),
+                        tr("dz.err.newer_version", "Newer/unknown version"),
                         state="warn",
-                        subtitle="Needs a newer app version",
+                        subtitle=tr("dz.err.needs_newer", "Needs a newer app version"),
                     )
 
                 return self._inspect_header(f, file_size, info, mark_problem)
         except Exception:
-            return mark_problem("ERROR", "Unreadable", "Unreadable")
+            return mark_problem(
+                "ERROR",
+                tr("dz.err.unreadable", "Unreadable"),
+                tr("dz.err.unreadable", "Unreadable"),
+            )
 
     def _inspect_header(self, f, file_size, info, mark_problem):
         """Validasi struktur header (envelope) untuk display — bukan verifikasi
         kriptografis. Integritas baru dipastikan saat dekripsi dengan key benar."""
+        incomplete_header = tr("dz.err.incomplete_header", "Incomplete header")
+        invalid_header = tr("dz.err.invalid_header", "Invalid header")
+
         min_slot = 1 + 1 + 2 + ARGON2ID_PARAMS_SIZE + SALT_SIZE + WRAP_NONCE_SIZE + WRAPPED_KEY_SIZE
         min_size = CORE_HEADER_SIZE + 1 + min_slot + (2 * CHUNK_RECORD_OVERHEAD)
         if file_size < min_size:
-            return mark_problem("ERROR", "Incomplete file", "Adyton Vault", kdf="Argon2id")
+            return mark_problem(
+                "ERROR",
+                tr("dz.err.incomplete_file", "Incomplete file"),
+                "Adyton Vault",
+                kdf="Argon2id",
+            )
 
         f.read(FILE_ID_SIZE)
         chunk_size_raw = f.read(4)
         if len(chunk_size_raw) != 4:
-            return mark_problem("ERROR", "Incomplete header", "Adyton Vault")
+            return mark_problem("ERROR", incomplete_header, "Adyton Vault")
         chunk_size = int.from_bytes(chunk_size_raw, byteorder="big")
         if chunk_size <= 0 or chunk_size > CHUNK_SIZE:
-            return mark_problem("ERROR", "Invalid chunk parameter", "Adyton Vault")
+            return mark_problem(
+                "ERROR", tr("dz.err.chunk", "Invalid chunk parameter"), "Adyton Vault"
+            )
 
         flags_raw = f.read(4)
         if len(flags_raw) != 4:
-            return mark_problem("ERROR", "Incomplete header", "Adyton Vault")
+            return mark_problem("ERROR", incomplete_header, "Adyton Vault")
         flags = int.from_bytes(flags_raw, byteorder="big")
         if flags & ~SUPPORTED_FLAGS:
             return mark_problem(
                 "UNSUPPORTED",
-                "Unsupported flag",
+                tr("dz.err.flag", "Unsupported flag"),
                 "Adyton Vault",
                 state="warn",
-                subtitle="Needs a newer app version",
+                subtitle=tr("dz.err.needs_newer", "Needs a newer app version"),
             )
 
         if flags & FLAG_HINT:
             hint_len_raw = f.read(2)
             if len(hint_len_raw) != 2:
-                return mark_problem("ERROR", "Incomplete header", "Adyton Vault")
+                return mark_problem("ERROR", incomplete_header, "Adyton Vault")
             hint_len = int.from_bytes(hint_len_raw, byteorder="big")
             if hint_len > MAX_HINT_LENGTH:
-                return mark_problem("ERROR", "Invalid header", "Adyton Vault")
+                return mark_problem("ERROR", invalid_header, "Adyton Vault")
             hint_bytes = f.read(hint_len)
             if len(hint_bytes) != hint_len:
-                return mark_problem("ERROR", "Invalid header", "Adyton Vault")
+                return mark_problem("ERROR", invalid_header, "Adyton Vault")
             self._vault_hint = hint_bytes.decode("utf-8", "replace")
 
         slot_count_raw = f.read(1)
         if len(slot_count_raw) != 1 or not 1 <= slot_count_raw[0] <= MAX_KEYSLOTS:
-            return mark_problem("ERROR", "Invalid keyslot count", "Adyton Vault")
+            return mark_problem(
+                "ERROR", tr("dz.err.keyslot", "Invalid keyslot count"), "Adyton Vault"
+            )
 
         # Lewati region keyslot untuk mendeteksi ada/tidaknya recovery key (dipakai
         # TabBuka untuk affordance password). Pembacaan tetap satu pass file ini.

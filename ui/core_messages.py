@@ -23,8 +23,9 @@ from __future__ import annotations
 
 import re
 
-from core.vault import (
+from core.constants import (
     CORRUPT_VAULT_MESSAGE,
+    DELETE_ORIGINAL_FAILED_MESSAGE,
     GENERIC_FAILURE_MESSAGE,
     KEYFILE_CREATED_MESSAGE,
     KEYFILE_INSIDE_SOURCE_MESSAGE,
@@ -69,10 +70,12 @@ _MAP: dict[str, str] = {
     GENERIC_FAILURE_MESSAGE: "core.generic",
     # Kunci (lock)
     "No valid file/folder to lock.": "core.no_valid",
+    "Vault locked successfully!": "core.locked_ok",
     "Password cannot be empty.": "core.pw_empty",
     SAVE_INSIDE_SOURCE_MESSAGE: "core.save_inside_source",
     KEYFILE_INSIDE_SOURCE_MESSAGE: "core.keyfile_inside_source",
     VERIFY_DISK_FAIL_MESSAGE: "core.verify_disk_fail",
+    DELETE_ORIGINAL_FAILED_MESSAGE: "core.delete_original_failed",
     "Not enough storage space to update the vault.": "core.disk_update",
     "Operation cancelled. No existing data was changed.": "core.cancelled_nochange",
     # Verify

@@ -19,6 +19,7 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from core.paths import get_asset_path, get_data_dir
+from core.vault import discard_all_pending_overwrites
 from ui.app import AppBrankas
 from ui.constants import APP_AUMID, APP_NAME, APP_ORG
 from ui.i18n import i18n, tr
@@ -480,6 +481,11 @@ def main() -> None:
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(APP_ORG)
     apply_theme(app)
+
+    # Saat keluar (tray quit / restart tema / tutup dialog mini), buang tar
+    # plaintext pending-overwrite yang mungkin masih ditahan — jangan biarkan
+    # plaintext menginap di disk hanya karena app ditutup saat prompt terbuka.
+    app.aboutToQuit.connect(discard_all_pending_overwrites)
 
     is_quick = bool(args.encrypt or args.decrypt or args.shred)
     sys.exit(run_quick_action(app, args) if is_quick else run_full_app(app, args))

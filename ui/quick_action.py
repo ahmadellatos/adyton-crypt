@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 )
 from qframelesswindow import FramelessWindow
 
+from core.constants import DELETE_ORIGINAL_FAILED_MESSAGE, kdf_params_for_level
 from core.paths import get_asset_path
 from core.vault import (
     VaultStatus,
@@ -48,8 +49,10 @@ from .components.options_panel import OptionsPanel
 from .components.password_panel_lock import PasswordPanelLock
 from .components.password_panel_open import PasswordPanelOpen
 from .constants import APP_NAME
+from .core_messages import localize_core_message
 from .dialogs import ModernMessageBox
 from .i18n import tr
+from .settings_store import get_settings
 from .styles import CLR_ACCENT, CLR_DANGER
 from .utils import (
     ProgressETA,
@@ -169,6 +172,11 @@ class QuickActionWindow(FramelessWindow):
         if self.mode is QuickMode.ENCRYPT:
             self._password_panel = PasswordPanelLock()
             self._options_panel = OptionsPanel()
+            # Hormati default opsi dari Settings — sama seperti TabKunci di app utama.
+            _s = get_settings()
+            self._options_panel.apply_defaults(
+                _s.delete_original(), _s.secure_wipe(), _s.compress()
+            )
             self.btn = BigActionBtn(
                 tr("quick.enc.action", "Lock to Vault"), "", icon_name="mdi6.lock-outline"
             )
@@ -345,6 +353,10 @@ class QuickActionWindow(FramelessWindow):
                 self._password_panel.get_password(),
                 hapus_asli=self._options_panel.is_hapus_asli(),
                 secure_wipe=self._options_panel.is_secure_wipe(),
+                # Level KDF & kompresi mengikuti pilihan user — tanpa ini dialog mini
+                # diam-diam memakai KDF default dan mengabaikan toggle Compress.
+                kdf_params=kdf_params_for_level(get_settings().kdf_level()),
+                compress=self._options_panel.is_compress(),
                 parent=self,
             )
 
@@ -412,6 +424,13 @@ class QuickActionWindow(FramelessWindow):
         self._set_busy(False)
         self._eta.reset()
 
+        if status == VaultStatus.SUCCESS and msg == DELETE_ORIGINAL_FAILED_MESSAGE:
+            # Vault jadi & terverifikasi, tapi sebagian sumber gagal dihapus.
+            # Jangan auto-tutup: user harus sempat membaca bahwa file asli masih ada.
+            logger.warning("Quick encrypt: vault dibuat, sebagian file asli gagal dihapus.")
+            self.notif.show_msg("warn", f" {localize_core_message(msg)}", 10000)
+            return
+
         if status == VaultStatus.SUCCESS:
             logger.info(f"Quick action sukses ({self.mode.name}): {msg}")
             self.notif.show_msg("ok", f" {self._success_text(msg)}", 3500)
@@ -426,6 +445,13 @@ class QuickActionWindow(FramelessWindow):
             )
             return
 
+        if status == VaultStatus.OVERWRITE_NEEDED:
+            # Vault sudah terverifikasi penuh; folder tujuan sudah ada. Tawarkan
+            # konfirmasi Replace seperti di app utama — tanpa ini status jatuh ke
+            # cabang error dan tampil sebagai "Couldn't open the vault. {nama}".
+            self._confirm_overwrite(msg)
+            return
+
         mode_key = "buka" if self.mode is QuickMode.DECRYPT else "kunci"
         user_msg = format_user_error(status, msg, mode_key)
         logger.error(f"Quick action gagal ({self.mode.name}): {msg}")
@@ -435,6 +461,48 @@ class QuickActionWindow(FramelessWindow):
             # tar terverifikasi (kalau OVERWRITE_NEEDED) menggantung di disk.
             cancel_pending_overwrite(self.paths[0])
             self._password_panel.reset_field()
+
+    def _confirm_overwrite(self, name) -> None:
+        """Konfirmasi Replace untuk DECRYPT saat folder tujuan sudah ada.
+
+        Teks & kunci i18n sama dengan TabBuka. Bila user setuju, jalankan ulang
+        dengan force=True — tar terverifikasi yang ditahan core dipakai ulang
+        (resume), jadi tidak ada dekripsi ganda. Bila menolak, buang pending tar.
+        """
+        dialog = ModernMessageBox(
+            title=tr("open.overwrite.title", "File Already Exists"),
+            message=tr(
+                "open.overwrite.msg",
+                "A file or folder named '{name}' already exists at this location.\n\n"
+                "Adyton will extract to a temporary folder first, and only replace the "
+                "existing data once the vault opens successfully.\n\n"
+                "Replace the existing data?",
+            ).format(name=name),
+            icon_name="mdi6.alert-octagon-outline",
+            icon_color=CLR_DANGER,
+            parent=self,
+        )
+        dialog.btn_yes.setText(tr("open.overwrite.replace", "Replace Data"))
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            cancel_pending_overwrite(self.paths[0])
+            self.notif.show_msg(
+                "warn",
+                tr("quick.cancelled", "Operation cancelled. No changes were made."),
+                4000,
+            )
+            return
+
+        # Password masih ada di panel (hanya di-reset pada jalur error); jalur
+        # resume bahkan tidak memerlukannya selama cache pending masih segar.
+        self.worker = CryptoWorker(
+            buka_brankas,
+            self.paths[0],
+            self._password_panel.get_password(),
+            True,
+            parent=self,
+        )
+        self._set_busy(True)
+        start_crypto_worker(self.worker, self._update_progress, self._on_done)
 
     # ── label & konfirmasi ───────────────────────────────────────────────
     def _idle_title(self) -> str:
@@ -500,5 +568,18 @@ class QuickActionWindow(FramelessWindow):
         # Jangan biarkan proses keluar saat worker masih jalan tanpa peringatan.
         if self.worker is not None and self.worker.isRunning():
             self.worker.cancel()
-            self.worker.wait(3000)
+            if not self.worker.wait(5000):
+                # Worker belum berhenti — menutup sekarang berarti membongkar
+                # QThread yang masih hidup (crash saat proses keluar). Tahan
+                # window; pembatalan tetap berjalan dan user bisa menutup lagi.
+                self.notif.show_msg(
+                    "warn",
+                    tr(
+                        "quick.closing.busy",
+                        "Still cancelling — wait a moment, then close again.",
+                    ),
+                    4000,
+                )
+                event.ignore()
+                return
         super().closeEvent(event)

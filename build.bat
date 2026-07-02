@@ -18,7 +18,8 @@ echo ===================================================
 echo.
 
 :: ====================== PENGATURAN ======================
-set "BUILD_MODE=debug"
+set "BUILD_MODE=release"
+:: Jaga sinkron dengan ui/constants.py (APP_VERSION) dan installer.iss (MyAppVersion).
 set "APP_VERSION=1.0.0"
 set "APP_EXE=AdytonCrypt.exe"
 set "BUILD_DIR=release_build"
@@ -64,7 +65,8 @@ python -m nuitka ^
     --include-package=qframelesswindow ^
     --include-package=qtawesome ^
     --include-package=loguru ^
-    --include-package=windows_toasts ^
+    --include-package=winotify ^
+    --include-package=qrcode ^
     --include-package=zxcvbn ^
     --include-package=core ^
     --include-package=ui ^
@@ -142,9 +144,9 @@ if errorlevel 1 (
     exit /b 1
 )
 
-python -c "import qtawesome, loguru, windows_toasts, zxcvbn, zstandard" >nul 2>nul
+python -c "import qtawesome, loguru, winotify, zxcvbn, zstandard, qrcode" >nul 2>nul
 if errorlevel 1 (
-    echo [ERROR] Satu atau lebih dependency tidak ditemukan: qtawesome, loguru, windows_toasts, zxcvbn, zstandard
+    echo [ERROR] Satu atau lebih dependency tidak ditemukan: qtawesome, loguru, winotify, zxcvbn, zstandard, qrcode
     echo         Jalankan: pip install -r requirements.txt
     exit /b 1
 )

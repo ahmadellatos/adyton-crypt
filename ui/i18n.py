@@ -127,6 +127,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "“{target}” akan dihapus permanen dan TIDAK masuk Recycle Bin. "
             "Tindakan ini tak bisa dibatalkan.\n\nLanjutkan?"
         ),
+        "quick.closing.busy": "Masih membatalkan — tunggu sebentar, lalu tutup lagi.",
         # ── Sidebar navigasi ────────────────────────────────────────────────
         "nav.lock": "Kunci",
         "nav.open": "Buka",
@@ -210,6 +211,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "lock.status.locking.sub": "Biarkan aplikasi tetap terbuka",
         "lock.status.locked": "Terkunci",
         "lock.status.locked.sub": "Vault berhasil dibuat",
+        "lock.status.delete_failed.sub": "Sebagian file asli gagal dihapus",
         "lock.status.cancelled": "Dibatalkan",
         "lock.status.cancelled.sub": "Proses penguncian dibatalkan",
         "lock.status.failed": "Gagal mengunci",
@@ -500,6 +502,24 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "dz.status.verification_failed": "Verifikasi gagal",
         "dz.status.unsupported": "Format tak didukung",
         "dz.status.unsupported_here": "Tak didukung di sini",
+        # ── Status validasi ringan drop zone Buka (mark_problem) ────────────
+        "dz.err.cant_open": "File belum bisa dibuka",
+        "dz.err.ext": "Ekstensi tidak valid",
+        "dz.err.not_adtn": "Bukan file .adtn",
+        "dz.err.empty": "File kosong",
+        "dz.err.incomplete": "Tidak lengkap",
+        "dz.err.not_vault": "Bukan vault Adyton",
+        "dz.err.unrecognized": "Tak dikenali",
+        "dz.err.unsupported_version": "Versi tak didukung",
+        "dz.err.newer_version": "Versi lebih baru/tak dikenal",
+        "dz.err.needs_newer": "Butuh versi aplikasi lebih baru",
+        "dz.err.unreadable": "Tak terbaca",
+        "dz.err.incomplete_file": "File tidak lengkap",
+        "dz.err.incomplete_header": "Header tidak lengkap",
+        "dz.err.invalid_header": "Header tidak valid",
+        "dz.err.chunk": "Parameter chunk tidak valid",
+        "dz.err.flag": "Flag tak didukung",
+        "dz.err.keyslot": "Jumlah keyslot tidak valid",
         "dz.recent.clear": "Bersihkan",
         "dz.recent.remove": "Hapus dari daftar",
         "dz.recent.missing": "hilang",
@@ -645,6 +665,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
             "Detail teknis telah disimpan ke log."
         ),
         "core.no_valid": "Tidak ada file/folder valid untuk dikunci.",
+        "core.locked_ok": "Vault berhasil dikunci!",
         "core.pw_empty": "Password tidak boleh kosong.",
         "core.save_inside_source": (
             "Lokasi penyimpanan vault tidak boleh sama dengan, atau di dalam, file/folder yang "
@@ -658,6 +679,11 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "core.verify_disk_fail": (
             "Vault tidak bisa diverifikasi di disk fisik. File asli tidak dihapus. Coba periksa "
             "ruang disk dan kondisi perangkat penyimpananmu."
+        ),
+        "core.delete_original_failed": (
+            "Vault berhasil dibuat dan diverifikasi, tetapi sebagian file asli gagal dihapus — "
+            "mungkin sedang dibuka aplikasi lain atau dilindungi tulis. Datamu sudah aman "
+            "terkunci di vault; hapus file aslinya secara manual."
         ),
         "core.disk_update": "Ruang penyimpanan tidak cukup untuk memperbarui vault.",
         "core.cancelled_nochange": "Operasi dibatalkan. Tidak ada data lama yang diubah.",
