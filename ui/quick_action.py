@@ -49,6 +49,7 @@ from .components.password_panel_lock import PasswordPanelLock
 from .components.password_panel_open import PasswordPanelOpen
 from .constants import APP_NAME
 from .dialogs import ModernMessageBox
+from .i18n import tr
 from .styles import CLR_ACCENT, CLR_DANGER
 from .utils import (
     ProgressETA,
@@ -80,8 +81,12 @@ def _shred_paths(paths, secure_wipe, progress_cb=None, is_cancelled=None):
         hapus_permanen(Path(p), secure_wipe=secure_wipe)
         if progress_cb:
             progress_cb((i + 1) / total)
-    noun = "item" if total == 1 else "items"
-    return VaultStatus.SUCCESS, f"{total} {noun} permanently deleted."
+    msg = (
+        tr("quick.shred.done.one", "1 item permanently deleted.")
+        if total == 1
+        else tr("quick.shred.done.many", "{n} items permanently deleted.").format(n=total)
+    )
+    return VaultStatus.SUCCESS, msg
 
 
 class QuickActionWindow(FramelessWindow):
@@ -164,7 +169,9 @@ class QuickActionWindow(FramelessWindow):
         if self.mode is QuickMode.ENCRYPT:
             self._password_panel = PasswordPanelLock()
             self._options_panel = OptionsPanel()
-            self.btn = BigActionBtn("Lock to Vault", "", icon_name="mdi6.lock-outline")
+            self.btn = BigActionBtn(
+                tr("quick.enc.action", "Lock to Vault"), "", icon_name="mdi6.lock-outline"
+            )
             self._content_lay.addWidget(self._password_panel)
             self._content_lay.addWidget(self._options_panel)
             self._password_panel.valid_state_changed.connect(self.btn.setEnabled)
@@ -173,14 +180,20 @@ class QuickActionWindow(FramelessWindow):
 
         elif self.mode is QuickMode.DECRYPT:
             self._password_panel = PasswordPanelOpen()
-            self.btn = BigActionBtn("Open Vault", "", icon_name="mdi6.lock-open-outline")
+            self.btn = BigActionBtn(
+                tr("quick.dec.action", "Open Vault"), "", icon_name="mdi6.lock-open-outline"
+            )
             self._content_lay.addWidget(self._password_panel)
             self._password_panel.valid_state_changed.connect(self.btn.setEnabled)
             self._password_panel.attach_return_event(self._on_action)
             self.btn.setEnabled(False)
 
         else:  # SHRED — tanpa password, langsung aktif (dijaga konfirmasi keras)
-            self.btn = BigActionBtn("Securely Delete", "", icon_name="mdi6.delete-forever-outline")
+            self.btn = BigActionBtn(
+                tr("quick.shred.action", "Securely Delete"),
+                "",
+                icon_name="mdi6.delete-forever-outline",
+            )
             self.btn.setEnabled(True)
 
         if self._use_scroll:
@@ -219,14 +232,17 @@ class QuickActionWindow(FramelessWindow):
     def _summary_text(self) -> tuple[str, str, str, str]:
         first = os.path.basename(self.paths[0].rstrip("\\/")) or self.paths[0]
         count = len(self.paths)
-        more = f" + {count - 1} more" if count > 1 else ""
+        more = tr("quick.more", " + {n} more").format(n=count - 1) if count > 1 else ""
 
         if self.mode is QuickMode.ENCRYPT:
             return (
                 "mdi6.lock-outline",
                 CLR_ACCENT,
-                f"Lock “{first}”{more}",
-                "Set a password to pack everything into a single encrypted .adtn vault.",
+                tr("quick.enc.title", "Lock “{first}”{more}").format(first=first, more=more),
+                tr(
+                    "quick.enc.sub",
+                    "Set a password to pack everything into a single encrypted .adtn vault.",
+                ),
             )
         if self.mode is QuickMode.DECRYPT:
             size = ""
@@ -235,14 +251,21 @@ class QuickActionWindow(FramelessWindow):
             return (
                 "mdi6.lock-open-outline",
                 CLR_ACCENT,
-                f"Open “{first}”",
-                f"Enter the password used when this vault was locked{size}.",
+                tr("quick.dec.title", "Open “{first}”").format(first=first),
+                tr(
+                    "quick.dec.sub", "Enter the password used when this vault was locked{size}."
+                ).format(size=size),
             )
         return (
             "mdi6.alert-octagon-outline",
             CLR_DANGER,
-            f"Permanently delete “{first}”{more}",
-            "This cannot be undone. The file(s) will not go to the Recycle Bin.",
+            tr("quick.shred.title", "Permanently delete “{first}”{more}").format(
+                first=first, more=more
+            ),
+            tr(
+                "quick.shred.sub",
+                "This cannot be undone. The file(s) will not go to the Recycle Bin.",
+            ),
         )
 
     def _finalize_size(self):
@@ -308,7 +331,10 @@ class QuickActionWindow(FramelessWindow):
             else:
                 default_path = os.path.join(os.path.dirname(src0), "Secret_Vault.adtn")
             path_simpan, _ = QFileDialog.getSaveFileName(
-                self, "Save Vault", default_path, "Locked File (*.adtn)"
+                self,
+                tr("quick.save", "Save Vault"),
+                default_path,
+                tr("quick.save.filter", "Locked File (*.adtn)"),
             )
             if not path_simpan:
                 return None
@@ -328,17 +354,18 @@ class QuickActionWindow(FramelessWindow):
             # gagal sebagai WRONG_PASSWORD yang menyesatkan. Arahkan ke app utama.
             if vault_info(self.paths[0]).get("requires_keyfile"):
                 dlg = ModernMessageBox(
-                    title="Keyfile required",
-                    message=(
+                    title=tr("quick.keyfile.title", "Keyfile required"),
+                    message=tr(
+                        "quick.keyfile.msg",
                         "This vault is protected by a keyfile (2FA). Open it from the "
-                        "main Adyton Crypt app, where you can select the keyfile."
+                        "main Adyton Crypt app, where you can select the keyfile.",
                     ),
                     icon_name="mdi6.key-chain-variant",
                     icon_color=CLR_ACCENT,
                     parent=self,
                 )
                 dlg.btn_cancel.hide()
-                dlg.btn_yes.setText("OK")
+                dlg.btn_yes.setText(tr("common.ok", "OK"))
                 dlg.exec()
                 return None
             return CryptoWorker(
@@ -359,7 +386,9 @@ class QuickActionWindow(FramelessWindow):
 
         if busy:
             self.btn.setProgressVisible(True, 0.0)
-            self.btn.setTextLabels(self._busy_title(), "Preparing • Click to cancel")
+            self.btn.setTextLabels(
+                self._busy_title(), tr("quick.busy.sub", "Preparing • Click to cancel")
+            )
             self.btn.setEnabled(True)
             self.btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         else:
@@ -390,7 +419,11 @@ class QuickActionWindow(FramelessWindow):
             return
 
         if status == VaultStatus.CANCELLED:
-            self.notif.show_msg("warn", "Operation cancelled. No changes were made.", 4000)
+            self.notif.show_msg(
+                "warn",
+                tr("quick.cancelled", "Operation cancelled. No changes were made."),
+                4000,
+            )
             return
 
         mode_key = "buka" if self.mode is QuickMode.DECRYPT else "kunci"
@@ -406,32 +439,38 @@ class QuickActionWindow(FramelessWindow):
     # ── label & konfirmasi ───────────────────────────────────────────────
     def _idle_title(self) -> str:
         return {
-            QuickMode.ENCRYPT: "Lock to Vault",
-            QuickMode.DECRYPT: "Open Vault",
-            QuickMode.SHRED: "Securely Delete",
+            QuickMode.ENCRYPT: tr("quick.enc.action", "Lock to Vault"),
+            QuickMode.DECRYPT: tr("quick.dec.action", "Open Vault"),
+            QuickMode.SHRED: tr("quick.shred.action", "Securely Delete"),
         }[self.mode]
 
     def _busy_title(self) -> str:
         return {
-            QuickMode.ENCRYPT: "Locking vault",
-            QuickMode.DECRYPT: "Opening vault",
-            QuickMode.SHRED: "Deleting",
+            QuickMode.ENCRYPT: tr("quick.enc.busy", "Locking vault"),
+            QuickMode.DECRYPT: tr("quick.dec.busy", "Opening vault"),
+            QuickMode.SHRED: tr("quick.shred.busy", "Deleting"),
         }[self.mode]
 
     def _success_text(self, msg) -> str:
         if self.mode is QuickMode.ENCRYPT:
-            return "Vault locked securely."
+            return tr("quick.enc.ok", "Vault locked securely.")
         if self.mode is QuickMode.DECRYPT:
-            return f"Vault opened: {msg}" if msg else "Vault opened."
-        return msg or "Deleted."
+            return (
+                tr("quick.dec.ok", "Vault opened: {name}").format(name=msg)
+                if msg
+                else tr("quick.dec.ok.noname", "Vault opened.")
+            )
+        return msg or tr("quick.shred.ok", "Deleted.")
 
     def _confirm_delete_original(self) -> bool:
+        # Teks identik dengan Tab Kunci → pakai ulang kunci i18n yang sama.
         dialog = ModernMessageBox(
-            title="Confirm Delete",
-            message=(
+            title=tr("lock.dialog.delete.title", "Confirm Delete"),
+            message=tr(
+                "lock.dialog.delete.msg",
                 "The original file or folder will be permanently deleted after the "
                 "vault is created and verified.\n\n"
-                "Make sure you have a backup of anything important before continuing."
+                "Make sure you have a backup of anything important before continuing.",
             ),
             parent=self,
         )
@@ -440,14 +479,17 @@ class QuickActionWindow(FramelessWindow):
     def _confirm_shred(self) -> bool:
         first = os.path.basename(self.paths[0].rstrip("\\/")) or self.paths[0]
         count = len(self.paths)
-        target = f"{first}" if count == 1 else f"{count} items"
+        target = (
+            first if count == 1 else tr("quick.shred.confirm.count", "{n} items").format(n=count)
+        )
         dialog = ModernMessageBox(
-            title="Permanently Delete?",
-            message=(
-                f"“{target}” will be permanently deleted and will NOT go to the "
+            title=tr("quick.shred.confirm.title", "Permanently Delete?"),
+            message=tr(
+                "quick.shred.confirm.msg",
+                "“{target}” will be permanently deleted and will NOT go to the "
                 "Recycle Bin. This action cannot be undone.\n\n"
-                "Continue?"
-            ),
+                "Continue?",
+            ).format(target=target),
             icon_name="mdi6.delete-forever-outline",
             icon_color=CLR_DANGER,
             parent=self,

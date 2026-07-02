@@ -10,6 +10,7 @@ import ctypes
 import os
 import secrets
 import sys
+import time
 import traceback
 
 from loguru import logger
@@ -20,6 +21,8 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from core.paths import get_asset_path, get_data_dir
 from ui.app import AppBrankas
 from ui.constants import APP_AUMID, APP_NAME, APP_ORG
+from ui.i18n import i18n, tr
+from ui.settings_store import get_settings
 from ui.styles import load_stylesheet
 
 # =========================================================================
@@ -136,6 +139,11 @@ def global_exception_handler(exc_type, exc_value, exc_traceback) -> None:
 # (mis. banyak path dari context menu) → path ekor hilang diam-diam.
 IPC_LENGTH_PREFIX = 4
 IPC_MAX_PAYLOAD = 1 << 20  # 1 MB — jauh di atas kebutuhan; batasi alokasi dari client lokal
+# Batas waktu TOTAL membaca satu payload. waitForReadyRead(1000) per iterasi saja
+# tak cukup: client lokal (user yang sama) bisa menetes 1 byte tepat sebelum tiap
+# timeout dan menahan handler ini di thread GUI tanpa batas. Deadline kumulatif
+# menutup stall itu — payload sah (≤1 MB dari proses lokal) selesai jauh di bawah ini.
+IPC_READ_DEADLINE_S = 5.0
 
 _IPC_TOKEN_CACHE: str | None = None
 
@@ -185,12 +193,19 @@ def _send_ipc_payload(socket: QLocalSocket, payload: str) -> bool:
 
 
 def _recv_ipc_payload(client: QLocalSocket) -> str | None:
-    """Baca satu payload ber-frame secara utuh; None bila gagal/terpotong/terlalu besar."""
+    """Baca satu payload ber-frame secara utuh; None bila gagal/terpotong/terlalu besar/timeout."""
     buf = bytearray()
+    deadline = time.monotonic() + IPC_READ_DEADLINE_S
 
     def _fill_to(n: int) -> bool:
         while len(buf) < n:
-            if client.bytesAvailable() == 0 and not client.waitForReadyRead(1000):
+            remaining_ms = int((deadline - time.monotonic()) * 1000)
+            if remaining_ms <= 0:
+                return False
+            # Tunggu tak lebih lama dari sisa deadline agar total stall terbatas.
+            if client.bytesAvailable() == 0 and not client.waitForReadyRead(
+                min(1000, remaining_ms)
+            ):
                 return False
             chunk = client.readAll().data()
             if not chunk:
@@ -363,6 +378,11 @@ def run_quick_action(app: QApplication, args: argparse.Namespace) -> int:
 
     app.setQuitOnLastWindowClosed(True)
 
+    # Quick-action melewati single-instance & tray, tapi tetap harus menghormati
+    # bahasa pilihan user: tanpa ini komponen bersama (panel password/opsi) dan
+    # dialog di sini selalu tampil English walau user memilih Indonesia.
+    i18n().set_language(get_settings().language())
+
     if args.encrypt:
         mode, paths, forward_mode = QuickMode.ENCRYPT, args.encrypt, "encrypt"
     elif args.decrypt:
@@ -373,7 +393,9 @@ def run_quick_action(app: QApplication, args: argparse.Namespace) -> int:
 
     paths = [p for p in paths if os.path.exists(p)]
     if not paths:
-        QMessageBox.warning(None, APP_NAME, "File atau folder tidak ditemukan.")
+        QMessageBox.warning(
+            None, APP_NAME, tr("quick.not_found", "The file or folder could not be found.")
+        )
         return 1
 
     # Vault tidak boleh dikunci ulang (mencegah nested lock).
@@ -383,7 +405,10 @@ def run_quick_action(app: QApplication, args: argparse.Namespace) -> int:
             QMessageBox.warning(
                 None,
                 APP_NAME,
-                "File .adtn sudah berupa vault terkunci — tidak bisa dikunci lagi.",
+                tr(
+                    "quick.already_vault",
+                    "This .adtn file is already a locked vault — it can't be locked again.",
+                ),
             )
             return 1
         paths = non_vault

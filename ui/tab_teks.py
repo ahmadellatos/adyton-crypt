@@ -32,6 +32,7 @@ from .components.text_input_card import (
     TextInputCard,
 )
 from .components.text_result_card import TextResultCard
+from .constants import APP_NAME
 from .i18n import register, tr
 from .styles import (
     CLR_ON_ACCENT,
@@ -307,11 +308,6 @@ class TabTeks(QWidget):
             copy_to_clipboard_auto_clear(result)
             secs = CLIPBOARD_AUTO_CLEAR_MS // 1000
             is_enc = mode == "enkripsi"
-            notif_title = (
-                tr("text.notif.enc.title", "Text encrypted successfully")
-                if is_enc
-                else tr("text.notif.dec.title", "Text decrypted successfully")
-            )
             ok_msg = (
                 tr(
                     "text.notif.enc.ok",
@@ -323,12 +319,19 @@ class TabTeks(QWidget):
                     "✓ Text decrypted successfully — copied (auto-clears in {s}s).",
                 )
             )
-            self.system_notification.emit(
-                notif_title,
-                tr("text.notif.body", "Copied to the clipboard — auto-clears in {s}s.").format(
-                    s=secs
-                ),
+            # Toast seragam dengan tab lain: judul = nama app, body = kalimat hasil singkat.
+            notif_body = (
+                tr(
+                    "text.notif.enc.body",
+                    "Text encrypted — copied to the clipboard, auto-clears in {s}s.",
+                )
+                if is_enc
+                else tr(
+                    "text.notif.dec.body",
+                    "Text decrypted — copied to the clipboard, auto-clears in {s}s.",
+                )
             )
+            self.system_notification.emit(APP_NAME, notif_body.format(s=secs))
             self.notif.show_msg("ok", ok_msg.format(s=secs), 4000)
             logger.info(f"TabTeks: {mode} berhasil — {len(result)} karakter")
 
@@ -370,7 +373,9 @@ def _format_text_error(error: str, mode: str) -> str:
             "Invalid format. Make sure the encrypted text starts with 'ADTN_TEXT:1:'.",
         )
     if "empty" in err_lower:
-        return error
+        if "password" in err_lower:
+            return tr("text.err.empty_pw", "Password cannot be empty.")
+        return tr("text.err.empty_text", "Text cannot be empty.")
     if mode == "enkripsi":
         return tr("text.err.enc", "Encryption failed. {detail}").format(detail=error)
     return tr("text.err.dec", "Decryption failed. {detail}").format(detail=error)

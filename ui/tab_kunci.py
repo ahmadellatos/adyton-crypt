@@ -37,6 +37,7 @@ from .utils import (
     ProgressETA,
     apply_cancelling_state,
     apply_shadow,
+    format_file_size,
     format_progress_label,
     format_user_error,
     start_crypto_worker,
@@ -388,7 +389,16 @@ class TabKunci(QWidget):
 
         if status == VaultStatus.SUCCESS:
             logger.info(f"Enkripsi sukses: {msg}")
-            self.notif.show_msg("ok", f" {msg}", 6000)
+            # Jangan tampilkan msg core mentah (English) di notif — itu bocor ke mode ID.
+            # Pakai teks tr() + ukuran yang dihitung di sini (konsisten dgn tab Buka).
+            try:
+                size_txt = format_file_size(os.path.getsize(self._last_saved_path))
+                done_msg = tr("lock.notif.done", "Vault locked securely — {size}.").format(
+                    size=size_txt
+                )
+            except OSError:
+                done_msg = tr("lock.notif.locked", "Vault locked securely.")
+            self.notif.show_msg("ok", f" {done_msg}", 6000)
             self.status_changed.emit(
                 tr("lock.status.locked", "Locked"),
                 tr("lock.status.locked.sub", "Vault created successfully"),

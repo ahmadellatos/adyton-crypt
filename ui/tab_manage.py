@@ -40,6 +40,8 @@ from core.worker import CryptoWorker
 from .components.create_password_form import CreatePasswordForm
 from .components.drop_zone_open import DropZoneOpen
 from .components.recent_vaults_bar import RecentVaultsBar
+from .constants import APP_NAME
+from .core_messages import localize_core_message
 from .dialogs import ModernMessageBox, RecoveryCodeDialog
 from .i18n import register, tr
 from .styles import CLR_ACCENT, CLR_BORDER, CLR_INSET, CLR_TEXT_DIM, CLR_WARN
@@ -941,7 +943,9 @@ class TabManage(QWidget):
                 self._manage_keyfile_path = carry_keyfile
                 self.lbl_manage_keyfile.setText(os.path.basename(carry_keyfile))
             self.notif.show_msg(
-                "ok", f" {message or tr('manage.done', 'Vault updated successfully.')}", 6000
+                "ok",
+                f" {localize_core_message(message) or tr('manage.done', 'Vault updated successfully.')}",
+                6000,
             )
             self.status_changed.emit(
                 tr("manage.status.done.title", "Done"),
@@ -949,7 +953,7 @@ class TabManage(QWidget):
                 "success",
             )
             self.system_notification.emit(
-                "Adyton Crypt", tr("manage.notif.updated", "Vault credentials updated.")
+                APP_NAME, tr("manage.notif.updated", "Vault credentials updated.")
             )
             logger.info(f"Manage vault sukses: {message}")
         elif status == VaultStatus.WRONG_PASSWORD:
@@ -971,7 +975,9 @@ class TabManage(QWidget):
             )
         else:
             self.notif.show_msg(
-                "err", message or tr("manage.fail", "Couldn't update the vault."), 8000
+                "err",
+                localize_core_message(message) or tr("manage.fail", "Couldn't update the vault."),
+                8000,
             )
             self.status_changed.emit(
                 tr("manage.status.failed.title", "Failed"),

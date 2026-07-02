@@ -6,7 +6,6 @@ Primitif kriptografi: key derivation dan helper enkripsi/dekripsi AES-256-GCM.
 from __future__ import annotations
 
 import base64
-import hashlib
 import secrets
 
 from cryptography.hazmat.backends import default_backend
@@ -75,14 +74,11 @@ def generate_keyfile_bytes() -> bytes:
     return secrets.token_bytes(KEYFILE_GENERATED_SIZE)
 
 
-def derive_keyfile_material(keyfile_bytes: bytes) -> bytes:
-    """Material 32-byte stabil dari isi keyfile (independen dari vault mana pun).
-
-    SHA-256 atas byte mentah file: keyfile yang sama selalu menghasilkan material
-    yang sama, sehingga satu keyfile bisa melindungi banyak vault. Pengikatan ke
-    vault tertentu dilakukan oleh AAD wrap (file_id), bukan oleh material ini.
-    """
-    return hashlib.sha256(keyfile_bytes).digest()
+# Material keyfile 32-byte = SHA-256 atas byte mentah file, independen dari vault
+# mana pun (keyfile yang sama → material yang sama → satu keyfile bisa melindungi
+# banyak vault; pengikatan ke vault tertentu dilakukan oleh AAD wrap/file_id).
+# Perhitungannya dilakukan streaming + dibatasi ukuran di
+# core.vault._load_keyfile_material agar keyfile besar tak dimuat penuh ke memori.
 
 
 def combine_kek_with_keyfile(base_kek: bytes, keyfile_material: bytes) -> bytes:

@@ -897,13 +897,16 @@ class AppBrankas(FramelessMainWindow):
 
         lay_ver = QHBoxLayout()
         lay_ver.setSpacing(6)
-        lbl_ver_text = QLabel(tr("footer.version", "Version {v}").format(v=APP_VERSION))
-        lbl_ver_text.setObjectName("MutedText")
+        # Disimpan di self agar bisa di-retranslate saat bahasa berganti live: karena
+        # teksnya perlu .format(v=…), ia tak bisa lewat register() (yang tak mem-format),
+        # jadi retranslate(self) melewatinya — _on_app_language_changed menyetelnya ulang.
+        self.lbl_ver_text = QLabel(tr("footer.version", "Version {v}").format(v=APP_VERSION))
+        self.lbl_ver_text.setObjectName("MutedText")
         lbl_ver_icon = QLabel()
         lbl_ver_icon.setPixmap(
             qta.icon("mdi6.check-circle-outline", color=CLR_TEXT_MUTED).pixmap(15, 15)
         )
-        lay_ver.addWidget(lbl_ver_text)
+        lay_ver.addWidget(self.lbl_ver_text)
         lay_ver.addWidget(lbl_ver_icon)
 
         lay_footer.addLayout(lay_safe)
@@ -953,6 +956,9 @@ class AppBrankas(FramelessMainWindow):
         """Terapkan ulang semua teks chrome saat bahasa berganti (live)."""
         retranslate(self)
         self._update_page_header(self._current_page)
+        # Footer version dibangun dengan .format(v=…) sehingga tak lewat register();
+        # setel ulang manual agar ikut berganti bahasa (mis. "Version" ↔ "Versi").
+        self.lbl_ver_text.setText(tr("footer.version", "Version {v}").format(v=APP_VERSION))
         for act, key, default in getattr(self, "_tray_actions", []):
             act.set_text(tr(key, default))
         # Pill status balik ke idle (default) dalam bahasa baru; status transien

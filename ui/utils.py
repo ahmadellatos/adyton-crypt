@@ -7,22 +7,25 @@ import os
 import sys
 import time
 
+from .core_messages import localize_core_message
+from .i18n import tr
+
 
 def _format_eta_seconds(remaining: float) -> str:
     """Format ETA dengan pembulatan stabil dan bahasa yang mudah dipahami."""
     if remaining < 1:
-        return "Almost done"
+        return tr("eta.almost", "Almost done")
     if remaining < 60:
-        return f"about {int(round(remaining))} sec left"
+        return tr("eta.sec", "about {n} sec left").format(n=int(round(remaining)))
 
     minutes = int(remaining // 60)
     seconds = int(remaining % 60)
     if minutes < 60:
-        return f"about {minutes}m {seconds:02d}s left"
+        return tr("eta.min", "about {m}m {s}s left").format(m=minutes, s=f"{seconds:02d}")
 
     hours = minutes // 60
     minutes = minutes % 60
-    return f"about {hours}h {minutes:02d}m left"
+    return tr("eta.hour", "about {h}h {m}m left").format(h=hours, m=f"{minutes:02d}")
 
 
 class ProgressETA:
@@ -109,20 +112,20 @@ def progress_stage_label(val: float, mode: str) -> str:
 
     if mode == "buka":
         if val < 0.08:
-            return "Verifying password"
+            return tr("progress.buka.verify", "Verifying password")
         if val < 0.88:
-            return "Extracting data"
+            return tr("progress.buka.extract", "Extracting data")
         if val < 0.97:
-            return "Moving result"
-        return "Cleaning up temp files"
+            return tr("progress.buka.move", "Moving result")
+        return tr("progress.buka.cleanup", "Cleaning up temp files")
 
     if val < 0.08:
-        return "Preparing data"
+        return tr("progress.kunci.prepare", "Preparing data")
     if val < 0.88:
-        return "Encrypting data"
+        return tr("progress.kunci.encrypt", "Encrypting data")
     if val < 0.97:
-        return "Writing vault"
-    return "Finalizing"
+        return tr("progress.kunci.write", "Writing vault")
+    return tr("progress.kunci.final", "Finalizing")
 
 
 def format_progress_label(val: float, mode: str, eta_str: str) -> tuple[str, str]:
@@ -135,11 +138,12 @@ def format_progress_label(val: float, mode: str, eta_str: str) -> tuple[str, str
     stage = progress_stage_label(val, mode)
 
     if mode == "buka":
-        title = "Opening vault"
-        subtitle = f"{pct}% • {eta_str} • {stage} • Click to cancel"
+        title = tr("progress.open.title", "Opening vault")
     else:
-        title = "Locking vault"
-        subtitle = f"{pct}% • {eta_str} • {stage} • Click to cancel"
+        title = tr("progress.lock.title", "Locking vault")
+    subtitle = tr("progress.subtitle", "{pct}% • {eta} • {stage} • Click to cancel").format(
+        pct=pct, eta=eta_str, stage=stage
+    )
 
     return title, subtitle
 
@@ -150,21 +154,26 @@ def format_user_error(status, message: str | None, mode: str) -> str:
     raw = (message or "").strip()
 
     if "wrong_password" in status_name:
-        return (
+        return tr(
+            "err.wrong_password",
             "Wrong password, or the vault file is invalid or corrupted. "
-            "Double-check your password and try again."
+            "Double-check your password and try again.",
         )
 
     if "cancelled" in status_name:
-        return "Operation cancelled. No changes were made to your files."
+        return tr("err.cancelled", "Operation cancelled. No changes were made to your files.")
 
-    prefix = "Couldn't open the vault" if mode == "buka" else "Couldn't lock the vault"
+    prefix = (
+        tr("err.open_prefix", "Couldn't open the vault")
+        if mode == "buka"
+        else tr("err.lock_prefix", "Couldn't lock the vault")
+    )
     if not raw:
-        return f"{prefix}. Try again or check your disk space."
+        return f"{prefix}. " + tr("err.retry_disk", "Try again or check your disk space.")
 
-    # Hindari label teknis seperti “Error:” di UI utama, tapi tetap tampilkan detail
-    # yang memang sudah dibuat aman oleh core.
-    raw = raw.removeprefix("Error:").strip()
+    # Hindari label teknis seperti “Error:” di UI utama, terjemahkan detail dari core
+    # (localize_core_message: pesan yang tak dikenal dikembalikan apa adanya).
+    raw = localize_core_message(raw.removeprefix("Error:").strip())
     return f"{prefix}. {raw}"
 
 
@@ -235,7 +244,10 @@ def apply_shadow(widget, blur_radius=20, y_offset=6, opacity=60):
 
 def apply_cancelling_state(button) -> None:
     """Set tombol aksi ke state 'sedang membatalkan'."""
-    button.setTextLabels("Cancelling", "Cleaning up temp files…")
+    button.setTextLabels(
+        tr("cancelling.title", "Cancelling"),
+        tr("cancelling.sub", "Cleaning up temp files…"),
+    )
     button.setEnabled(False)
 
 

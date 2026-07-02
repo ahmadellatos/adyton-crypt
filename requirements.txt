@@ -4,7 +4,7 @@ cryptography>=46.0.7,<47.0.0
 zstandard>=0.22.0                  # Kompresi opsional (zstd) sebelum enkripsi — FLAG_COMPRESSED
 QtAwesome>=1.3.0
 loguru>=0.7.0
-windows-toasts>=1.3.0
+winotify>=1.1.0                    # Toast notifikasi Windows native (dipakai di ui/app.py; fallback ke Qt tray bila absen)
 zxcvbn>=4.4.28
 qrcode>=7.4.2                      # QR share untuk teks terenkripsi (tanpa Pillow — render via QPainter)
 

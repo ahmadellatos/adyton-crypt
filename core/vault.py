@@ -108,6 +108,26 @@ CORRUPT_VAULT_MESSAGE = (
     "incomplete, corrupted, or modified. If you have a backup, restore from it."
 )
 
+# Pesan panjang/multi-baris dijadikan konstanta agar lapisan UI (ui/core_messages.py)
+# bisa memetakannya ke terjemahan dengan aman — tanpa menyalin ulang teks persis
+# (rawan salah ketik pada em-dash / tanda kutip).
+SAVE_INSIDE_SOURCE_MESSAGE = (
+    "The vault's save location can't be the same as, or inside, the "
+    "file/folder being locked. Choose another location so the vault isn't "
+    "deleted along with it or pulled into the archive."
+)
+KEYFILE_INSIDE_SOURCE_MESSAGE = (
+    "The keyfile can't be the same as, or inside, the file or folder "
+    'being locked. It would be archived into the vault and — with "delete '
+    'original" on — wiped along with it, locking you out. Store the keyfile '
+    "somewhere else."
+)
+VERIFY_DISK_FAIL_MESSAGE = (
+    "The vault couldn't be verified on the physical disk. The original file was not deleted. "
+    "Try checking your disk space and the condition of your storage hardware."
+)
+KEYFILE_CREATED_MESSAGE = "Keyfile created. Keep it safe — you'll need it to open the vault."
+
 
 # ── File Operations ───────────────────────────────────────────────────────────
 
@@ -866,10 +886,7 @@ def generate_keyfile(keyfile_path: str) -> tuple[VaultStatus, str]:
             fk.write(generate_keyfile_bytes())
             fk.flush()
             os.fsync(fk.fileno())
-        return (
-            VaultStatus.SUCCESS,
-            "Keyfile created. Keep it safe — you'll need it to open the vault.",
-        )
+        return (VaultStatus.SUCCESS, KEYFILE_CREATED_MESSAGE)
     except FileExistsError:
         return VaultStatus.ERROR, "A file with that name already exists. Choose another name."
     except Exception:
@@ -1757,12 +1774,7 @@ def kunci_brankas(
     for source in valid_paths:
         source_path = Path(source)
         if _target_conflicts_with_source(target_path, source_path):
-            return (
-                VaultStatus.ERROR,
-                "The vault's save location can't be the same as, or inside, the "
-                "file/folder being locked. Choose another location so the vault isn't "
-                "deleted along with it or pulled into the archive.",
-            )
+            return (VaultStatus.ERROR, SAVE_INSIDE_SOURCE_MESSAGE)
 
     # Keyfile (2FA) tidak boleh berada di dalam / sama dengan sumber yang dikunci:
     # ia akan ikut diarsipkan ke dalam vault DAN — bila "hapus asli" aktif — ikut
@@ -1772,13 +1784,7 @@ def kunci_brankas(
         keyfile_obj = Path(keyfile_path)
         for source in valid_paths:
             if _target_conflicts_with_source(keyfile_obj, Path(source)):
-                return (
-                    VaultStatus.ERROR,
-                    "The keyfile can't be the same as, or inside, the file or folder "
-                    'being locked. It would be archived into the vault and — with "delete '
-                    'original" on — wiped along with it, locking you out. Store the keyfile '
-                    "somewhere else.",
-                )
+                return (VaultStatus.ERROR, KEYFILE_INSIDE_SOURCE_MESSAGE)
 
     if len(valid_paths) == 1:
         nama_virtual = _sanitize_virtual_name(Path(valid_paths[0]).name)
@@ -1931,11 +1937,7 @@ def kunci_brankas(
         if hapus_asli:
             safe_cb(progress_cb, 0.88)
             if not _quick_verify_vault(target_path):
-                return (
-                    VaultStatus.ERROR,
-                    "The vault couldn't be verified on the physical disk. The original file was not deleted. "
-                    "Try checking your disk space and the condition of your storage hardware.",
-                )
+                return (VaultStatus.ERROR, VERIFY_DISK_FAIL_MESSAGE)
             safe_cb(progress_cb, 0.90)  # Verification done
 
             if secure_wipe:

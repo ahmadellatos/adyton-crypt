@@ -35,6 +35,7 @@ from .components.drop_zone_open import DropZoneOpen
 from .components.password_panel_open import PasswordPanelOpen
 from .components.recent_vaults_bar import RecentVaultsBar
 from .constants import APP_NAME
+from .core_messages import localize_core_message
 from .dialogs import ModernMessageBox
 from .i18n import register, tr
 from .settings_store import get_settings
@@ -444,7 +445,7 @@ class TabBuka(QWidget):
 
         else:
             logger.warning(f"Browse gagal: {result[1]}")
-            user_msg = result[1] or tr(
+            user_msg = localize_core_message(result[1]) or tr(
                 "open.browse.fail.msg", "Couldn't read the vault contents. It may be corrupted."
             )
             self.drop_zone.set_verification_state("failed")
@@ -544,7 +545,9 @@ class TabBuka(QWidget):
 
         else:
             logger.warning(f"Ekstrak selektif gagal: {msg}")
-            user_msg = msg or tr("open.extract.fail.msg", "Couldn't extract the selected items.")
+            user_msg = localize_core_message(msg) or tr(
+                "open.extract.fail.msg", "Couldn't extract the selected items."
+            )
             self.drop_zone.set_verification_state("verified")
             self.status_changed.emit(
                 tr("open.extract.fail.title", "Extraction failed"),
@@ -795,7 +798,8 @@ class TabBuka(QWidget):
             logger.info("Verifikasi vault sukses.")
             self.notif.show_msg(
                 "ok",
-                msg or tr("open.verify.ok.msg", "Vault verified — all data is intact."),
+                localize_core_message(msg)
+                or tr("open.verify.ok.msg", "Vault verified — all data is intact."),
                 6000,
             )
 
@@ -833,7 +837,7 @@ class TabBuka(QWidget):
             # ERROR: vault rusak / bukan vault / format beda. Pesan core sudah
             # path-free & ramah, jadi ditampilkan apa adanya.
             logger.warning(f"Verifikasi gagal: {msg}")
-            user_msg = msg or tr(
+            user_msg = localize_core_message(msg) or tr(
                 "open.verify.fail.msg", "Couldn't verify the vault. It may be corrupted."
             )
             self.drop_zone.set_verification_state("failed")

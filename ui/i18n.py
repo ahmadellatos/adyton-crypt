@@ -89,6 +89,44 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "common.gotit": "Mengerti",
         "common.yes": "ya",
         "common.no": "tidak",
+        "common.ok": "OK",
+        # ── Quick action (menu klik-kanan Windows) ──────────────────────────
+        "quick.not_found": "File atau folder tidak ditemukan.",
+        "quick.already_vault": "File .adtn sudah berupa vault terkunci — tidak bisa dikunci lagi.",
+        "quick.more": " + {n} lainnya",
+        "quick.enc.action": "Kunci ke Vault",
+        "quick.dec.action": "Buka Vault",
+        "quick.shred.action": "Hapus Aman",
+        "quick.enc.busy": "Mengunci vault",
+        "quick.dec.busy": "Membuka vault",
+        "quick.shred.busy": "Menghapus",
+        "quick.busy.sub": "Menyiapkan • Klik untuk batal",
+        "quick.enc.title": "Kunci “{first}”{more}",
+        "quick.enc.sub": "Atur password untuk membungkus semuanya ke satu vault .adtn terenkripsi.",
+        "quick.dec.title": "Buka “{first}”",
+        "quick.dec.sub": "Masukkan password yang dipakai saat vault ini dikunci{size}.",
+        "quick.shred.title": "Hapus permanen “{first}”{more}",
+        "quick.shred.sub": "Tindakan ini tak bisa dibatalkan. File tidak masuk Recycle Bin.",
+        "quick.save": "Simpan Vault",
+        "quick.save.filter": "File Terkunci (*.adtn)",
+        "quick.keyfile.title": "Perlu keyfile",
+        "quick.keyfile.msg": (
+            "Vault ini dilindungi keyfile (2FA). Buka lewat aplikasi utama Adyton Crypt, "
+            "tempat kamu bisa memilih keyfile."
+        ),
+        "quick.cancelled": "Operasi dibatalkan. Tidak ada yang diubah.",
+        "quick.enc.ok": "Vault terkunci dengan aman.",
+        "quick.dec.ok": "Vault dibuka: {name}",
+        "quick.dec.ok.noname": "Vault dibuka.",
+        "quick.shred.ok": "Dihapus.",
+        "quick.shred.done.one": "1 item dihapus permanen.",
+        "quick.shred.done.many": "{n} item dihapus permanen.",
+        "quick.shred.confirm.count": "{n} item",
+        "quick.shred.confirm.title": "Hapus Permanen?",
+        "quick.shred.confirm.msg": (
+            "“{target}” akan dihapus permanen dan TIDAK masuk Recycle Bin. "
+            "Tindakan ini tak bisa dibatalkan.\n\nLanjutkan?"
+        ),
         # ── Sidebar navigasi ────────────────────────────────────────────────
         "nav.lock": "Kunci",
         "nav.open": "Buka",
@@ -177,6 +215,7 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "lock.status.failed": "Gagal mengunci",
         "lock.status.failed.sub": "Periksa file, izin, atau ruang disk yang tersedia",
         "lock.notif.locked": "Vault terkunci dengan aman.",
+        "lock.notif.done": "Vault terkunci dengan aman — {size}.",
         "lock.recovery.empty": "Masukkan recovery passphrase, atau matikan recovery key.",
         "lock.dialog.delete.title": "Konfirmasi Hapus",
         "lock.dialog.delete.msg": "File atau folder asli akan dihapus permanen setelah vault dibuat dan diverifikasi.\n\nPastikan kamu punya cadangan untuk hal-hal penting sebelum melanjutkan.",
@@ -302,9 +341,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "text.empty": "Teks tidak boleh kosong.",
         "text.pw_empty": "Password tidak boleh kosong.",
         "text.limit": "Teks mencapai maksimum {n} karakter.",
-        "text.notif.enc.title": "Teks berhasil dienkripsi",
-        "text.notif.dec.title": "Teks berhasil didekripsi",
-        "text.notif.body": "Disalin ke clipboard — terhapus otomatis dalam {s}d.",
+        "text.notif.enc.body": "Teks dienkripsi — disalin ke clipboard, terhapus otomatis dalam {s}d.",
+        "text.notif.dec.body": "Teks didekripsi — disalin ke clipboard, terhapus otomatis dalam {s}d.",
         "text.notif.enc.ok": "✓ Teks berhasil dienkripsi — disalin (terhapus otomatis dalam {s}d).",
         "text.notif.dec.ok": "✓ Teks berhasil didekripsi — disalin (terhapus otomatis dalam {s}d).",
         "text.err.wrong": "Password salah, atau teks terenkripsi sudah diubah atau rusak.",
@@ -550,6 +588,123 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "qr.saved": " Tersimpan ✓",
         "qr.save_dialog": "Simpan Kode QR",
         "qr.png_filter": "Gambar PNG (*.png)",
+        # ── Label progress & ETA (ui/utils.py) ──────────────────────────────
+        "progress.buka.verify": "Memverifikasi password",
+        "progress.buka.extract": "Mengekstrak data",
+        "progress.buka.move": "Memindahkan hasil",
+        "progress.buka.cleanup": "Membersihkan file sementara",
+        "progress.kunci.prepare": "Menyiapkan data",
+        "progress.kunci.encrypt": "Mengenkripsi data",
+        "progress.kunci.write": "Menulis vault",
+        "progress.kunci.final": "Menyelesaikan",
+        "progress.open.title": "Membuka vault",
+        "progress.lock.title": "Mengunci vault",
+        "progress.subtitle": "{pct}% • {eta} • {stage} • Klik untuk batal",
+        "eta.almost": "Hampir selesai",
+        "eta.sec": "sekitar {n} detik lagi",
+        "eta.min": "sekitar {m}m {s}d lagi",
+        "eta.hour": "sekitar {h}j {m}m lagi",
+        "cancelling.title": "Membatalkan",
+        "cancelling.sub": "Membersihkan file sementara…",
+        # ── Pesan error UI (format_user_error) ──────────────────────────────
+        "err.wrong_password": (
+            "Password salah, atau file vault tidak valid atau rusak. "
+            "Periksa kembali passwordmu lalu coba lagi."
+        ),
+        "err.cancelled": "Operasi dibatalkan. Tidak ada perubahan pada file-mu.",
+        "err.open_prefix": "Gagal membuka vault",
+        "err.lock_prefix": "Gagal mengunci vault",
+        "err.retry_disk": "Coba lagi atau periksa ruang diskmu.",
+        # ── Pesan hasil/error dari core (ui/core_messages.py) ────────────────
+        "core.disk_space": "Ruang penyimpanan tidak cukup.\nSisa disk: {free} MB. Minimal butuh {required} MB.",
+        "core.not_vault": "File ini bukan vault Adyton Crypt yang valid.",
+        "core.version_mismatch": (
+            "Vault ini dibuat oleh versi Adyton Crypt yang berbeda. Silakan perbarui aplikasi."
+        ),
+        "core.version_mismatch_manage": (
+            "Vault ini dibuat oleh versi Adyton Crypt yang berbeda dan tidak bisa dikelola "
+            "di sini. Silakan perbarui aplikasi."
+        ),
+        "core.too_small": "File vault terlalu kecil atau tidak lengkap.",
+        "core.not_found": "File vault tidak ditemukan.",
+        "core.chunk_invalid": "Parameter chunk vault tidak valid, atau file rusak.",
+        "core.keyslot_count": "Jumlah keyslot tidak valid; file mungkin rusak.",
+        "core.hint_len": "Panjang hint vault tidak valid; file mungkin rusak.",
+        "core.flag_unsupported": "Flag vault ini tidak didukung versi aplikasi ini.",
+        "core.keyslot_unsupported": "Keyslot vault ini tidak didukung versi aplikasi ini.",
+        "core.argon_size": "Ukuran parameter Argon2id tidak valid.",
+        "core.argon_invalid": "Parameter Argon2id tidak valid.",
+        "core.argon_max": "Parameter Argon2id melebihi batas aman.",
+        "core.corrupt": (
+            "Vault berhasil dibuka, tetapi sebagian datanya gagal cek integritas. File mungkin "
+            "tidak lengkap, rusak, atau diubah. Jika kamu punya cadangan, pulihkan dari sana."
+        ),
+        "core.contents_mismatch": "Isi vault tidak sesuai format yang diharapkan.",
+        "core.generic": (
+            "Periksa file, izin akses, dan ruang disk kosong, lalu coba lagi. "
+            "Detail teknis telah disimpan ke log."
+        ),
+        "core.no_valid": "Tidak ada file/folder valid untuk dikunci.",
+        "core.pw_empty": "Password tidak boleh kosong.",
+        "core.save_inside_source": (
+            "Lokasi penyimpanan vault tidak boleh sama dengan, atau di dalam, file/folder yang "
+            "dikunci. Pilih lokasi lain agar vault tidak ikut terhapus atau tertarik masuk ke arsip."
+        ),
+        "core.keyfile_inside_source": (
+            "Keyfile tidak boleh sama dengan, atau di dalam, file atau folder yang dikunci. Ia "
+            'akan ikut diarsipkan ke dalam vault dan — bila "hapus asli" aktif — ikut terhapus, '
+            "sehingga kamu terkunci di luar. Simpan keyfile di tempat lain."
+        ),
+        "core.verify_disk_fail": (
+            "Vault tidak bisa diverifikasi di disk fisik. File asli tidak dihapus. Coba periksa "
+            "ruang disk dan kondisi perangkat penyimpananmu."
+        ),
+        "core.disk_update": "Ruang penyimpanan tidak cukup untuk memperbarui vault.",
+        "core.cancelled_nochange": "Operasi dibatalkan. Tidak ada data lama yang diubah.",
+        "core.verified": "Vault terverifikasi — credential-mu benar dan semua data utuh.",
+        "core.verify_cancelled": "Verifikasi dibatalkan.",
+        "core.no_items": "Tidak ada item yang dipilih untuk diekstrak.",
+        "core.dest_missing": "Folder tujuan tidak ada.",
+        "core.none_found": "Tidak ada item terpilih yang ditemukan di dalam vault.",
+        "core.extract_cancelled": "Ekstraksi dibatalkan. Tidak ada file yang ditulis.",
+        "core.browse_cancelled": "Penelusuran dibatalkan.",
+        "core.keyfile_read_fail": "Keyfile tidak bisa dibaca. Pastikan file masih ada.",
+        "core.keyfile_empty": "Keyfile kosong. Pilih file yang tidak kosong atau buat yang baru.",
+        "core.keyfile_too_large": "Keyfile terlalu besar. Pilih file di bawah 64 MB.",
+        "core.file_exists": "File dengan nama itu sudah ada. Pilih nama lain.",
+        "core.keyfile_created": (
+            "Keyfile dibuat. Simpan baik-baik — kamu membutuhkannya untuk membuka vault."
+        ),
+        "core.keyfile_select_protect": "Pilih keyfile untuk melindungi vault ini.",
+        "core.keyfile_select_remove": "Pilih keyfile untuk melepas perlindungan keyfile.",
+        "core.keyfile_already": "Vault ini sudah dilindungi keyfile.",
+        "core.keyfile_not_protected": "Vault ini tidak dilindungi keyfile.",
+        "core.keyfile_needed_changepw": (
+            "Vault ini memakai keyfile. Pilih keyfile untuk mengganti passwordnya."
+        ),
+        "core.keyfile_added": (
+            "Keyfile ditambahkan. Sekarang kamu butuh keyfile ini plus password untuk "
+            "membuka vault ini."
+        ),
+        "core.keyfile_removed": "Keyfile dihapus. Sekarang cukup password untuk membuka vault ini.",
+        "core.newpw_empty": "Password baru tidak boleh kosong.",
+        "core.pw_changed": "Password berhasil diganti.",
+        "core.recovery_empty": "Recovery secret tidak boleh kosong.",
+        "core.recovery_exists": (
+            "Vault ini sudah punya recovery key. Hapus dulu untuk membuat yang baru."
+        ),
+        "core.max_slots": "Vault ini sudah mencapai jumlah keyslot maksimum.",
+        "core.no_pw_slot_change": "Vault ini tidak punya slot password untuk diganti.",
+        "core.no_pw_slot": "Vault ini tidak punya slot password.",
+        "core.no_recovery": "Vault ini tidak punya recovery key untuk dihapus.",
+        "core.last_slot": "Tidak bisa menghapus keyslot terakhir dari vault.",
+        "core.updated": "Vault berhasil diperbarui.",
+        "core.err_rekey_len": "Kesalahan internal: panjang header berubah saat mengganti kunci.",
+        "core.err_addkf_len": "Kesalahan internal: panjang header berubah saat menambah keyfile.",
+        "core.err_rmkf_len": "Kesalahan internal: panjang header berubah saat menghapus keyfile.",
+        # ── Error teks (tab Teks) ───────────────────────────────────────────
+        "text.err.empty_pw": "Password tidak boleh kosong.",
+        "text.err.empty_text": "Teks tidak boleh kosong.",
         # ── Nama aksesibilitas (screen reader) ──────────────────────────────
         "a11y.gen_password": "Buat password kuat",
         "a11y.toggle_password": "Tampilkan atau sembunyikan password",
